@@ -7,11 +7,30 @@ import { TaskQueuePanel } from './components/TaskQueue/TaskQueuePanel';
 import { ChatPanel } from './components/ChatPanel/ChatPanel';
 import { SettingsPanel } from './components/Settings/SettingsPanel';
 import { Sidebar } from './components/Sidebar';
+import { ToastContainer, useToastStore } from './components/Toast';
+import { useEffect } from 'react';
 
 export function App() {
   const ws = useWebSocket();
   const api = useApi();
   const { connected, agents, selectedAgentId } = useAppStore();
+  const addToast = useToastStore((s) => s.add);
+
+  // Show notifications for agent lifecycle events
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const msg = JSON.parse((event as MessageEvent).data);
+      if (msg.type === 'agent:spawned') {
+        addToast('info', `${msg.agent.role.icon} ${msg.agent.role.name} agent spawned`);
+      } else if (msg.type === 'agent:exit') {
+        addToast(msg.code === 0 ? 'success' : 'error', `Agent ${msg.agentId.slice(0, 8)} ${msg.code === 0 ? 'completed' : 'failed'}`);
+      } else if (msg.type === 'agent:sub_spawned') {
+        addToast('info', `${msg.child.role.icon} Sub-agent spawned by ${msg.parentId.slice(0, 8)}`);
+      }
+    };
+    window.addEventListener('ws-message', handler);
+    return () => window.removeEventListener('ws-message', handler);
+  }, [addToast]);
 
   return (
     <div className="flex h-screen bg-surface text-gray-200">
@@ -47,6 +66,7 @@ export function App() {
           </div>
         )}
       </div>
+      <ToastContainer />
     </div>
   );
 }
