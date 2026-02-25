@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, useMemo } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../../stores/appStore';
-import type { AcpToolCall, AcpPlanEntry, AcpTextChunk } from '../../types';
+import type { AcpToolCall, AcpPlanEntry } from '../../types';
 import { ChevronDown, ChevronRight, User, Bot } from 'lucide-react';
 
 interface Props {
@@ -29,7 +29,6 @@ const TC_STATUS: Record<AcpToolCall['status'], string> = {
 /** Render inline markdown: **bold**, *italic*, `code` */
 function renderMarkdown(text: string): React.ReactNode[] {
   const parts: React.ReactNode[] = [];
-  // Match **bold**, *italic*/_italic_, `code`
   const regex = /(\*\*(.+?)\*\*|\*(.+?)\*|_(.+?)_|`([^`]+)`)/g;
   let lastIndex = 0;
   let match;
@@ -60,21 +59,6 @@ function renderMarkdown(text: string): React.ReactNode[] {
   return parts.length > 0 ? parts : [text];
 }
 
-/** Group consecutive same-sender messages into a single bubble */
-function groupMessages(messages: AcpTextChunk[]): { sender: 'agent' | 'user'; text: string }[] {
-  const groups: { sender: 'agent' | 'user'; text: string }[] = [];
-  for (const msg of messages) {
-    const sender = msg.sender ?? 'agent';
-    const last = groups[groups.length - 1];
-    if (last && last.sender === sender) {
-      last.text += msg.text;
-    } else {
-      groups.push({ sender, text: msg.text });
-    }
-  }
-  return groups;
-}
-
 export function AcpOutput({ agentId }: Props) {
   const agent = useAppStore((s) => s.agents.find((a) => a.id === agentId));
   const [planOpen, setPlanOpen] = useState(true);
@@ -83,8 +67,6 @@ export function AcpOutput({ agentId }: Props) {
   const plan = agent?.plan ?? [];
   const toolCalls = agent?.toolCalls ?? [];
   const messages = agent?.messages ?? [];
-
-  const grouped = useMemo(() => groupMessages(messages), [messages]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -143,39 +125,42 @@ export function AcpOutput({ agentId }: Props) {
       )}
 
       {/* Messages Section */}
-      {grouped.length > 0 && (
+      {messages.length > 0 && (
         <div className="space-y-2">
-          {grouped.map((group, i) => (
-            <div
-              key={i}
-              className={`flex gap-2 ${group.sender === 'user' ? 'justify-end' : 'justify-start'}`}
-            >
-              {group.sender === 'agent' && (
-                <div className="w-6 h-6 rounded-full bg-accent/20 flex items-center justify-center shrink-0 mt-1">
-                  <Bot size={14} className="text-accent" />
-                </div>
-              )}
+          {messages.map((msg, i) => {
+            const sender = msg.sender ?? 'agent';
+            return (
               <div
-                className={`rounded-lg px-3 py-2 max-w-[85%] text-sm font-mono whitespace-pre-wrap ${
-                  group.sender === 'user'
-                    ? 'bg-accent/20 text-gray-200 border border-accent/30'
-                    : 'bg-surface-raised text-gray-300 border border-gray-700'
-                }`}
+                key={i}
+                className={`flex gap-2 ${sender === 'user' ? 'justify-end' : 'justify-start'}`}
               >
-                {group.text.split('\n').map((line, j) => (
-                  <span key={j}>
-                    {j > 0 && <br />}
-                    {renderMarkdown(line)}
-                  </span>
-                ))}
-              </div>
-              {group.sender === 'user' && (
-                <div className="w-6 h-6 rounded-full bg-blue-500/20 flex items-center justify-center shrink-0 mt-1">
-                  <User size={14} className="text-blue-400" />
+                {sender === 'agent' && (
+                  <div className="w-6 h-6 rounded-full bg-accent/20 flex items-center justify-center shrink-0 mt-1">
+                    <Bot size={14} className="text-accent" />
+                  </div>
+                )}
+                <div
+                  className={`rounded-lg px-3 py-2 max-w-[85%] text-sm font-mono whitespace-pre-wrap ${
+                    sender === 'user'
+                      ? 'bg-accent/20 text-gray-200 border border-accent/30'
+                      : 'bg-surface-raised text-gray-300 border border-gray-700'
+                  }`}
+                >
+                  {msg.text.split('\n').map((line, j) => (
+                    <span key={j}>
+                      {j > 0 && <br />}
+                      {renderMarkdown(line)}
+                    </span>
+                  ))}
                 </div>
-              )}
-            </div>
-          ))}
+                {sender === 'user' && (
+                  <div className="w-6 h-6 rounded-full bg-blue-500/20 flex items-center justify-center shrink-0 mt-1">
+                    <User size={14} className="text-blue-400" />
+                  </div>
+                )}
+              </div>
+            );
+          })}
           <div ref={messagesEndRef} />
         </div>
       )}
