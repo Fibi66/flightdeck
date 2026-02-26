@@ -15,13 +15,15 @@ function formatArgs(args: Record<string, any>): string {
   return json.length > 400 ? json.slice(0, 400) + '\n…' : json;
 }
 
-function getToolIcon(toolName: string) {
+function getToolIcon(toolName: string | undefined) {
+  if (!toolName) return Shield;
   if (toolName.startsWith('fs/') || toolName.includes('file')) return FileText;
   if (toolName.startsWith('terminal/') || toolName.includes('command')) return Terminal;
   return Shield;
 }
 
-function getToolSummary(toolName: string, args: Record<string, any>): string | null {
+function getToolSummary(toolName: string | undefined, args: Record<string, any> | undefined): string | null {
+  if (!toolName || !args) return null;
   if (toolName.includes('write') && args.path) return args.path;
   if (toolName.includes('create') && args.command) return args.command;
   if (args.command) return args.command;
@@ -102,6 +104,8 @@ export function PermissionDialog() {
 
   const ToolIcon = getToolIcon(request.toolName);
   const summary = getToolSummary(request.toolName, request.arguments);
+  const toolLabel = request.toolName ?? 'unknown tool';
+  const argsObj = request.arguments ?? {};
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
@@ -136,7 +140,7 @@ export function PermissionDialog() {
           <div className="flex items-center gap-2">
             <ToolIcon size={16} className="text-blue-400 shrink-0" />
             <code className="text-sm text-blue-300 bg-blue-900/20 px-2 py-0.5 rounded">
-              {request.toolName}
+              {toolLabel}
             </code>
           </div>
 
@@ -153,7 +157,7 @@ export function PermissionDialog() {
               Arguments
             </summary>
             <pre className="mt-2 text-xs text-gray-400 bg-gray-800 rounded p-3 overflow-auto max-h-48 font-mono">
-              {formatArgs(request.arguments)}
+              {formatArgs(argsObj)}
             </pre>
           </details>
 
