@@ -52,9 +52,25 @@ export function useWebSocket() {
             status: msg.code === 0 ? 'completed' : 'failed',
           });
           break;
-        case 'agent:status':
+        case 'agent:status': {
+          const prev = useAppStore.getState().agents.find((a) => a.id === msg.agentId);
+          const wasIdle = prev && (prev.status === 'idle' || prev.status === 'completed');
           updateAgent(msg.agentId, { status: msg.status });
+          // When agent transitions from idle back to running, it received new input.
+          // Insert a separator so next agent:text creates a new bubble.
+          if (msg.status === 'running' && wasIdle) {
+            const existing = useAppStore.getState().agents.find((a) => a.id === msg.agentId);
+            if (existing?.messages?.length) {
+              const last = existing.messages[existing.messages.length - 1];
+              if (last?.sender === 'agent') {
+                updateAgent(msg.agentId, {
+                  messages: [...existing.messages, { type: 'text', text: '---', sender: 'system' as any }],
+                });
+              }
+            }
+          }
           break;
+        }
         case 'agent:sub_spawned':
           addAgent(msg.child);
           updateAgent(msg.parentId, {

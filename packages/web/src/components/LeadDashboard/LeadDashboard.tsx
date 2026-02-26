@@ -96,6 +96,15 @@ export function LeadDashboard({ api, ws }: Props) {
         store.appendToLastAgentMessage(msg.agentId, msg.text);
       }
 
+      // When lead goes back to running after idle, start a new message bubble
+      if (msg.type === 'agent:status' && msg.agentId === selectedLeadId && msg.status === 'running') {
+        const proj = store.projects[msg.agentId];
+        const lastMsg = proj?.messages?.[proj.messages.length - 1];
+        if (lastMsg?.sender === 'agent') {
+          store.addMessage(msg.agentId, { type: 'text', text: '---', sender: 'system' as any });
+        }
+      }
+
       // Track tool calls from PL and its children
       if (msg.type === 'agent:tool_call') {
         const leadId = selectedLeadId;
@@ -106,8 +115,9 @@ export function LeadDashboard({ api, ws }: Props) {
         if (agentId === leadId || isChild) {
           const agent = agents.find((a) => a.id === agentId);
           const roleName = agent?.role?.name ?? 'Agent';
+          const uniqueId = `${toolCall.toolCallId}-${toolCall.status || Date.now()}`;
           store.addActivity(leadId, {
-            id: toolCall.toolCallId || `tc-${Date.now()}`,
+            id: uniqueId,
             agentId,
             agentRole: roleName,
             type: 'tool_call',
