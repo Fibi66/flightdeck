@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Crown, Send, Users, CheckCircle, AlertCircle, Clock, Loader2, Plus, Trash2 } from 'lucide-react';
+import { Crown, Send, Users, CheckCircle, AlertCircle, Clock, Loader2, Plus, Trash2, Wrench, MessageSquare, GitBranch } from 'lucide-react';
 import { useLeadStore } from '../../stores/leadStore';
+import type { ActivityEvent } from '../../stores/leadStore';
 import { useAppStore } from '../../stores/appStore';
 import { DecisionPanel } from './DecisionPanel';
 import { TeamStatus } from './TeamStatus';
@@ -83,16 +84,66 @@ export function LeadDashboard({ api, ws }: Props) {
   useEffect(() => {
     const handler = (event: Event) => {
       const msg = JSON.parse((event as MessageEvent).data);
+      const store = useLeadStore.getState();
+
       if (msg.type === 'lead:decision' && msg.agentId) {
-        useLeadStore.getState().addDecision(msg.agentId, msg);
+        store.addDecision(msg.agentId, msg);
       }
+
+      // Stream PL text into chat
       if (msg.type === 'agent:text' && msg.agentId === selectedLeadId) {
-        useLeadStore.getState().appendToLastAgentMessage(msg.agentId, msg.text);
+        store.appendToLastAgentMessage(msg.agentId, msg.text);
+      }
+
+      // Track tool calls from PL and its children
+      if (msg.type === 'agent:tool_call') {
+        const leadId = selectedLeadId;
+        if (!leadId) return;
+        const { agentId, toolCall } = msg;
+        // Only track if it's the lead or one of its children
+        const isChild = agents.some((a) => a.id === agentId && a.parentId === leadId);
+        if (agentId === leadId || isChild) {
+          const agent = agents.find((a) => a.id === agentId);
+          const roleName = agent?.role?.name ?? 'Agent';
+          store.addActivity(leadId, {
+            id: toolCall.toolCallId || `tc-${Date.now()}`,
+            agentId,
+            agentRole: roleName,
+            type: 'tool_call',
+            summary: toolCall.title || toolCall.kind || 'Working...',
+            status: toolCall.status,
+            timestamp: Date.now(),
+          });
+        }
+      }
+
+      // Track delegation events
+      if (msg.type === 'agent:delegated' && msg.parentId) {
+        store.addActivity(msg.parentId, {
+          id: msg.delegation?.id || `del-${Date.now()}`,
+          agentId: msg.parentId,
+          agentRole: 'Project Lead',
+          type: 'delegation',
+          summary: `Delegated to ${msg.delegation?.toRole}: ${msg.delegation?.task?.slice(0, 80) || ''}`,
+          timestamp: Date.now(),
+        });
+      }
+
+      // Track agent completion reports
+      if (msg.type === 'agent:completion_reported' && msg.parentId) {
+        store.addActivity(msg.parentId, {
+          id: `done-${Date.now()}`,
+          agentId: msg.childId,
+          agentRole: 'Agent',
+          type: 'completion',
+          summary: `Agent ${msg.childId?.slice(0, 8)} ${msg.status}`,
+          timestamp: Date.now(),
+        });
       }
     };
     window.addEventListener('ws-message', handler);
     return () => window.removeEventListener('ws-message', handler);
-  }, [selectedLeadId]);
+  }, [selectedLeadId, agents]);
 
   const startLead = useCallback(async (name: string, task?: string) => {
     setStarting(true);
@@ -135,6 +186,7 @@ export function LeadDashboard({ api, ws }: Props) {
   const messages = currentProject?.messages ?? [];
   const decisions = currentProject?.decisions ?? [];
   const progress = currentProject?.progress ?? null;
+  const activity = currentProject?.activity ?? [];
   const teamAgents = agents.filter((a) => a.parentId === selectedLeadId);
 
   return (
@@ -305,6 +357,14 @@ export function LeadDashboard({ api, ws }: Props) {
                   </div>
                 </div>
               ))}
+              {isActive && messages.length > 0 && messages[messages.length - 1]?.sender === 'user' && (
+                <div className="flex justify-start">
+                  <div className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 font-mono text-sm text-gray-400 flex items-center gap-2">
+                    <Loader2 className="w-3 h-3 animate-spin text-yellow-400" />
+                    <span>Working...</span>
+                  </div>
+                </div>
+              )}
               <div ref={messagesEndRef} />
             </div>
 
@@ -336,13 +396,62 @@ export function LeadDashboard({ api, ws }: Props) {
             </div>
           </div>
 
-          {/* Right sidebar: decisions + team */}
+          {/* Right sidebar: decisions + activity + team */}
           <div className="w-80 border-l border-gray-700 flex flex-col overflow-hidden">
             <DecisionPanel decisions={decisions} />
+            <ActivityFeed activity={activity} agents={agents} />
             <TeamStatus agents={teamAgents} delegations={progress?.delegations ?? []} />
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+function ActivityFeed({ activity, agents }: { activity: ActivityEvent[]; agents: any[] }) {
+  const feedRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight, behavior: 'smooth' });
+  }, [activity.length]);
+
+  // Show most recent 30
+  const recent = activity.slice(-30);
+
+  const getIcon = (type: string, status?: string) => {
+    if (type === 'delegation') return <GitBranch className="w-3 h-3 text-yellow-400 shrink-0" />;
+    if (type === 'completion') return <CheckCircle className="w-3 h-3 text-green-400 shrink-0" />;
+    if (type === 'message_sent') return <MessageSquare className="w-3 h-3 text-blue-400 shrink-0" />;
+    if (status === 'in_progress') return <Loader2 className="w-3 h-3 text-blue-400 animate-spin shrink-0" />;
+    if (status === 'completed') return <CheckCircle className="w-3 h-3 text-green-500 shrink-0" />;
+    return <Wrench className="w-3 h-3 text-gray-400 shrink-0" />;
+  };
+
+  return (
+    <div className="flex-1 overflow-hidden flex flex-col min-h-0 border-t border-gray-700">
+      <div className="px-3 py-2 border-b border-gray-700 flex items-center gap-2 shrink-0">
+        <Wrench className="w-4 h-4 text-gray-400" />
+        <span className="text-sm font-semibold">Activity</span>
+        <span className="text-xs text-gray-500 ml-auto">{activity.length}</span>
+      </div>
+      <div ref={feedRef} className="flex-1 overflow-y-auto">
+        {recent.length === 0 ? (
+          <p className="text-xs text-gray-500 text-center py-4 font-mono">No activity yet</p>
+        ) : (
+          recent.map((evt) => {
+            const agent = agents.find((a: any) => a.id === evt.agentId);
+            const label = agent?.role?.name ?? evt.agentRole;
+            return (
+              <div key={evt.id} className="px-3 py-1.5 border-b border-gray-700/30 flex items-start gap-2">
+                {getIcon(evt.type, evt.status)}
+                <div className="min-w-0 flex-1">
+                  <span className="text-xs font-mono text-gray-400">{label}: </span>
+                  <span className="text-xs font-mono text-gray-300 break-words">{evt.summary}</span>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
     </div>
   );
 }

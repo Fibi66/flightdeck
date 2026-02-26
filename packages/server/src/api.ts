@@ -7,6 +7,7 @@ import { updateConfig } from './config.js';
 import type { Database } from './db/database.js';
 import type { FileLockRegistry } from './coordination/FileLockRegistry.js';
 import type { ActivityLedger, ActionType } from './coordination/ActivityLedger.js';
+import { logger } from './utils/logger.js';
 
 export function apiRouter(
   agentManager: AgentManager,
@@ -27,11 +28,16 @@ export function apiRouter(
   router.post('/agents', (req, res) => {
     const { roleId, taskId, mode, autopilot } = req.body;
     const role = roleRegistry.get(roleId);
-    if (!role) return res.status(400).json({ error: `Unknown role: ${roleId}` });
+    if (!role) {
+      logger.warn('api', `POST /agents — unknown role: ${roleId}`);
+      return res.status(400).json({ error: `Unknown role: ${roleId}` });
+    }
     try {
       const agent = agentManager.spawn(role, taskId, undefined, mode, autopilot);
+      logger.info('api', `POST /agents — spawned ${role.name} (${agent.id.slice(0, 8)})`);
       res.status(201).json(agent.toJSON());
     } catch (err: any) {
+      logger.error('api', `POST /agents — ${err.message}`);
       res.status(429).json({ error: err.message });
     }
   });
@@ -51,6 +57,7 @@ export function apiRouter(
     const { text } = req.body;
     const agent = agentManager.get(req.params.id);
     if (!agent) return res.status(404).json({ error: 'Agent not found' });
+    logger.info('api', `Input → ${agent.role.name} (${req.params.id.slice(0, 8)}): "${text.slice(0, 80)}"`);
     agent.write(text);
     res.json({ ok: true });
   });
@@ -174,11 +181,18 @@ export function apiRouter(
     try {
       const agent = agentManager.spawn(role, task, undefined, 'acp', true);
       agent.projectName = name || task?.slice(0, 60) || `Project ${new Date().toLocaleDateString()}`;
+      logger.info('lead', `Started project "${agent.projectName}" (${agent.id.slice(0, 8)})`, {
+        task: task?.slice(0, 80),
+      });
       if (task) {
-        setTimeout(() => agent.sendMessage(task), 2000);
+        setTimeout(() => {
+          logger.info('lead', `Sending initial task to ${agent.id.slice(0, 8)}: "${task.slice(0, 80)}"`);
+          agent.sendMessage(task);
+        }, 2000);
       }
       res.status(201).json(agent.toJSON());
     } catch (err: any) {
+      logger.error('lead', `Failed to start project: ${err.message}`);
       res.status(429).json({ error: err.message });
     }
   });
@@ -200,6 +214,7 @@ export function apiRouter(
     const { text } = req.body;
     const agent = agentManager.get(req.params.id);
     if (!agent || agent.role.id !== 'lead') return res.status(404).json({ error: 'Lead not found' });
+    logger.info('lead', `User message → ${agent.projectName || agent.id.slice(0, 8)}: "${text.slice(0, 80)}"`);
     agent.sendMessage(text);
     res.json({ ok: true });
   });

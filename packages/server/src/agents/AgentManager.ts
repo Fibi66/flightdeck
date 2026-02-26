@@ -7,6 +7,7 @@ import type { FileLockRegistry } from '../coordination/FileLockRegistry.js';
 import type { ActivityLedger } from '../coordination/ActivityLedger.js';
 import type { MessageBus } from '../comms/MessageBus.js';
 import type { DecisionLog } from '../coordination/DecisionLog.js';
+import { logger } from '../utils/logger.js';
 
 // JSON pattern agents can emit to request sub-agent spawning
 const SPAWN_REQUEST_REGEX = /<!--\s*SPAWN_AGENT\s*(\{.*?\})\s*-->/s;
@@ -76,13 +77,19 @@ export class AgentManager extends EventEmitter {
       if (target && target.status === 'running') {
         const fromAgent = this.agents.get(msg.from);
         const fromLabel = fromAgent ? `${fromAgent.role.name} (${msg.from.slice(0, 8)})` : msg.from.slice(0, 8);
+        logger.info('message', `${fromLabel} → ${target.role.name} (${msg.to.slice(0, 8)})`, {
+          contentPreview: msg.content.slice(0, 80),
+        });
         target.sendMessage(`[Message from ${fromLabel}]: ${msg.content}`);
+      } else {
+        logger.warn('message', `Target agent not found or not running: ${msg.to.slice(0, 8)}`);
       }
     });
   }
 
   spawn(role: Role, taskId?: string, parentId?: string, mode?: AgentMode, autopilot?: boolean): Agent {
     if (this.getRunningCount() >= this.maxConcurrent) {
+      logger.error('agent', `Concurrency limit reached (${this.maxConcurrent})`, { role: role.id });
       throw new Error(
         `Concurrency limit reached (${this.maxConcurrent}). Kill an agent or increase the limit.`,
       );
@@ -140,6 +147,10 @@ export class AgentManager extends EventEmitter {
 
     agent.onExit((code) => {
       this.clearHungTimer(agent.id);
+      logger.info('agent', `Exited ${agent.role.name} (${agent.id.slice(0, 8)}) code=${code}`, {
+        role: agent.role.id,
+        status: agent.status,
+      });
       this.emit('agent:exit', agent.id, code);
 
       // Notify parent agent of child completion
@@ -149,6 +160,7 @@ export class AgentManager extends EventEmitter {
         const agentRole = agent.role?.id ?? 'unknown';
         const crashKey = `${agentRole}:${agent.taskId ?? ''}`;
 
+        logger.error('agent', `Crashed ${agent.role.name} (${agent.id.slice(0, 8)}) exit=${code}`, { crashKey });
         this.activityLedger.log(agent.id, agentRole, 'error', `Agent crashed with exit code ${code}`);
         this.emit('agent:crashed', { agentId: agent.id, code });
 
@@ -156,11 +168,13 @@ export class AgentManager extends EventEmitter {
         this.crashCounts.set(crashKey, count);
 
         if (this.autoRestart && count < this.maxRestarts) {
+          logger.warn('agent', `Auto-restarting ${agent.role.name} (attempt ${count + 1}/${this.maxRestarts})`);
           setTimeout(() => {
             const newAgent = this.spawn(agent.role, agent.taskId, agent.parentId);
             this.emit('agent:auto_restarted', { agentId: newAgent.id, previousAgentId: agent.id, crashCount: count });
           }, 2000);
         } else if (count >= this.maxRestarts) {
+          logger.error('agent', `Restart limit reached for ${agent.role.name} (${this.maxRestarts} restarts)`);
           this.emit('agent:restart_limit', { agentId: agent.id });
         }
       }
@@ -182,6 +196,12 @@ export class AgentManager extends EventEmitter {
     });
 
     agent.start();
+    logger.info('agent', `Spawned ${role.name} (${agent.id.slice(0, 8)})`, {
+      mode: agent.mode,
+      autopilot: agent.autopilot,
+      parentId: parentId?.slice(0, 8),
+      taskId,
+    });
     this.emit('agent:spawned', agent.toJSON());
     return agent;
   }
@@ -359,6 +379,9 @@ export class AgentManager extends EventEmitter {
         content: msg.content,
       });
 
+      logger.info('message', `Agent message: ${agent.role.name} (${agent.id.slice(0, 8)}) → ${targetId.slice(0, 8)}`, {
+        contentPreview: msg.content.slice(0, 80),
+      });
       this.emit('agent:message_sent', { from: agent.id, to: targetId, content: msg.content });
     } catch {
       // ignore malformed messages
@@ -381,6 +404,8 @@ export class AgentManager extends EventEmitter {
 
       // Spawn child in autopilot mode
       const child = this.spawn(role, req.task, agent.id, 'acp', true);
+
+      logger.info('delegation', `${agent.role.name} (${agent.id.slice(0, 8)}) delegated to ${role.name}: ${req.task.slice(0, 80)}`);
 
       // Track delegation
       const delegation: Delegation = {
@@ -424,6 +449,7 @@ export class AgentManager extends EventEmitter {
       if (!decision.title) return;
 
       this.decisionLog.add(agent.id, agent.role?.id ?? 'unknown', decision.title, decision.rationale ?? '');
+      logger.info('lead', `Decision: "${decision.title}"`, { rationale: decision.rationale?.slice(0, 100) });
       this.emit('lead:decision', { agentId: agent.id, title: decision.title, rationale: decision.rationale });
     } catch {
       // ignore malformed decisions
@@ -436,6 +462,7 @@ export class AgentManager extends EventEmitter {
 
     try {
       const progress = JSON.parse(match[1]);
+      logger.info('lead', `Progress update from ${agent.role.name} (${agent.id.slice(0, 8)})`, progress);
       this.emit('lead:progress', { agentId: agent.id, ...progress });
     } catch {
       // ignore malformed progress
@@ -460,6 +487,7 @@ export class AgentManager extends EventEmitter {
     const preview = agent.messages.slice(-3).join('\n').slice(0, 300);
     const summary = `[Agent Report] ${agent.role.name} (${agent.id.slice(0, 8)}) ${status}.\nTask: ${agent.taskId || 'none'}\nOutput summary: ${preview || '(no output)'}`;
 
+    logger.info('delegation', `Child ${agent.role.name} (${agent.id.slice(0, 8)}) → parent ${parent.role.name} (${parent.id.slice(0, 8)}): ${status}`);
     parent.sendMessage(summary);
     this.emit('agent:completion_reported', { childId: agent.id, parentId: agent.parentId, status });
   }

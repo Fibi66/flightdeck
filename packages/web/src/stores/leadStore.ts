@@ -1,10 +1,25 @@
 import { create } from 'zustand';
-import type { Decision, LeadProgress, AcpTextChunk } from '../types';
+import type { Decision, LeadProgress, AcpTextChunk, AcpToolCall } from '../types';
+
+export interface ActivityEvent {
+  id: string;
+  agentId: string;
+  agentRole: string;
+  type: 'tool_call' | 'delegation' | 'completion' | 'message_sent';
+  summary: string;
+  detail?: string;
+  status?: string;
+  timestamp: number;
+}
 
 interface ProjectState {
   messages: AcpTextChunk[];
   decisions: Decision[];
   progress: LeadProgress | null;
+  toolCalls: AcpToolCall[];
+  activity: ActivityEvent[];
+  /** Timestamp of last text received — used to show "working" indicator */
+  lastTextAt: number;
 }
 
 interface LeadState {
@@ -22,11 +37,13 @@ interface LeadState {
   setProgress: (leadId: string, progress: LeadProgress) => void;
   addMessage: (leadId: string, msg: AcpTextChunk) => void;
   appendToLastAgentMessage: (leadId: string, text: string) => void;
+  updateToolCall: (leadId: string, toolCall: AcpToolCall) => void;
+  addActivity: (leadId: string, event: ActivityEvent) => void;
   reset: () => void;
 }
 
 function emptyProject(): ProjectState {
-  return { messages: [], decisions: [], progress: null };
+  return { messages: [], decisions: [], progress: null, toolCalls: [], activity: [], lastTextAt: 0 };
 }
 
 export const useLeadStore = create<LeadState>((set) => ({
@@ -84,7 +101,32 @@ export const useLeadStore = create<LeadState>((set) => ({
       } else {
         msgs.push({ type: 'text', text: text.replace(/^\n+/, ''), sender: 'agent' });
       }
-      return { projects: { ...s.projects, [leadId]: { ...proj, messages: msgs } } };
+      return { projects: { ...s.projects, [leadId]: { ...proj, messages: msgs, lastTextAt: Date.now() } } };
+    }),
+
+  updateToolCall: (leadId, toolCall) =>
+    set((s) => {
+      const proj = s.projects[leadId] || emptyProject();
+      const existing = proj.toolCalls.findIndex((t) => t.toolCallId === toolCall.toolCallId);
+      let toolCalls: AcpToolCall[];
+      if (existing >= 0) {
+        toolCalls = [...proj.toolCalls];
+        toolCalls[existing] = toolCall;
+      } else {
+        toolCalls = [...proj.toolCalls, toolCall];
+      }
+      // Keep only last 50
+      if (toolCalls.length > 50) toolCalls = toolCalls.slice(-50);
+      return { projects: { ...s.projects, [leadId]: { ...proj, toolCalls } } };
+    }),
+
+  addActivity: (leadId, event) =>
+    set((s) => {
+      const proj = s.projects[leadId] || emptyProject();
+      let activity = [...proj.activity, event];
+      // Keep only last 100
+      if (activity.length > 100) activity = activity.slice(-100);
+      return { projects: { ...s.projects, [leadId]: { ...proj, activity } } };
     }),
 
   reset: () => set({ projects: {}, selectedLeadId: null }),
