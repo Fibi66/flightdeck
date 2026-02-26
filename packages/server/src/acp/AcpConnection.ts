@@ -23,6 +23,8 @@ export interface PlanEntry {
   status: acp.PlanEntryStatus;
 }
 
+import { logger } from '../utils/logger.js';
+
 export class AcpConnection extends EventEmitter {
   private process: ChildProcess | null = null;
   private connection: acp.ClientSideConnection | null = null;
@@ -111,7 +113,11 @@ export class AcpConnection extends EventEmitter {
         switch (update.sessionUpdate) {
           case 'agent_message_chunk':
             if (update.content.type === 'text') {
-              this.emit('text', update.content.text);
+              const text = update.content.text;
+              if (text.includes('<!--') || text.includes('DELEGATE') || text.includes('DECISION')) {
+                logger.debug('agent', `ACP text contains command marker`, { text: text.slice(0, 200) });
+              }
+              this.emit('text', text);
             }
             break;
 

@@ -6,6 +6,8 @@ export interface Role {
   color: string;
   icon: string;
   builtIn: boolean;
+  /** Default model to use for agents with this role (e.g. "claude-sonnet-4.6"). Undefined = CLI default. */
+  model?: string;
 }
 
 const BUILT_IN_ROLES: Role[] = [

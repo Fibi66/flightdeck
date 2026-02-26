@@ -19,6 +19,7 @@ export function LeadDashboard({ api, ws }: Props) {
   const [showNewProject, setShowNewProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectTask, setNewProjectTask] = useState('');
+  const [newProjectModel, setNewProjectModel] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const leadAgents = agents.filter((a) => a.role.id === 'lead');
@@ -163,13 +164,13 @@ export function LeadDashboard({ api, ws }: Props) {
     return () => window.removeEventListener('ws-message', handler);
   }, [selectedLeadId, agents]);
 
-  const startLead = useCallback(async (name: string, task?: string) => {
+  const startLead = useCallback(async (name: string, task?: string, model?: string) => {
     setStarting(true);
     try {
       const resp = await fetch('/api/lead/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, task }),
+        body: JSON.stringify({ name, task, model: model || undefined }),
       });
       const data = await resp.json();
       if (data.id) {
@@ -287,9 +288,25 @@ export function LeadDashboard({ api, ws }: Props) {
               placeholder="Initial task (optional)"
               className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1.5 text-sm font-mono text-gray-200 resize-none h-16 focus:outline-none focus:border-yellow-500"
             />
+            <select
+              value={newProjectModel}
+              onChange={(e) => setNewProjectModel(e.target.value)}
+              className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1.5 text-sm font-mono text-gray-200 focus:outline-none focus:border-yellow-500"
+            >
+              <option value="">Model (default)</option>
+              <option value="claude-opus-4.6">Claude Opus 4.6</option>
+              <option value="claude-sonnet-4.6">Claude Sonnet 4.6</option>
+              <option value="claude-sonnet-4.5">Claude Sonnet 4.5</option>
+              <option value="claude-haiku-4.5">Claude Haiku 4.5</option>
+              <option value="gpt-5.3-codex">GPT-5.3 Codex</option>
+              <option value="gpt-5.2-codex">GPT-5.2 Codex</option>
+              <option value="gpt-5.2">GPT-5.2</option>
+              <option value="gpt-5.1-codex">GPT-5.1 Codex</option>
+              <option value="gemini-3-pro-preview">Gemini 3 Pro</option>
+            </select>
             <div className="flex gap-2">
               <button
-                onClick={() => startLead(newProjectName || 'Untitled', newProjectTask.trim() || undefined)}
+                onClick={() => startLead(newProjectName || 'Untitled', newProjectTask.trim() || undefined, newProjectModel || undefined)}
                 disabled={starting}
                 className="flex-1 bg-yellow-600 hover:bg-yellow-500 disabled:bg-gray-600 text-black text-sm font-semibold py-1.5 rounded flex items-center justify-center gap-1"
               >
@@ -297,7 +314,7 @@ export function LeadDashboard({ api, ws }: Props) {
                 {starting ? '...' : 'Create'}
               </button>
               <button
-                onClick={() => { setShowNewProject(false); setNewProjectName(''); setNewProjectTask(''); }}
+                onClick={() => { setShowNewProject(false); setNewProjectName(''); setNewProjectTask(''); setNewProjectModel(''); }}
                 className="px-3 py-1.5 text-sm text-gray-400 hover:text-gray-200"
               >
                 Cancel

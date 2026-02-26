@@ -46,6 +46,7 @@ export interface Role {
   color: string;
   icon: string;
   builtIn: boolean;
+  model?: string;
 }
 
 export interface AgentInfo {
@@ -65,6 +66,7 @@ export interface AgentInfo {
   messages?: AcpTextChunk[];
   pendingPermission?: AcpPermissionRequest;
   projectName?: string;
+  model?: string;
 }
 
 export type TaskStatus = 'queued' | 'assigned' | 'in_progress' | 'review' | 'done' | 'failed';

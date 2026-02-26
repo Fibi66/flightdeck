@@ -26,15 +26,15 @@ export function apiRouter(
   });
 
   router.post('/agents', (req, res) => {
-    const { roleId, taskId, mode, autopilot } = req.body;
+    const { roleId, taskId, mode, autopilot, model } = req.body;
     const role = roleRegistry.get(roleId);
     if (!role) {
       logger.warn('api', `POST /agents — unknown role: ${roleId}`);
       return res.status(400).json({ error: `Unknown role: ${roleId}` });
     }
     try {
-      const agent = agentManager.spawn(role, taskId, undefined, mode, autopilot);
-      logger.info('api', `POST /agents — spawned ${role.name} (${agent.id.slice(0, 8)})`);
+      const agent = agentManager.spawn(role, taskId, undefined, mode, autopilot, model);
+      logger.info('api', `POST /agents — spawned ${role.name} (${agent.id.slice(0, 8)})`, { model: model || role.model });
       res.status(201).json(agent.toJSON());
     } catch (err: any) {
       logger.error('api', `POST /agents — ${err.message}`);
@@ -174,15 +174,16 @@ export function apiRouter(
 
   // --- Project Lead ---
   router.post('/lead/start', (req, res) => {
-    const { task, name } = req.body;
+    const { task, name, model } = req.body;
     const role = roleRegistry.get('lead');
     if (!role) return res.status(500).json({ error: 'Project Lead role not found' });
 
     try {
-      const agent = agentManager.spawn(role, task, undefined, 'acp', true);
+      const agent = agentManager.spawn(role, task, undefined, 'acp', true, model);
       agent.projectName = name || task?.slice(0, 60) || `Project ${new Date().toLocaleDateString()}`;
       logger.info('lead', `Started project "${agent.projectName}" (${agent.id.slice(0, 8)})`, {
         task: task?.slice(0, 80),
+        model: model || role.model,
       });
       if (task) {
         setTimeout(() => {

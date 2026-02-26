@@ -89,7 +89,7 @@ export class AgentManager extends EventEmitter {
     });
   }
 
-  spawn(role: Role, taskId?: string, parentId?: string, mode?: AgentMode, autopilot?: boolean): Agent {
+  spawn(role: Role, taskId?: string, parentId?: string, mode?: AgentMode, autopilot?: boolean, model?: string): Agent {
     if (this.getRunningCount() >= this.maxConcurrent) {
       logger.error('agent', `Concurrency limit reached (${this.maxConcurrent})`, { role: role.id });
       throw new Error(
@@ -107,6 +107,7 @@ export class AgentManager extends EventEmitter {
     }));
 
     const agent = new Agent(role, this.config, taskId, parentId, peers, mode, autopilot);
+    if (model) agent.model = model;
 
     // Track parent-child relationship
     if (parentId) {
@@ -299,23 +300,26 @@ export class AgentManager extends EventEmitter {
     let buf = this.textBuffers.get(agent.id) || '';
     if (!buf) return;
 
-    const patterns: Array<{ regex: RegExp; handler: (agent: Agent, data: string) => void }> = [
-      { regex: SPAWN_REQUEST_REGEX, handler: (a, d) => this.detectSpawnRequest(a.id, d) },
-      { regex: LOCK_REQUEST_REGEX, handler: (a, d) => this.detectLockRequest(a, d) },
-      { regex: LOCK_RELEASE_REGEX, handler: (a, d) => this.detectLockRelease(a, d) },
-      { regex: ACTIVITY_REGEX, handler: (a, d) => this.detectActivity(a, d) },
-      { regex: AGENT_MESSAGE_REGEX, handler: (a, d) => this.detectAgentMessage(a, d) },
-      { regex: DELEGATE_REGEX, handler: (a, d) => this.detectDelegate(a, d) },
-      { regex: DECISION_REGEX, handler: (a, d) => this.detectDecision(a, d) },
-      { regex: PROGRESS_REGEX, handler: (a, d) => this.detectProgress(a, d) },
+    const patterns: Array<{ regex: RegExp; name: string; handler: (agent: Agent, data: string) => void }> = [
+      { regex: SPAWN_REQUEST_REGEX, name: 'SPAWN', handler: (a, d) => this.detectSpawnRequest(a.id, d) },
+      { regex: LOCK_REQUEST_REGEX, name: 'LOCK', handler: (a, d) => this.detectLockRequest(a, d) },
+      { regex: LOCK_RELEASE_REGEX, name: 'UNLOCK', handler: (a, d) => this.detectLockRelease(a, d) },
+      { regex: ACTIVITY_REGEX, name: 'ACTIVITY', handler: (a, d) => this.detectActivity(a, d) },
+      { regex: AGENT_MESSAGE_REGEX, name: 'AGENT_MSG', handler: (a, d) => this.detectAgentMessage(a, d) },
+      { regex: DELEGATE_REGEX, name: 'DELEGATE', handler: (a, d) => this.detectDelegate(a, d) },
+      { regex: DECISION_REGEX, name: 'DECISION', handler: (a, d) => this.detectDecision(a, d) },
+      { regex: PROGRESS_REGEX, name: 'PROGRESS', handler: (a, d) => this.detectProgress(a, d) },
     ];
 
     let found = true;
     while (found) {
       found = false;
-      for (const { regex, handler } of patterns) {
+      for (const { regex, name, handler } of patterns) {
         const match = buf.match(regex);
         if (match) {
+          logger.info('agent', `Command detected: ${name} from ${agent.role.name} (${agent.id.slice(0, 8)})`, {
+            matchPreview: match[0].slice(0, 120),
+          });
           handler(agent, match[0]);
           buf = buf.slice(0, match.index!) + buf.slice(match.index! + match[0].length);
           found = true;
@@ -332,6 +336,13 @@ export class AgentManager extends EventEmitter {
       buf = buf.slice(-200);
     }
     this.textBuffers.set(agent.id, buf);
+
+    // Debug: periodically log buffer state for lead agents
+    if (agent.role.id === 'lead' && buf.length > 10) {
+      logger.debug('agent', `Buffer for ${agent.id.slice(0, 8)} (${buf.length} chars)`, {
+        tail: buf.slice(-150),
+      });
+    }
   }
 
   private detectSpawnRequest(agentId: string, data: string): void {
