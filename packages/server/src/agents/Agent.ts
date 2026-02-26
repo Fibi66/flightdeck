@@ -273,6 +273,11 @@ CREW_UPDATE -->`;
     }
   }
 
+  /** Send a message to this agent (used for inter-agent communication and completion callbacks) */
+  sendMessage(message: string): void {
+    this.write(message);
+  }
+
   resolvePermission(approved: boolean): void {
     if (this.acpConnection) {
       this.acpConnection.resolvePermission(approved);

@@ -165,5 +165,89 @@ export function apiRouter(
     res.json(activityLedger.getSummary());
   });
 
+  // --- Project Lead ---
+  router.post('/lead/start', (req, res) => {
+    const { task } = req.body;
+    const role = roleRegistry.get('lead');
+    if (!role) return res.status(500).json({ error: 'Project Lead role not found' });
+
+    // Check if a lead already exists
+    const existing = agentManager.getAll().find((a) => a.role.id === 'lead' && a.status === 'running');
+    if (existing) {
+      return res.json(existing.toJSON());
+    }
+
+    try {
+      const agent = agentManager.spawn(role, task, undefined, 'acp', true);
+      if (task) {
+        // Send initial task after spawn
+        setTimeout(() => agent.sendMessage(task), 2000);
+      }
+      res.status(201).json(agent.toJSON());
+    } catch (err: any) {
+      res.status(429).json({ error: err.message });
+    }
+  });
+
+  router.get('/lead', (_req, res) => {
+    const lead = agentManager.getAll().find((a) => a.role.id === 'lead' && a.status === 'running');
+    if (!lead) return res.status(404).json({ error: 'No active Project Lead' });
+    res.json(lead.toJSON());
+  });
+
+  router.post('/lead/message', (req, res) => {
+    const { text } = req.body;
+    const lead = agentManager.getAll().find((a) => a.role.id === 'lead' && a.status === 'running');
+    if (!lead) return res.status(404).json({ error: 'No active Project Lead' });
+    lead.sendMessage(text);
+    res.json({ ok: true });
+  });
+
+  router.get('/lead/decisions', (_req, res) => {
+    const lead = agentManager.getAll().find((a) => a.role.id === 'lead');
+    const decisionLog = agentManager.getDecisionLog();
+    if (lead) {
+      res.json(decisionLog.getByAgent(lead.id));
+    } else {
+      res.json(decisionLog.getAll());
+    }
+  });
+
+  router.get('/lead/delegations', (_req, res) => {
+    const lead = agentManager.getAll().find((a) => a.role.id === 'lead');
+    if (lead) {
+      res.json(agentManager.getDelegations(lead.id));
+    } else {
+      res.json(agentManager.getDelegations());
+    }
+  });
+
+  router.get('/lead/progress', (_req, res) => {
+    const lead = agentManager.getAll().find((a) => a.role.id === 'lead');
+    const delegations = lead ? agentManager.getDelegations(lead.id) : agentManager.getDelegations();
+    const children = lead ? agentManager.getAll().filter((a) => a.parentId === lead.id) : [];
+
+    const active = delegations.filter((d) => d.status === 'active').length;
+    const completed = delegations.filter((d) => d.status === 'completed').length;
+    const failed = delegations.filter((d) => d.status === 'failed').length;
+    const total = delegations.length;
+
+    res.json({
+      totalDelegations: total,
+      active,
+      completed,
+      failed,
+      completionPct: total > 0 ? Math.round((completed / total) * 100) : 0,
+      teamSize: children.length,
+      teamAgents: children.map((a) => ({
+        id: a.id,
+        role: a.role,
+        status: a.status,
+        taskId: a.taskId,
+      })),
+      delegations,
+    });
+  });
+
   return router;
 }

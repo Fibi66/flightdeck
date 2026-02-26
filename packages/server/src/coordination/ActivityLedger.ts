@@ -11,6 +11,7 @@ export type ActionType =
   | 'lock_acquired'
   | 'lock_released'
   | 'message_sent'
+  | 'delegated'
   | 'error';
 
 export interface ActivityEntry {
