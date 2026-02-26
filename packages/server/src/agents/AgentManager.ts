@@ -79,12 +79,12 @@ export class AgentManager extends EventEmitter {
       if (target && target.status === 'running') {
         const fromAgent = this.agents.get(msg.from);
         const fromLabel = fromAgent ? `${fromAgent.role.name} (${msg.from.slice(0, 8)})` : msg.from.slice(0, 8);
-        logger.info('message', `${fromLabel} → ${target.role.name} (${msg.to.slice(0, 8)})`, {
+        logger.info('message', `Delivering: ${fromLabel} → ${target.role.name} (${msg.to.slice(0, 8)})`, {
           contentPreview: msg.content.slice(0, 80),
         });
         target.sendMessage(`[Message from ${fromLabel}]: ${msg.content}`);
       } else {
-        logger.warn('message', `Target agent not found or not running: ${msg.to.slice(0, 8)}`);
+        logger.warn('message', `Delivery failed — target not found/running: ${msg.to.slice(0, 8)}`);
       }
     });
   }
@@ -427,12 +427,35 @@ export class AgentManager extends EventEmitter {
       const msg = JSON.parse(match[1]);
       if (!msg.to || !msg.content) return;
 
-      // Resolve "to" — could be agent ID or role name
+      // Resolve "to" — could be agent ID, role ID, or role name
       let targetId = msg.to;
       if (!this.agents.has(targetId)) {
-        // Try to find by role
-        const byRole = this.getAll().find((a) => a.role.id === msg.to && a.status === 'running');
-        if (byRole) targetId = byRole.id;
+        // Try to find by role ID
+        const byRoleId = this.getAll().find((a) => a.role.id === msg.to && a.status === 'running');
+        if (byRoleId) {
+          targetId = byRoleId.id;
+        } else {
+          // Try by role name (case-insensitive)
+          const lower = msg.to.toLowerCase();
+          const byRoleName = this.getAll().find((a) =>
+            a.role.name.toLowerCase() === lower && a.status === 'running'
+          );
+          if (byRoleName) {
+            targetId = byRoleName.id;
+          } else {
+            // Try partial match
+            const partial = this.getAll().find((a) =>
+              a.role.id.includes(lower) || a.role.name.toLowerCase().includes(lower) && a.status === 'running'
+            );
+            if (partial) targetId = partial.id;
+          }
+        }
+      }
+
+      const targetAgent = this.agents.get(targetId);
+      if (!targetAgent) {
+        logger.warn('message', `Cannot resolve target "${msg.to}" for message from ${agent.role.name} (${agent.id.slice(0, 8)})`);
+        return;
       }
 
       this.messageBus.send({
@@ -442,15 +465,14 @@ export class AgentManager extends EventEmitter {
         content: msg.content,
       });
 
-      logger.info('message', `Agent message: ${agent.role.name} (${agent.id.slice(0, 8)}) → ${targetId.slice(0, 8)}`, {
+      logger.info('message', `Agent message: ${agent.role.name} (${agent.id.slice(0, 8)}) → ${targetAgent.role.name} (${targetId.slice(0, 8)})`, {
         contentPreview: msg.content.slice(0, 80),
       });
-      const targetAgent = this.agents.get(targetId);
       this.emit('agent:message_sent', {
         from: agent.id,
         fromRole: agent.role.name,
         to: targetId,
-        toRole: targetAgent?.role?.name ?? msg.to,
+        toRole: targetAgent.role.name,
         content: msg.content,
       });
     } catch {

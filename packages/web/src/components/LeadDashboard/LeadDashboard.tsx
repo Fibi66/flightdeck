@@ -464,18 +464,22 @@ function CommsPanel({ comms }: { comms: AgentComm[] }) {
         {recent.length === 0 ? (
           <p className="text-xs text-gray-500 text-center py-4 font-mono">No messages yet</p>
         ) : (
-          recent.map((c) => (
-            <div key={c.id} className="px-3 py-1.5 border-b border-gray-700/30">
-              <div className="flex items-center gap-1 text-xs">
-                <span className="font-mono font-semibold text-cyan-400">{c.fromRole}</span>
-                <span className="text-gray-500">→</span>
-                <span className="font-mono font-semibold text-green-400">{c.toRole}</span>
+          recent.map((c) => {
+            const time = new Date(c.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            return (
+              <div key={c.id} className="px-3 py-1.5 border-b border-gray-700/30">
+                <div className="flex items-center gap-1 text-xs">
+                  <span className="font-mono font-semibold text-cyan-400">{c.fromRole}</span>
+                  <span className="text-gray-500">→</span>
+                  <span className="font-mono font-semibold text-green-400">{c.toRole}</span>
+                  <span className="text-xs font-mono text-gray-600 ml-auto shrink-0">{time}</span>
+                </div>
+                <p className="text-xs font-mono text-gray-300 mt-0.5 break-words whitespace-pre-wrap">
+                  {c.content.length > 200 ? c.content.slice(0, 200) + '…' : c.content}
+                </p>
               </div>
-              <p className="text-xs font-mono text-gray-300 mt-0.5 break-words whitespace-pre-wrap">
-                {c.content.length > 200 ? c.content.slice(0, 200) + '…' : c.content}
-              </p>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
     </div>
@@ -514,11 +518,15 @@ function ActivityFeed({ activity, agents }: { activity: ActivityEvent[]; agents:
           recent.map((evt) => {
             const agent = agents.find((a: any) => a.id === evt.agentId);
             const label = agent?.role?.name ?? evt.agentRole;
+            const time = new Date(evt.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
             return (
               <div key={evt.id} className="px-3 py-1.5 border-b border-gray-700/30 flex items-start gap-2">
                 {getIcon(evt.type, evt.status)}
                 <div className="min-w-0 flex-1">
-                  <span className="text-xs font-mono text-gray-400">{label}: </span>
+                  <div className="flex items-center gap-1">
+                    <span className="text-xs font-mono text-gray-400">{label}</span>
+                    <span className="text-xs font-mono text-gray-600 ml-auto shrink-0">{time}</span>
+                  </div>
                   <span className="text-xs font-mono text-gray-300 break-words">{evt.summary}</span>
                 </div>
               </div>
