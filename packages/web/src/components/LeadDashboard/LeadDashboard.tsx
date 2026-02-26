@@ -151,9 +151,9 @@ export function LeadDashboard({ api, ws }: Props) {
           store.addComm(leadId, {
             id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
             fromId: msg.from,
-            fromRole: fromAgent?.role?.name ?? 'Unknown',
+            fromRole: msg.fromRole || fromAgent?.role?.name || 'Unknown',
             toId: msg.to,
-            toRole: toAgent?.role?.name ?? 'Unknown',
+            toRole: msg.toRole || toAgent?.role?.name || 'Unknown',
             content: msg.content?.slice(0, 300) ?? '',
             timestamp: Date.now(),
           });

@@ -445,7 +445,14 @@ export class AgentManager extends EventEmitter {
       logger.info('message', `Agent message: ${agent.role.name} (${agent.id.slice(0, 8)}) → ${targetId.slice(0, 8)}`, {
         contentPreview: msg.content.slice(0, 80),
       });
-      this.emit('agent:message_sent', { from: agent.id, to: targetId, content: msg.content });
+      const targetAgent = this.agents.get(targetId);
+      this.emit('agent:message_sent', {
+        from: agent.id,
+        fromRole: agent.role.name,
+        to: targetId,
+        toRole: targetAgent?.role?.name ?? msg.to,
+        content: msg.content,
+      });
     } catch {
       // ignore malformed messages
     }
@@ -552,7 +559,13 @@ export class AgentManager extends EventEmitter {
 
     logger.info('delegation', `Child ${agent.role.name} (${agent.id.slice(0, 8)}) → parent ${parent.role.name} (${parent.id.slice(0, 8)}): ${status}`);
     parent.sendMessage(summary);
-    this.emit('agent:message_sent', { from: agent.id, to: parent.id, content: summary });
+    this.emit('agent:message_sent', {
+      from: agent.id,
+      fromRole: agent.role.name,
+      to: parent.id,
+      toRole: parent.role.name,
+      content: summary,
+    });
     this.emit('agent:completion_reported', { childId: agent.id, parentId: agent.parentId, status });
   }
 
