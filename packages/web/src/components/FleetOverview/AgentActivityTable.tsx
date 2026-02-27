@@ -113,8 +113,8 @@ export function AgentActivityTable({ agents, tasks, locks, api }: Props) {
           {agents.map((agent) => {
             const activity = getCurrentActivity(agent);
             const agentLocks = locks.filter((l) => l.agentId === agent.id);
-            const agentTask = agent.taskId
-              ? tasks.find((t) => t.id === agent.taskId)
+            const agentTask = agent.task
+              ? tasks.find((t) => t.id === agent.task)
               : undefined;
             const planTotal = agent.plan?.length ?? 0;
             const planDone = agent.plan?.filter((p) => p.status === 'completed').length ?? 0;

@@ -114,7 +114,7 @@ describe('TaskQueue', () => {
       id: 'agent-1',
       role: { id: 'designer' },
       status: 'running',
-      taskId: undefined as string | undefined,
+      task: undefined as string | undefined,
       write: vi.fn(),
     };
 

@@ -324,6 +324,24 @@ export function LeadDashboard({ api, ws }: Props) {
     });
   }, [input, selectedLeadId]);
 
+  const handleConfirmDecision = useCallback(async (decisionId: string) => {
+    if (!selectedLeadId) return;
+    const resp = await fetch(`/api/decisions/${decisionId}/confirm`, { method: 'POST' });
+    if (resp.ok) {
+      const decision = await resp.json();
+      useLeadStore.getState().updateDecision(selectedLeadId, decisionId, { status: decision.status, confirmedAt: decision.confirmedAt });
+    }
+  }, [selectedLeadId]);
+
+  const handleRejectDecision = useCallback(async (decisionId: string) => {
+    if (!selectedLeadId) return;
+    const resp = await fetch(`/api/decisions/${decisionId}/reject`, { method: 'POST' });
+    if (resp.ok) {
+      const decision = await resp.json();
+      useLeadStore.getState().updateDecision(selectedLeadId, decisionId, { status: decision.status, confirmedAt: decision.confirmedAt });
+    }
+  }, [selectedLeadId]);
+
   const messages = currentProject?.messages ?? [];
   const decisions = currentProject?.decisions ?? [];
   const progress = currentProject?.progress ?? null;
@@ -385,7 +403,7 @@ export function LeadDashboard({ api, ws }: Props) {
                 <div className="flex items-center gap-2">
                   <span className={`w-2 h-2 rounded-full shrink-0 ${isRunning ? 'bg-green-400' : 'bg-gray-500'}`} />
                   <span className="text-sm font-mono truncate flex-1">
-                    {lead.projectName || lead.taskId?.slice(0, 40) || lead.id.slice(0, 8)}
+                    {lead.projectName || lead.task?.slice(0, 40) || lead.id.slice(0, 8)}
                   </span>
                   <span
                     role="button"
@@ -822,7 +840,7 @@ export function LeadDashboard({ api, ws }: Props) {
                   </button>
                 </div>
                 <CollapsibleSection title="Decisions" icon={<Lightbulb className="w-3.5 h-3.5 text-yellow-400" />} badge={decisions.length} defaultHeight={150}>
-                  <DecisionPanelContent decisions={decisions} />
+                  <DecisionPanelContent decisions={decisions} onConfirm={handleConfirmDecision} onReject={handleRejectDecision} />
                 </CollapsibleSection>
                 <CollapsibleSection title="Agent Comms" icon={<MessageSquare className="w-3.5 h-3.5 text-purple-400" />} badge={comms.length} defaultHeight={200}>
                   <CommsPanelContent comms={comms} />
@@ -1135,7 +1153,7 @@ function AgentReportBlock({ content, compact }: { content: string; compact?: boo
   );
 }
 
-function DecisionPanelContent({ decisions }: { decisions: any[] }) {
+function DecisionPanelContent({ decisions, onConfirm, onReject }: { decisions: any[]; onConfirm?: (id: string) => void; onReject?: (id: string) => void }) {
   const feedRef = useRef<HTMLDivElement>(null);
   const [selectedDecision, setSelectedDecision] = useState<any | null>(null);
   useEffect(() => {
@@ -1153,7 +1171,7 @@ function DecisionPanelContent({ decisions }: { decisions: any[] }) {
           decisions.map((d: any, i: number) => (
             <div
               key={d.id || `dec-${i}`}
-              className="bg-gray-800 border border-gray-700 rounded p-2 cursor-pointer hover:bg-gray-700/50 transition-colors"
+              className={`bg-gray-800 border rounded p-2 cursor-pointer hover:bg-gray-700/50 transition-colors ${d.needsConfirmation && d.status === 'recorded' ? 'border-yellow-600' : d.status === 'rejected' ? 'border-red-700' : 'border-gray-700'}`}
               onClick={() => setSelectedDecision(d)}
             >
               <div className="flex items-start gap-2">
@@ -1164,9 +1182,28 @@ function DecisionPanelContent({ decisions }: { decisions: any[] }) {
                     {d.agentRole && (
                       <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 shrink-0">{d.agentRole}</span>
                     )}
+                    {d.status && d.status !== 'recorded' && (
+                      <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded shrink-0 ${d.status === 'confirmed' ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'}`}>{d.status}</span>
+                    )}
                   </div>
                   {d.rationale && <p className="text-xs font-mono text-gray-400 mt-1 line-clamp-2">{d.rationale}</p>}
                   <p className="text-xs text-gray-600 mt-1">{new Date(d.timestamp).toLocaleTimeString()}</p>
+                  {d.needsConfirmation && d.status === 'recorded' && (
+                    <div className="flex gap-2 mt-2" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => onConfirm?.(d.id)}
+                        className="text-xs px-2 py-1 rounded bg-green-800 hover:bg-green-700 text-green-200 flex items-center gap-1"
+                      >
+                        <Check className="w-3 h-3" /> Confirm
+                      </button>
+                      <button
+                        onClick={() => onReject?.(d.id)}
+                        className="text-xs px-2 py-1 rounded bg-red-800 hover:bg-red-700 text-red-200 flex items-center gap-1"
+                      >
+                        <X className="w-3 h-3" /> Reject
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

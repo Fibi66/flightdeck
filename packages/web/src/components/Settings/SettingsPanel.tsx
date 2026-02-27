@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAppStore } from '../../stores/appStore';
-import { Trash2, Plus, Sun, Moon, Settings, Cpu, Users, Terminal, ChevronDown, ChevronRight, Zap } from 'lucide-react';
+import { useSettingsStore } from '../../stores/settingsStore';
+import { Trash2, Plus, Sun, Moon, Settings, Cpu, Users, Terminal, ChevronDown, ChevronRight, Zap, Volume2 } from 'lucide-react';
 
 interface Props {
   api: any;
@@ -8,6 +9,7 @@ interface Props {
 
 export function SettingsPanel({ api }: Props) {
   const { config, roles } = useAppStore();
+  const { soundEnabled, toggleSound } = useSettingsStore();
   const [maxAgents, setMaxAgents] = useState(config?.maxConcurrentAgents || 5);
   const [expandedRole, setExpandedRole] = useState<string | null>(null);
 
@@ -120,6 +122,33 @@ export function SettingsPanel({ api }: Props) {
           </div>
         </section>
       </div>
+
+      {/* Sound Notifications */}
+      <section className="bg-surface-raised border border-gray-700 rounded-lg p-4 mb-6">
+        <h3 className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+          <Volume2 className="w-3.5 h-3.5" /> Sound Notifications
+        </h3>
+        <label className="flex items-center justify-between cursor-pointer">
+          <div>
+            <span className="text-sm text-gray-300">Enable sound alerts</span>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Play a sound when agents request input or all work is complete
+            </p>
+          </div>
+          <button
+            onClick={toggleSound}
+            className={`relative w-10 h-5 rounded-full transition-colors ${
+              soundEnabled ? 'bg-accent' : 'bg-gray-600'
+            }`}
+          >
+            <span
+              className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
+                soundEnabled ? 'translate-x-5' : 'translate-x-0'
+              }`}
+            />
+          </button>
+        </label>
+      </section>
 
       {/* CLI Config */}
       <section className="bg-surface-raised border border-gray-700 rounded-lg p-4 mb-6">

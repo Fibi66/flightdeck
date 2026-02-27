@@ -132,7 +132,7 @@ export class TaskQueue extends EventEmitter {
       let candidate = agents.find(
         (a) =>
           (a.status === 'running' || a.status === 'idle') &&
-          !a.taskId &&
+          !a.task &&
           (!task.assignedRole || a.role.id === task.assignedRole),
       );
 
@@ -155,7 +155,7 @@ export class TaskQueue extends EventEmitter {
           status: 'in_progress',
           assignedAgentId: candidate.id,
         });
-        candidate.taskId = task.id;
+        candidate.task = `${task.title}: ${task.description}`.slice(0, 500);
         const prompt = `## Task Assigned\n**${task.title}**\n\n${task.description}\n\nPlease work on this task now.`;
         candidate.write(prompt);
       }

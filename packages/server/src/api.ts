@@ -7,6 +7,7 @@ import { updateConfig } from './config.js';
 import type { Database } from './db/database.js';
 import type { FileLockRegistry } from './coordination/FileLockRegistry.js';
 import type { ActivityLedger, ActionType } from './coordination/ActivityLedger.js';
+import type { DecisionLog } from './coordination/DecisionLog.js';
 import { logger } from './utils/logger.js';
 import { writeAgentFiles } from './agents/agentFiles.js';
 
@@ -18,6 +19,7 @@ export function apiRouter(
   _db: Database,
   lockRegistry: FileLockRegistry,
   activityLedger: ActivityLedger,
+  decisionLog: DecisionLog,
 ): Router {
   const router = Router();
 
@@ -27,14 +29,14 @@ export function apiRouter(
   });
 
   router.post('/agents', (req, res) => {
-    const { roleId, taskId, mode, autopilot, model } = req.body;
+    const { roleId, task, mode, autopilot, model } = req.body;
     const role = roleRegistry.get(roleId);
     if (!role) {
       logger.warn('api', `POST /agents — unknown role: ${roleId}`);
       return res.status(400).json({ error: `Unknown role: ${roleId}` });
     }
     try {
-      const agent = agentManager.spawn(role, taskId, undefined, mode, autopilot, model);
+      const agent = agentManager.spawn(role, task, undefined, mode, autopilot, model);
       logger.info('api', `POST /agents — spawned ${role.name} (${agent.id.slice(0, 8)})`, { model: model || role.model });
       res.status(201).json(agent.toJSON());
     } catch (err: any) {
@@ -126,6 +128,10 @@ export function apiRouter(
   router.patch('/config', (req, res) => {
     const updated = updateConfig(req.body);
     agentManager.setMaxConcurrent(updated.maxConcurrentAgents);
+    // Persist maxConcurrentAgents to SQLite so it survives server restart
+    if (req.body.maxConcurrentAgents !== undefined) {
+      _db.setSetting('maxConcurrentAgents', String(updated.maxConcurrentAgents));
+    }
     res.json(updated);
   });
 
@@ -293,7 +299,7 @@ export function apiRouter(
         id: a.id,
         role: a.role,
         status: a.status,
-        taskId: a.taskId,
+        task: a.task,
         model: a.model || a.role.model,
         inputTokens: a.inputTokens,
         outputTokens: a.outputTokens,
@@ -302,6 +308,28 @@ export function apiRouter(
       })),
       delegations,
     });
+  });
+
+  // --- Decisions ---
+  router.get('/decisions', (req, res) => {
+    const { needs_confirmation } = req.query;
+    if (needs_confirmation === 'true') {
+      res.json(decisionLog.getNeedingConfirmation());
+    } else {
+      res.json(decisionLog.getAll());
+    }
+  });
+
+  router.post('/decisions/:id/confirm', (req, res) => {
+    const decision = decisionLog.confirm(req.params.id);
+    if (!decision) return res.status(404).json({ error: 'Decision not found' });
+    res.json(decision);
+  });
+
+  router.post('/decisions/:id/reject', (req, res) => {
+    const decision = decisionLog.reject(req.params.id);
+    if (!decision) return res.status(404).json({ error: 'Decision not found' });
+    res.json(decision);
   });
 
   return router;

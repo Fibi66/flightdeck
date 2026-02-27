@@ -107,9 +107,9 @@ export function AgentCard({ agent, api }: Props) {
         </div>
       </div>
 
-      {agent.taskId && (
+      {agent.task && (
         <div className="text-xs text-gray-400 mb-1">
-          Task: <span className="text-gray-300">{agent.taskId.slice(0, 8)}...</span>
+          Task: <span className="text-gray-300">{agent.task.slice(0, 60)}...</span>
         </div>
       )}
 

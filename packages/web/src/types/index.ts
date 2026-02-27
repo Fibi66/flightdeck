@@ -66,7 +66,7 @@ export interface AgentInfo {
   id: string;
   role: Role;
   status: AgentStatus;
-  taskId?: string;
+  task?: string;
   parentId?: string;
   childIds: string[];
   createdAt: string;
@@ -135,6 +135,9 @@ export interface Decision {
   agentRole: string;
   title: string;
   rationale: string;
+  needsConfirmation?: boolean;
+  status?: 'recorded' | 'confirmed' | 'rejected';
+  confirmedAt?: string | null;
   timestamp: string;
 }
 
@@ -163,7 +166,7 @@ export interface LeadProgress {
     id: string;
     role: Role;
     status: AgentStatus;
-    taskId?: string;
+    task?: string;
     model?: string;
     inputTokens?: number;
     outputTokens?: number;

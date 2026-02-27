@@ -2,6 +2,7 @@ import { Routes, Route } from 'react-router-dom';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useApi } from './hooks/useApi';
 import { useAppStore } from './stores/appStore';
+import { useSettingsStore } from './stores/settingsStore';
 import { AgentDashboard } from './components/AgentDashboard/AgentDashboard';
 import { FleetOverview } from './components/FleetOverview';
 import { TaskQueuePanel } from './components/TaskQueue/TaskQueuePanel';
@@ -11,15 +12,18 @@ import { LeadDashboard } from './components/LeadDashboard';
 import { Sidebar } from './components/Sidebar';
 import { ToastContainer, useToastStore } from './components/Toast';
 import { PermissionDialog } from './components/PermissionDialog';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
+import { playAttentionSound, playCompletionSound } from './utils/notificationSound';
 
 export function App() {
   const ws = useWebSocket();
   const api = useApi();
   const { connected, agents, selectedAgentId } = useAppStore();
+  const soundEnabled = useSettingsStore((s) => s.soundEnabled);
   const addToast = useToastStore((s) => s.add);
+  const prevAgentStatesRef = useRef<Map<string, string>>(new Map());
 
-  // Show notifications for agent lifecycle events
+  // Show notifications for agent lifecycle events, sound notifications, and context compaction
   useEffect(() => {
     const handler = (event: Event) => {
       const msg = JSON.parse((event as MessageEvent).data);
@@ -29,11 +33,32 @@ export function App() {
         addToast(msg.code === 0 ? 'success' : 'error', `Agent ${msg.agentId.slice(0, 8)} ${msg.code === 0 ? 'completed' : 'failed'}`);
       } else if (msg.type === 'agent:sub_spawned') {
         addToast('info', `${msg.child.role.icon} Sub-agent spawned by ${msg.parentId.slice(0, 8)}`);
+      } else if (msg.type === 'agent:permission_request' && soundEnabled) {
+        playAttentionSound();
+      } else if (msg.type === 'agent:context_compacted') {
+        const pct = msg.percentDrop ? ` (${msg.percentDrop}% reduction)` : '';
+        addToast('info', `🔄 Context compacted for agent ${msg.agentId.slice(0, 8)}${pct}`);
       }
     };
     window.addEventListener('ws-message', handler);
     return () => window.removeEventListener('ws-message', handler);
-  }, [addToast]);
+  }, [addToast, soundEnabled]);
+
+  // Detect all-agents-idle and play completion sound
+  useEffect(() => {
+    const prev = prevAgentStatesRef.current;
+    const hadRunning = Array.from(prev.values()).some((s) => s === 'running');
+    const allIdle = agents.length > 0 && agents.every((a) => a.status !== 'running' && a.status !== 'creating');
+
+    // Update tracked states
+    const next = new Map<string, string>();
+    agents.forEach((a) => next.set(a.id, a.status));
+    prevAgentStatesRef.current = next;
+
+    if (hadRunning && allIdle && soundEnabled) {
+      playCompletionSound();
+    }
+  }, [agents, soundEnabled]);
 
   return (
     <div className="flex h-screen bg-surface text-gray-200">
@@ -54,11 +79,8 @@ export function App() {
           </header>
 
           <Routes>
-            <Route
-              path="/"
-              element={<AgentDashboard api={api} ws={ws} />}
-            />
-            <Route path="/lead" element={<LeadDashboard api={api} ws={ws} />} />
+            <Route path="/" element={<LeadDashboard api={api} ws={ws} />} />
+            <Route path="/agents" element={<AgentDashboard api={api} ws={ws} />} />
             <Route path="/overview" element={<FleetOverview api={api} ws={ws} />} />
             <Route path="/tasks" element={<TaskQueuePanel api={api} />} />
             <Route path="/settings" element={<SettingsPanel api={api} />} />

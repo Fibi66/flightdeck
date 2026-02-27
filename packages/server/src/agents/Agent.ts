@@ -15,7 +15,7 @@ export interface AgentContextInfo {
   role: string;
   roleName: string;
   status: AgentStatus;
-  taskId?: string;
+  task?: string;
   lockedFiles: string[];
   model?: string;
   parentId?: string;
@@ -27,7 +27,7 @@ export interface AgentJSON {
   status: AgentStatus;
   mode: AgentMode;
   autopilot: boolean;
-  taskId?: string;
+  task?: string;
   parentId?: string;
   childIds: string[];
   createdAt: string;
@@ -51,7 +51,7 @@ export class Agent {
   public readonly mode: AgentMode;
   public readonly autopilot: boolean;
   public status: AgentStatus = 'creating';
-  public taskId?: string;
+  public task?: string;
   public parentId?: string;
   public childIds: string[] = [];
   public plan: PlanEntry[] = [];
@@ -85,16 +85,17 @@ export class Agent {
   private planListeners: Array<(entries: PlanEntry[]) => void> = [];
   private permissionRequestListeners: Array<(request: any) => void> = [];
   private sessionReadyListeners: Array<(sessionId: string) => void> = [];
+  private contextCompactedListeners: Array<(info: { previousUsed: number; currentUsed: number; percentDrop: number }) => void> = [];
   private peers: AgentContextInfo[];
 
   /** Resume a previous session by its Copilot session ID */
   public resumeSessionId?: string;
 
-  constructor(role: Role, config: ServerConfig, taskId?: string, parentId?: string, peers: AgentContextInfo[] = [], mode?: AgentMode, autopilot?: boolean) {
+  constructor(role: Role, config: ServerConfig, task?: string, parentId?: string, peers: AgentContextInfo[] = [], mode?: AgentMode, autopilot?: boolean) {
     this.id = uuid();
     this.role = role;
     this.config = config;
-    this.taskId = taskId;
+    this.task = task;
     this.parentId = parentId;
     this.createdAt = new Date();
     this.mode = mode ?? config.defaultAgentMode;
@@ -109,7 +110,7 @@ export class Agent {
     // The system prompt is also in the .agent.md file (via --agent flag) for
     // persistence through context compression, but we include it here too
     // to ensure the agent always sees its role instructions on first message.
-    const taskAssignment = `You are acting as the "${this.role.name}" role. ${this.taskId ? `Your assigned task ID is: ${this.taskId}` : 'Awaiting task assignment.'}`;
+    const taskAssignment = `You are acting as the "${this.role.name}" role. ${this.task ? `Your assigned task is: ${this.task}` : 'Awaiting task assignment.'}`;
     const resumeHint = this.resumeSessionId
       ? `\n\n== SESSION RESUME ==\nYou are resuming a previous session. Your prior session ID was: ${this.resumeSessionId}\nPlease review your previous work from that session and continue where you left off.`
       : '';
@@ -252,10 +253,19 @@ export class Agent {
       this.outputTokens = usage.outputTokens;
     });
 
-    // Track context window from usage_update events
+    // Track context window from usage_update events and detect compaction
     conn.on('usage_update', (info: { size: number; used: number }) => {
+      const previousUsed = this.contextWindowUsed;
       this.contextWindowSize = info.size;
       this.contextWindowUsed = info.used;
+
+      // Detect compaction: significant drop (>30%) in context usage
+      if (previousUsed > 0 && info.used < previousUsed * 0.7 && previousUsed > 1000) {
+        const percentDrop = Math.round(((previousUsed - info.used) / previousUsed) * 100);
+        for (const listener of this.contextCompactedListeners) {
+          listener({ previousUsed, currentUsed: info.used, percentDrop });
+        }
+      }
     });
 
     conn.on('exit', (code: number) => {
@@ -293,7 +303,7 @@ export class Agent {
 
   buildContextManifest(peers: AgentContextInfo[], budget?: { maxConcurrent: number; runningCount: number }): string {
     const shortId = this.id.slice(0, 8);
-    const taskLine = this.taskId ? this.taskId : 'Awaiting assignment';
+    const taskLine = this.task ? this.task : 'Awaiting assignment';
 
     // For leads: show "YOUR AGENTS" (children) separately from other peers
     const isLead = this.role.id === 'lead';
@@ -304,7 +314,7 @@ export class Agent {
       .map((p) => {
         const pShort = p.id.slice(0, 8);
         const modelStr = p.model ? ` [${p.model}]` : '';
-        return `- ${pShort} — ${p.roleName}${modelStr} — ${p.status}${p.taskId ? `, task: ${p.taskId.slice(0, 80)}` : ''}`;
+        return `- ${pShort} — ${p.roleName}${modelStr} — ${p.status}${p.task ? `, task: ${p.task.slice(0, 80)}` : ''}`;
       })
       .join('\n');
 
@@ -312,7 +322,7 @@ export class Agent {
       .map((p) => {
         const pShort = p.id.slice(0, 8);
         const files = p.lockedFiles.length > 0 ? p.lockedFiles.join(', ') : 'none';
-        return `- Agent ${pShort} (${p.roleName}) — Status: ${p.status}, Working on: ${p.taskId || 'idle'}, Files locked: ${files}`;
+        return `- Agent ${pShort} (${p.roleName}) — Status: ${p.status}, Working on: ${p.task || 'idle'}, Files locked: ${files}`;
       })
       .join('\n');
 
@@ -430,7 +440,7 @@ When you discover something important about the codebase, a pattern, a gotcha, o
       .map((p) => {
         const pShort = p.id.slice(0, 8);
         const modelStr = p.model ? ` [${p.model}]` : '';
-        return `- ${pShort} — ${p.roleName}${modelStr} — ${p.status}${p.taskId ? `, task: ${p.taskId.slice(0, 80)}` : ''}`;
+        return `- ${pShort} — ${p.roleName}${modelStr} — ${p.status}${p.task ? `, task: ${p.task.slice(0, 80)}` : ''}`;
       })
       .join('\n');
 
@@ -438,7 +448,7 @@ When you discover something important about the codebase, a pattern, a gotcha, o
       .map((p) => {
         const pShort = p.id.slice(0, 8);
         const files = p.lockedFiles.length > 0 ? p.lockedFiles.join(', ') : 'none';
-        return `- Agent ${pShort} (${p.roleName}) — Status: ${p.status}, Working on: ${p.taskId || 'idle'}, Files locked: ${files}`;
+        return `- Agent ${pShort} (${p.roleName}) — Status: ${p.status}, Working on: ${p.task || 'idle'}, Files locked: ${files}`;
       })
       .join('\n');
 
@@ -533,6 +543,7 @@ CREW_UPDATE -->`;
     this.toolCallListeners.length = 0;
     this.planListeners.length = 0;
     this.permissionRequestListeners.length = 0;
+    this.contextCompactedListeners.length = 0;
   }
 
   resize(cols: number, rows: number): void {
@@ -577,6 +588,10 @@ CREW_UPDATE -->`;
     this.sessionReadyListeners.push(listener);
   }
 
+  onContextCompacted(listener: (info: { previousUsed: number; currentUsed: number; percentDrop: number }) => void): void {
+    this.contextCompactedListeners.push(listener);
+  }
+
   getBufferedOutput(): string {
     if (this.mode === 'acp') {
       return this.messages.join('');
@@ -592,7 +607,7 @@ CREW_UPDATE -->`;
       status: this.status,
       mode: this.mode,
       autopilot: this.autopilot,
-      taskId: this.taskId,
+      task: this.task,
       parentId: this.parentId,
       childIds: this.childIds,
       createdAt: this.createdAt.toISOString(),

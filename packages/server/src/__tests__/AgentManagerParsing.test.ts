@@ -32,13 +32,13 @@ describe('AgentManager output parsing regexes', () => {
       expect(match).toBeNull();
     });
 
-    it('extracts roleId and taskId fields correctly', () => {
-      const input = '<!-- SPAWN_AGENT {"roleId": "developer", "taskId": "implement-auth"} -->';
+    it('extracts roleId and task fields correctly', () => {
+      const input = '<!-- SPAWN_AGENT {"roleId": "developer", "task": "implement-auth"} -->';
       const match = input.match(SPAWN_REQUEST_REGEX);
       expect(match).not.toBeNull();
       const parsed = JSON.parse(match![1]);
       expect(parsed.roleId).toBe('developer');
-      expect(parsed.taskId).toBe('implement-auth');
+      expect(parsed.task).toBe('implement-auth');
     });
   });
 

@@ -4,6 +4,7 @@ import type { AgentManager } from '../agents/AgentManager.js';
 import type { TaskQueue } from '../tasks/TaskQueue.js';
 import type { FileLockRegistry } from '../coordination/FileLockRegistry.js';
 import type { ActivityLedger } from '../coordination/ActivityLedger.js';
+import type { DecisionLog } from '../coordination/DecisionLog.js';
 import { v4 as uuid } from 'uuid';
 
 interface ClientConnection {
@@ -22,6 +23,7 @@ export class WebSocketServer {
     taskQueue: TaskQueue,
     lockRegistry: FileLockRegistry,
     activityLedger: ActivityLedger,
+    decisionLog: DecisionLog,
   ) {
     this.wss = new WsServer({ server, path: '/ws' });
 
@@ -158,6 +160,19 @@ export class WebSocketServer {
 
     agentManager.on('agent:session_ready', (data: any) => {
       this.broadcastAll({ type: 'agent:session_ready', ...data });
+    });
+
+    agentManager.on('agent:context_compacted', (data: any) => {
+      this.broadcastAll({ type: 'agent:context_compacted', ...data });
+    });
+
+    // Decision confirmation/rejection events
+    decisionLog.on('decision:confirmed', (decision: any) => {
+      this.broadcastAll({ type: 'decision:confirmed', decision });
+    });
+
+    decisionLog.on('decision:rejected', (decision: any) => {
+      this.broadcastAll({ type: 'decision:rejected', decision });
     });
   }
 

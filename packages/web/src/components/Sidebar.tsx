@@ -2,8 +2,8 @@ import { NavLink } from 'react-router-dom';
 import { Users, LayoutDashboard, ListTodo, Settings, Crown } from 'lucide-react';
 
 const links = [
-  { to: '/lead', icon: Crown, label: 'Project Lead' },
-  { to: '/', icon: Users, label: 'Agents' },
+  { to: '/', icon: Crown, label: 'Project Lead' },
+  { to: '/agents', icon: Users, label: 'Agents' },
   { to: '/overview', icon: LayoutDashboard, label: 'Fleet Overview' },
   { to: '/tasks', icon: ListTodo, label: 'Tasks' },
   { to: '/settings', icon: Settings, label: 'Settings' },
@@ -16,7 +16,7 @@ export function Sidebar() {
         <NavLink
           key={to}
           to={to}
-          end={to === '/'}
+          end={to === '/' || to === '/agents'}
           className={({ isActive }: { isActive: boolean }) =>
             `p-2.5 rounded-lg transition-colors ${
               isActive

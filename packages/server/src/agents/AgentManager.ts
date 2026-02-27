@@ -104,7 +104,7 @@ export class AgentManager extends EventEmitter {
     });
   }
 
-  spawn(role: Role, taskId?: string, parentId?: string, mode?: AgentMode, autopilot?: boolean, model?: string, cwd?: string, resumeSessionId?: string): Agent {
+  spawn(role: Role, task?: string, parentId?: string, mode?: AgentMode, autopilot?: boolean, model?: string, cwd?: string, resumeSessionId?: string): Agent {
     if (this.getRunningCount() >= this.maxConcurrent) {
       logger.error('agent', `Concurrency limit reached (${this.maxConcurrent})`, { role: role.id });
       throw new Error(
@@ -117,13 +117,13 @@ export class AgentManager extends EventEmitter {
       role: a.role.id,
       roleName: a.role.name,
       status: a.status,
-      taskId: a.taskId,
+      task: a.task,
       lockedFiles: [],
       model: a.model,
       parentId: a.parentId,
     }));
 
-    const agent = new Agent(role, this.config, taskId, parentId, peers, mode, autopilot);
+    const agent = new Agent(role, this.config, task, parentId, peers, mode, autopilot);
     if (model) agent.model = model;
     if (cwd) agent.cwd = cwd;
     if (resumeSessionId) agent.resumeSessionId = resumeSessionId;
@@ -201,6 +201,11 @@ export class AgentManager extends EventEmitter {
       }
     });
 
+    agent.onContextCompacted((info) => {
+      logger.info('agent', `Context compacted for ${agent.role.name} (${agent.id.slice(0, 8)}): ${info.percentDrop}% reduction`);
+      this.emit('agent:context_compacted', { agentId: agent.id, ...info });
+    });
+
     agent.onStatus((status) => {
       this.emit('agent:status', { agentId: agent.id, status });
 
@@ -240,7 +245,7 @@ export class AgentManager extends EventEmitter {
 
       if (code !== null && code !== 0) {
         const agentRole = agent.role?.id ?? 'unknown';
-        const crashKey = `${agentRole}:${agent.taskId ?? ''}`;
+        const crashKey = `${agentRole}:${agent.task ?? ''}`;
 
         logger.error('agent', `Crashed ${agent.role.name} (${agent.id.slice(0, 8)}) exit=${code}`, { crashKey });
         this.activityLedger.log(agent.id, agentRole, 'error', `Agent crashed with exit code ${code}`);
@@ -252,7 +257,7 @@ export class AgentManager extends EventEmitter {
         if (this.autoRestart && count < this.maxRestarts) {
           logger.warn('agent', `Auto-restarting ${agent.role.name} (attempt ${count + 1}/${this.maxRestarts})`);
           setTimeout(() => {
-            const newAgent = this.spawn(agent.role, agent.taskId, agent.parentId, undefined, undefined, undefined, agent.cwd);
+            const newAgent = this.spawn(agent.role, agent.task, agent.parentId, undefined, undefined, undefined, agent.cwd);
             this.emit('agent:auto_restarted', { agentId: newAgent.id, previousAgentId: agent.id, crashCount: count });
           }, 2000);
         } else if (count >= this.maxRestarts) {
@@ -282,7 +287,7 @@ export class AgentManager extends EventEmitter {
       mode: agent.mode,
       autopilot: agent.autopilot,
       parentId: parentId?.slice(0, 8),
-      taskId,
+      task,
     });
     this.emit('agent:spawned', agent.toJSON());
     this.updateLeadBudgets();
@@ -319,10 +324,10 @@ export class AgentManager extends EventEmitter {
   restart(id: string): Agent | null {
     const agent = this.agents.get(id);
     if (!agent) return null;
-    const { role, taskId } = agent;
+    const { role, task } = agent;
     agent.kill();
     this.agents.delete(id);
-    const newAgent = this.spawn(role, taskId);
+    const newAgent = this.spawn(role, task);
     this.emit('agent:restarted', { oldId: id, newAgent: newAgent.toJSON() });
     return newAgent;
   }
@@ -548,7 +553,7 @@ export class AgentManager extends EventEmitter {
         const taskPrompt = req.context ? `${req.task}\n\nContext: ${req.context}` : req.task;
         child.sendMessage(taskPrompt);
 
-        const ackMsg = `[Agent ACK] Created ${role.name} (${child.id.slice(0, 8)})${req.model ? ` on ${req.model}` : ''} — task: ${req.task.slice(0, 120)}`;
+        const ackMsg = `[System] Agent queued: ${role.name} (${child.id.slice(0, 8)})${req.model ? ` on ${req.model}` : ''} — task: ${req.task.slice(0, 120)}`;
         agent.sendMessage(ackMsg);
         this.emit('agent:message_sent', {
           from: child.id, fromRole: role.name,
@@ -561,7 +566,7 @@ export class AgentManager extends EventEmitter {
           childId: child.id, childRole: role.id, delegationId: delegation.id,
         });
       } else {
-        const ackMsg = `[Agent ACK] Created ${role.name} (${child.id.slice(0, 8)})${req.model ? ` on ${req.model}` : ''} — ready for tasks. Use DELEGATE to assign work.`;
+        const ackMsg = `[System] Agent queued: ${role.name} (${child.id.slice(0, 8)})${req.model ? ` on ${req.model}` : ''} — ready for tasks. Use DELEGATE to assign work.`;
         agent.sendMessage(ackMsg);
         this.emit('agent:message_sent', {
           from: child.id, fromRole: role.name,
@@ -759,8 +764,8 @@ export class AgentManager extends EventEmitter {
       };
       this.delegations.set(delegation.id, delegation);
 
-      // Update the agent's taskId to reflect the new assignment
-      child.taskId = req.task;
+      // Update the agent's task to reflect the new assignment
+      child.task = req.task;
 
       // Send task + context to child
       const taskPrompt = req.context
@@ -770,7 +775,7 @@ export class AgentManager extends EventEmitter {
 
       // Acknowledge delegation back to lead
       const statusNote = child.status === 'running' ? ' (agent is busy — task queued)' : '';
-      const ackMsg = `[Agent ACK] ${child.role.name} (${child.id.slice(0, 8)}) acknowledged task${statusNote}: ${req.task.slice(0, 120)}`;
+      const ackMsg = `[System] Task delegated: ${child.role.name} (${child.id.slice(0, 8)})${statusNote} — ${req.task.slice(0, 120)}`;
       agent.sendMessage(ackMsg);
       this.emit('agent:message_sent', {
         from: child.id,
@@ -800,16 +805,20 @@ export class AgentManager extends EventEmitter {
       const decision = JSON.parse(match[1]);
       if (!decision.title) return;
 
-      this.decisionLog.add(agent.id, agent.role?.id ?? 'unknown', decision.title, decision.rationale ?? '');
-      logger.info('lead', `Decision by ${agent.role.name}: "${decision.title}"`, { rationale: decision.rationale?.slice(0, 100) });
+      const needsConfirmation = decision.needsConfirmation === true;
+      const recorded = this.decisionLog.add(agent.id, agent.role?.id ?? 'unknown', decision.title, decision.rationale ?? '', needsConfirmation);
+      logger.info('lead', `Decision by ${agent.role.name}: "${decision.title}"${needsConfirmation ? ' [needs confirmation]' : ''}`, { rationale: decision.rationale?.slice(0, 100) });
       // Include leadId so frontend routes to the correct project
       const leadId = agent.parentId || agent.id;
       this.emit('lead:decision', {
+        id: recorded.id,
         agentId: agent.id,
         agentRole: agent.role?.name ?? 'Unknown',
         leadId,
         title: decision.title,
         rationale: decision.rationale,
+        needsConfirmation,
+        status: recorded.status,
       });
     } catch {
       // ignore malformed decisions
@@ -824,6 +833,16 @@ export class AgentManager extends EventEmitter {
       const progress = JSON.parse(match[1]);
       logger.info('lead', `Progress update from ${agent.role.name} (${agent.id.slice(0, 8)})`, progress);
       this.emit('lead:progress', { agentId: agent.id, ...progress });
+
+      // Route progress to any secretary agent that shares the same parent
+      const parentId = agent.parentId || agent.id;
+      const secretaries = this.getAll().filter(
+        (a) => a.role.id === 'secretary' && (a.parentId === parentId || a.id === parentId) && a.id !== agent.id,
+      );
+      for (const secretary of secretaries) {
+        const progressMsg = `[Progress Update from ${agent.role.name} (${agent.id.slice(0, 8)})]\n${JSON.stringify(progress, null, 2)}`;
+        secretary.sendMessage(progressMsg);
+      }
     } catch {
       // ignore malformed progress
     }
@@ -839,7 +858,7 @@ export class AgentManager extends EventEmitter {
         role: a.role.name,
         roleId: a.role.id,
         status: a.status,
-        task: a.taskId?.slice(0, 80) || null,
+        task: a.task?.slice(0, 80) || null,
         parentId: a.parentId?.slice(0, 8) || null,
         model: a.model || a.role.model || 'default',
       }));
@@ -973,7 +992,7 @@ CREW_ROSTER -->`;
     // Strip <!-- ... --> command blocks from output
     const cleanPreview = rawOutput.replace(/<!--[\s\S]*?-->/g, '').replace(/<!--[\s\S]*$/g, '').trim().slice(-6000);
     const sessionLine = agent.sessionId ? `\nSession ID: ${agent.sessionId}` : '';
-    const summary = `[Agent Report] ${agent.role.name} (${agent.id.slice(0, 8)}) finished work.\nTask: ${agent.taskId || 'none'}${sessionLine}\nOutput summary: ${cleanPreview || '(no output)'}`;
+    const summary = `[Agent Report] ${agent.role.name} (${agent.id.slice(0, 8)}) finished work.\nTask: ${agent.task || 'none'}${sessionLine}\nOutput summary: ${cleanPreview || '(no output)'}`;
 
     logger.info('delegation', `Child ${agent.role.name} (${agent.id.slice(0, 8)}) finished → notifying parent ${parent.role.name} (${parent.id.slice(0, 8)})`);
     parent.sendMessage(summary);
@@ -1005,7 +1024,7 @@ CREW_ROSTER -->`;
     const rawOutput2 = agent.getBufferedOutput().slice(-8000);
     const cleanPreview2 = rawOutput2.replace(/<!--[\s\S]*?-->/g, '').replace(/<!--[\s\S]*$/g, '').trim().slice(-6000);
     const sessionLine2 = agent.sessionId ? `\nSession ID: ${agent.sessionId}` : '';
-    const summary = `[Agent Report] ${agent.role.name} (${agent.id.slice(0, 8)}) ${status}.\nTask: ${agent.taskId || 'none'}${sessionLine2}\nOutput summary: ${cleanPreview2 || '(no output)'}`;
+    const summary = `[Agent Report] ${agent.role.name} (${agent.id.slice(0, 8)}) ${status}.\nTask: ${agent.task || 'none'}${sessionLine2}\nOutput summary: ${cleanPreview2 || '(no output)'}`;
 
     logger.info('delegation', `Child ${agent.role.name} (${agent.id.slice(0, 8)}) → parent ${parent.role.name} (${parent.id.slice(0, 8)}): ${status}`);
     parent.sendMessage(summary);
