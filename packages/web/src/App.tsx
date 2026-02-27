@@ -79,13 +79,13 @@ export function App() {
           </header>
 
           <Routes>
-            <Route path="/" element={<Navigate to="/lead" replace />} />
-            <Route path="/lead" element={<LeadDashboard api={api} ws={ws} />} />
+            <Route path="/" element={<LeadDashboard api={api} ws={ws} />} />
+            <Route path="/lead" element={<Navigate to="/" replace />} />
             <Route path="/agents" element={<AgentDashboard api={api} ws={ws} />} />
             <Route path="/overview" element={<FleetOverview api={api} ws={ws} />} />
             <Route path="/tasks" element={<TaskQueuePanel api={api} />} />
             <Route path="/settings" element={<SettingsPanel api={api} />} />
-            <Route path="*" element={<Navigate to="/lead" replace />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </div>
 
