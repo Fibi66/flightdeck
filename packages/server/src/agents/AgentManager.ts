@@ -130,7 +130,7 @@ export class AgentManager extends EventEmitter {
     });
   }
 
-  spawn(role: Role, task?: string, parentId?: string, mode?: AgentMode, autopilot?: boolean, model?: string, cwd?: string, resumeSessionId?: string): Agent {
+  spawn(role: Role, task?: string, parentId?: string, mode?: AgentMode, autopilot?: boolean, model?: string, cwd?: string, resumeSessionId?: string, id?: string): Agent {
     if (this.getRunningCount() >= this.maxConcurrent) {
       logger.error('agent', `Concurrency limit reached (${this.maxConcurrent})`, { role: role.id });
       throw new Error(
@@ -156,7 +156,7 @@ export class AgentManager extends EventEmitter {
       effectiveRole = { ...role, systemPrompt: role.systemPrompt.replace('{{ROLE_LIST}}', roleList) };
     }
 
-    const agent = new Agent(effectiveRole, this.config, task, parentId, peers, mode, autopilot);
+    const agent = new Agent(effectiveRole, this.config, task, parentId, peers, mode, autopilot, id);
     if (model) agent.model = model;
     if (cwd) agent.cwd = cwd;
     if (resumeSessionId) agent.resumeSessionId = resumeSessionId;
@@ -297,7 +297,7 @@ export class AgentManager extends EventEmitter {
         if (this.autoRestart && count < this.maxRestarts) {
           logger.warn('agent', `Auto-restarting ${agent.role.name} (attempt ${count + 1}/${this.maxRestarts})`);
           setTimeout(() => {
-            const newAgent = this.spawn(agent.role, agent.task, agent.parentId, undefined, undefined, undefined, agent.cwd);
+            const newAgent = this.spawn(agent.role, agent.task, agent.parentId, undefined, undefined, agent.model || undefined, agent.cwd, agent.sessionId || undefined);
             this.emit('agent:auto_restarted', { agentId: newAgent.id, previousAgentId: agent.id, crashCount: count });
           }, 2000);
         } else if (count >= this.maxRestarts) {
@@ -364,10 +364,11 @@ export class AgentManager extends EventEmitter {
   restart(id: string): Agent | null {
     const agent = this.agents.get(id);
     if (!agent) return null;
-    const { role, task } = agent;
+    const { role, task, sessionId, parentId, model, cwd } = agent;
     agent.kill();
     this.agents.delete(id);
-    const newAgent = this.spawn(role, task);
+    // Re-spawn with same ID and resume the session if available
+    const newAgent = this.spawn(role, task, parentId, undefined, undefined, model || undefined, cwd, sessionId || undefined, id);
     this.emit('agent:restarted', { oldId: id, newAgent: newAgent.toJSON() });
     return newAgent;
   }

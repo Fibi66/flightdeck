@@ -103,8 +103,8 @@ export class Agent {
   /** Resume a previous session by its Copilot session ID */
   public resumeSessionId?: string;
 
-  constructor(role: Role, config: ServerConfig, task?: string, parentId?: string, peers: AgentContextInfo[] = [], mode?: AgentMode, autopilot?: boolean) {
-    this.id = uuid();
+  constructor(role: Role, config: ServerConfig, task?: string, parentId?: string, peers: AgentContextInfo[] = [], mode?: AgentMode, autopilot?: boolean, id?: string) {
+    this.id = id || uuid();
     this.role = role;
     this.config = config;
     this.task = task;
@@ -118,21 +118,25 @@ export class Agent {
 
   start(): void {
     this.ensureSharedWorkspace();
-    const contextManifest = this.buildContextManifest(this.peers, this.budget);
-    // Include both the role system prompt and context manifest.
-    // The system prompt is also in the .agent.md file (via --agent flag) for
-    // persistence through context compression, but we include it here too
-    // to ensure the agent always sees its role instructions on first message.
-    const taskAssignment = `You are acting as the "${this.role.name}" role. ${this.task ? `Your assigned task is: ${this.task}` : 'Awaiting task assignment.'}`;
-    const resumeHint = this.resumeSessionId
-      ? `\n\n== SESSION RESUME ==\nYou are resuming a previous session. Your prior session ID was: ${this.resumeSessionId}\nPlease review your previous work from that session and continue where you left off.`
-      : '';
-    const initialPrompt = `${this.role.systemPrompt}\n\n${contextManifest}\n\n${taskAssignment}${resumeHint}`;
+    const isResume = !!this.resumeSessionId;
 
-    if (this.mode === 'acp') {
-      this.startAcp(initialPrompt);
+    if (isResume) {
+      // Resume: use --resume flag, send a lighter prompt
+      if (this.mode === 'acp') {
+        this.startAcp(undefined);
+      } else {
+        this.startPty(undefined);
+      }
     } else {
-      this.startPty(initialPrompt);
+      const contextManifest = this.buildContextManifest(this.peers, this.budget);
+      const taskAssignment = `You are acting as the "${this.role.name}" role. ${this.task ? `Your assigned task is: ${this.task}` : 'Awaiting task assignment.'}`;
+      const initialPrompt = `${this.role.systemPrompt}\n\n${contextManifest}\n\n${taskAssignment}`;
+
+      if (this.mode === 'acp') {
+        this.startAcp(initialPrompt);
+      } else {
+        this.startPty(initialPrompt);
+      }
     }
   }
 
@@ -143,14 +147,16 @@ export class Agent {
     }
   }
 
-  private startPty(initialPrompt: string): void {
+  private startPty(initialPrompt?: string): void {
+    const args = [
+      ...this.config.cliArgs,
+      `--agent=${agentFlagForRole(this.role.id)}`,
+      ...(this.model || this.role.model ? ['--model', this.model || this.role.model!] : []),
+      ...(this.resumeSessionId ? ['--resume', this.resumeSessionId] : []),
+    ];
     this.pty.spawn({
       command: this.config.cliCommand,
-      args: [
-        ...this.config.cliArgs,
-        `--agent=${agentFlagForRole(this.role.id)}`,
-        ...(this.model || this.role.model ? ['--model', this.model || this.role.model!] : []),
-      ],
+      args,
       cwd: this.cwd,
       env: {
         AI_CREW_AGENT_ID: this.id,
@@ -160,12 +166,14 @@ export class Agent {
 
     this.status = 'running';
 
-    // Send initial role context after a short delay for CLI to initialize
-    setTimeout(() => {
-      if (this.pty.isRunning) {
-        this.pty.write(initialPrompt + '\n');
-      }
-    }, 1000);
+    // Send initial role context after a short delay for CLI to initialize (skip for resumes)
+    if (initialPrompt) {
+      setTimeout(() => {
+        if (this.pty.isRunning) {
+          this.pty.write(initialPrompt + '\n');
+        }
+      }, 1000);
+    }
 
     this.pty.on('data', (data: string) => {
       for (const listener of this.dataListeners) {
@@ -190,23 +198,29 @@ export class Agent {
     });
   }
 
-  private startAcp(initialPrompt: string): void {
+  private startAcp(initialPrompt?: string): void {
     this.acpConnection = new AcpConnection({ autopilot: this.autopilot });
     this.status = 'running';
     this.wireAcpEvents();
 
+    const cliArgs = [
+      ...this.config.cliArgs,
+      `--agent=${agentFlagForRole(this.role.id)}`,
+      ...(this.model || this.role.model ? ['--model', this.model || this.role.model!] : []),
+      ...(this.resumeSessionId ? ['--resume', this.resumeSessionId] : []),
+    ];
+
     this.acpConnection.start({
       cliCommand: this.config.cliCommand,
-      cliArgs: [
-        ...this.config.cliArgs,
-        `--agent=${agentFlagForRole(this.role.id)}`,
-        ...(this.model || this.role.model ? ['--model', this.model || this.role.model!] : []),
-      ],
+      cliArgs,
       cwd: this.cwd || process.cwd(),
     }).then((sessionId) => {
       this.sessionId = sessionId;
       for (const listener of this.sessionReadyListeners) listener(sessionId);
-      return this.acpConnection!.prompt(initialPrompt);
+      // Only send initial prompt for new sessions; resumed sessions already have context
+      if (initialPrompt) {
+        return this.acpConnection!.prompt(initialPrompt);
+      }
     }).catch((err) => {
       this.status = 'failed';
       for (const listener of this.exitListeners) {
