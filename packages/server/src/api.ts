@@ -3,7 +3,7 @@ import type { AgentManager } from './agents/AgentManager.js';
 import type { TaskQueue } from './tasks/TaskQueue.js';
 import type { RoleRegistry } from './agents/RoleRegistry.js';
 import type { ServerConfig } from './config.js';
-import { updateConfig } from './config.js';
+import { updateConfig, getConfig } from './config.js';
 import type { Database } from './db/database.js';
 import type { FileLockRegistry } from './coordination/FileLockRegistry.js';
 import type { ActivityLedger, ActionType } from './coordination/ActivityLedger.js';
@@ -160,7 +160,7 @@ export function apiRouter(
 
   // --- Config ---
   router.get('/config', (_req, res) => {
-    res.json(config);
+    res.json(getConfig());
   });
 
   router.patch('/config', (req, res) => {
