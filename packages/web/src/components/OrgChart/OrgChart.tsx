@@ -1,8 +1,20 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useAppStore } from '../../stores/appStore';
 import { useLeadStore, type AgentComm } from '../../stores/leadStore';
 import type { AgentInfo } from '../../types';
-import { Network, MessageSquare, Grid3X3 } from 'lucide-react';
+import { Network, MessageSquare, Grid3X3, Users } from 'lucide-react';
+
+// Unified message entry covering both 1:1 comms and group messages
+interface CommEntry {
+  id: string;
+  fromId: string;
+  fromRole: string;
+  toId: string;     // empty for group messages
+  toRole: string;   // empty for group messages
+  content: string;
+  timestamp: number;
+  groupName?: string; // present for group messages
+}
 
 // ---------------------------------------------------------------------------
 // Status colors shared by the agent node
@@ -114,18 +126,18 @@ function roleColor(role: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// CommsList — chronological message list
+// CommsList — chronological message list (1:1 + group)
 // ---------------------------------------------------------------------------
-function CommsList({ comms }: { comms: AgentComm[] }) {
-  if (comms.length === 0) {
+function CommsList({ entries }: { entries: CommEntry[] }) {
+  if (entries.length === 0) {
     return <div className="text-gray-500 text-sm text-center py-4">No messages yet</div>;
   }
 
   return (
     <div className="space-y-1 max-h-[400px] overflow-y-auto">
-      {comms
+      {entries
         .slice()
-        .reverse()
+        .sort((a, b) => b.timestamp - a.timestamp)
         .map((c) => {
           const time = new Date(c.timestamp).toLocaleTimeString([], {
             hour: '2-digit',
@@ -139,10 +151,22 @@ function CommsList({ comms }: { comms: AgentComm[] }) {
               <span className={roleColor(c.fromRole)}>
                 {c.fromRole} ({c.fromId?.slice(0, 6)})
               </span>
-              <span className="text-gray-500"> → </span>
-              <span className={roleColor(c.toRole)}>
-                {c.toRole} ({c.toId?.slice(0, 6)})
-              </span>
+              {c.groupName ? (
+                <>
+                  <span className="text-gray-500"> → </span>
+                  <span className="inline-flex items-center gap-0.5 text-purple-400">
+                    <Users className="w-2.5 h-2.5 inline" />
+                    {c.groupName}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="text-gray-500"> → </span>
+                  <span className={roleColor(c.toRole)}>
+                    {c.toRole} ({c.toId?.slice(0, 6)})
+                  </span>
+                </>
+              )}
               <span className="text-gray-400">: {preview}</span>
             </div>
           );
@@ -160,13 +184,15 @@ interface AgentLabel {
   shortId: string;
 }
 
-function CommsMatrix({ comms, agents }: { comms: AgentComm[]; agents: AgentInfo[] }) {
+function CommsMatrix({ entries, agents }: { entries: CommEntry[]; agents: AgentInfo[] }) {
+  // Only include 1:1 messages in the matrix (group messages don't have a single target)
+  const directComms = entries.filter((c) => !c.groupName);
   // Build a deduplicated list of participants
   const seen = new Map<string, AgentLabel>();
   for (const a of agents) {
     seen.set(a.id, { id: a.id, role: a.role?.name ?? 'Unknown', shortId: a.id.slice(0, 6) });
   }
-  for (const c of comms) {
+  for (const c of directComms) {
     if (!seen.has(c.fromId)) seen.set(c.fromId, { id: c.fromId, role: c.fromRole, shortId: c.fromId.slice(0, 6) });
     if (!seen.has(c.toId)) seen.set(c.toId, { id: c.toId, role: c.toRole, shortId: c.toId.slice(0, 6) });
   }
@@ -179,8 +205,7 @@ function CommsMatrix({ comms, agents }: { comms: AgentComm[]; agents: AgentInfo[
 
   // Count messages per pair
   const counts = new Map<string, number>();
-  for (const c of comms) {
-    const key = `${c.fromId}:${c.toId}`;
+  for (const c of directComms) {    const key = `${c.fromId}:${c.toId}`;
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
 
@@ -264,6 +289,38 @@ export function OrgChart({ api, ws }: Props) {
 
   const project = selectedLeadId ? projects[selectedLeadId] : null;
   const comms: AgentComm[] = project?.comms ?? [];
+  const groupMessages = project?.groupMessages ?? {};
+
+  // Merge 1:1 comms and group messages into unified CommEntry list
+  const allEntries: CommEntry[] = useMemo(() => {
+    const entries: CommEntry[] = comms.map((c) => ({
+      id: c.id,
+      fromId: c.fromId,
+      fromRole: c.fromRole,
+      toId: c.toId,
+      toRole: c.toRole,
+      content: c.content,
+      timestamp: c.timestamp,
+    }));
+    // Flatten group messages from all groups
+    for (const [groupName, msgs] of Object.entries(groupMessages)) {
+      for (const gm of msgs) {
+        entries.push({
+          id: gm.id,
+          fromId: gm.fromAgentId,
+          fromRole: gm.fromRole,
+          toId: '',
+          toRole: '',
+          content: gm.content,
+          timestamp: typeof gm.timestamp === 'string' ? new Date(gm.timestamp).getTime() : gm.timestamp,
+          groupName,
+        });
+      }
+    }
+    return entries;
+  }, [comms, groupMessages]);
+
+  const groupMsgCount = allEntries.filter((e) => e.groupName).length;
 
   // Build team: lead + any agent whose parentId chain leads to the selected lead
   const teamAgents: AgentInfo[] = selectedLeadId
@@ -315,7 +372,10 @@ export function OrgChart({ api, ws }: Props) {
         <div className="flex items-center gap-2 mb-3">
           <MessageSquare className="w-4 h-4 text-blue-400" />
           <h3 className="text-sm font-medium text-white">Communication Flow</h3>
-          <span className="text-xs text-gray-500">{comms.length} messages</span>
+          <span className="text-xs text-gray-500">
+            {allEntries.length} messages
+            {groupMsgCount > 0 && <> ({groupMsgCount} group)</>}
+          </span>
           <div className="ml-auto flex gap-1">
             <button
               onClick={() => setCommView('list')}
@@ -338,9 +398,9 @@ export function OrgChart({ api, ws }: Props) {
           </div>
         </div>
         {commView === 'list' ? (
-          <CommsList comms={comms} />
+          <CommsList entries={allEntries} />
         ) : (
-          <CommsMatrix comms={comms} agents={teamAgents} />
+          <CommsMatrix entries={allEntries} agents={teamAgents} />
         )}
       </section>
     </div>
