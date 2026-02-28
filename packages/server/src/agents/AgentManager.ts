@@ -74,6 +74,8 @@ export class AgentManager extends TypedEmitter<AgentManagerEvents> {
   private db?: Database;
   private conversationStore?: ConversationStore;
   private agentThreads: Map<string, string> = new Map(); // agentId → conversationId
+  private messageBuffers: Map<string, string> = new Map(); // agentId → buffered text
+  private flushTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
   /** If set, auto-kill agents after this many ms past the initial hung detection */
   private autoKillTimeoutMs: number | null;
   private hungTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
@@ -232,11 +234,8 @@ export class AgentManager extends TypedEmitter<AgentManagerEvents> {
     // Listen for data to detect sub-agent spawn requests and coordination commands
     agent.onData((data) => {
       this.emit('agent:text', { agentId: agent.id, text: data });
-      // Persist agent output to conversation history
-      const threadId = this.agentThreads.get(agent.id);
-      if (threadId && this.conversationStore) {
-        this.conversationStore.addMessage(threadId, 'agent', data);
-      }
+      // Buffer agent output — flush after 2s of silence or on status change
+      this.bufferAgentMessage(agent.id, data);
       // Buffer ACP text and scan for complete command patterns
       this.dispatcher.appendToBuffer(agent.id, data);
       this.dispatcher.scanBuffer(agent);
@@ -314,6 +313,10 @@ export class AgentManager extends TypedEmitter<AgentManagerEvents> {
 
     agent.onStatus((status) => {
       this.emit('agent:status', { agentId: agent.id, status });
+      // Flush buffered messages on turn boundaries
+      if (status === 'idle' || status === 'completed' || status === 'failed') {
+        this.flushAgentMessage(agent.id);
+      }
 
       // Track lead idle timing for heartbeat
       if (agent.role.id === 'lead') {
@@ -331,6 +334,7 @@ export class AgentManager extends TypedEmitter<AgentManagerEvents> {
     });
 
     agent.onExit((code) => {
+      this.flushAgentMessage(agent.id);
       this.clearHungTimer(agent.id);
       this.dispatcher.clearBuffer(agent.id);
       logger.info('agent', `Exited ${agent.role.name} (${agent.id.slice(0, 8)}) code=${code}`, {
@@ -607,6 +611,7 @@ export class AgentManager extends TypedEmitter<AgentManagerEvents> {
 
   /** Persist a human message to the agent's conversation history */
   persistHumanMessage(agentId: string, text: string): void {
+    this.flushAgentMessage(agentId); // flush any buffered agent text first
     const threadId = this.agentThreads.get(agentId);
     if (threadId && this.conversationStore) {
       this.conversationStore.addMessage(threadId, 'user', text);
@@ -624,18 +629,34 @@ export class AgentManager extends TypedEmitter<AgentManagerEvents> {
   /** Get recent messages from an agent's conversation history */
   getMessageHistory(agentId: string, limit = 200): import('../db/ConversationStore.js').ThreadMessage[] {
     if (!this.conversationStore) return [];
-    const raw = this.conversationStore.getRecentMessages(agentId, limit * 10).reverse(); // chronological order
-    // Consolidate consecutive messages from the same sender into single messages
-    const consolidated: typeof raw = [];
-    for (const msg of raw) {
-      const prev = consolidated[consolidated.length - 1];
-      if (prev && prev.sender === msg.sender) {
-        prev.content += msg.content;
-      } else {
-        consolidated.push({ ...msg });
-      }
+    this.flushAgentMessage(agentId); // flush pending buffer before reading
+    return this.conversationStore.getRecentMessages(agentId, limit).reverse(); // chronological order
+  }
+
+  /** Buffer agent output text, flushing after 2s of silence */
+  private bufferAgentMessage(agentId: string, data: string): void {
+    const existing = this.messageBuffers.get(agentId) || '';
+    this.messageBuffers.set(agentId, existing + data);
+
+    // Reset debounce timer
+    const prev = this.flushTimers.get(agentId);
+    if (prev) clearTimeout(prev);
+    this.flushTimers.set(agentId, setTimeout(() => this.flushAgentMessage(agentId), 2000));
+  }
+
+  /** Flush buffered agent text to the conversation store */
+  private flushAgentMessage(agentId: string): void {
+    const timer = this.flushTimers.get(agentId);
+    if (timer) { clearTimeout(timer); this.flushTimers.delete(agentId); }
+
+    const text = this.messageBuffers.get(agentId);
+    if (!text) return;
+    this.messageBuffers.delete(agentId);
+
+    const threadId = this.agentThreads.get(agentId);
+    if (threadId && this.conversationStore) {
+      this.conversationStore.addMessage(threadId, 'agent', text);
     }
-    return consolidated.slice(-limit);
   }
 
   /** Keep all lead agents' budget info in sync with current state */
