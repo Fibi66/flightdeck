@@ -19,7 +19,7 @@ test.describe('Multi-Agent Coordination', () => {
     await page.request.post('/api/agents', { data: { roleId: 'developer' } });
     await page.request.post('/api/agents', { data: { roleId: 'code-reviewer' } });
 
-    await page.goto('/');
+    await page.goto('/agents');
     await page.waitForTimeout(1000);
 
     // Both should appear

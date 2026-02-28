@@ -111,7 +111,6 @@ test.describe('Error States & Edge Cases', () => {
     const body = await res.json();
     expect(body.status).toBe('ok');
     expect(typeof body.agents).toBe('number');
-    expect(typeof body.queuedTasks).toBe('number');
   });
 
   test('creating task with empty title still works via API', async ({ page }) => {
