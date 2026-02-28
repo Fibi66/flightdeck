@@ -31,10 +31,15 @@ export interface ActivityEntry {
 
 export class ActivityLedger extends EventEmitter {
   private db: Database;
+  private buffer: Array<{ agentId: string; agentRole: string; actionType: string; summary: string; details: string }> = [];
+  private flushTimer: ReturnType<typeof setInterval> | null = null;
+  private readonly FLUSH_INTERVAL_MS = 250;
+  private readonly FLUSH_BATCH_SIZE = 64;
 
   constructor(db: Database) {
     super();
     this.db = db;
+    this.flushTimer = setInterval(() => this.flush(), this.FLUSH_INTERVAL_MS);
   }
 
   log(
@@ -45,21 +50,48 @@ export class ActivityLedger extends EventEmitter {
     details: Record<string, any> = {},
   ): ActivityEntry {
     const detailsJson = JSON.stringify(details);
-    const result = this.db.drizzle
-      .insert(activityLog)
-      .values({ agentId, agentRole, actionType, summary, details: detailsJson })
-      .run();
-    const row = this.db.drizzle
-      .select()
-      .from(activityLog)
-      .where(eq(activityLog.id, Number(result.lastInsertRowid)))
-      .get();
-    const entry = this._mapRow(row);
+    this.buffer.push({ agentId, agentRole, actionType, summary, details: detailsJson });
+    if (this.buffer.length >= this.FLUSH_BATCH_SIZE) {
+      this.flush();
+    }
+
+    // Construct a synthetic entry for the event (no DB id yet)
+    const entry: ActivityEntry = {
+      id: 0,
+      agentId,
+      agentRole,
+      actionType,
+      summary,
+      details,
+      timestamp: new Date().toISOString(),
+    };
     this.emit('activity', entry);
     return entry;
   }
 
+  /** Flush buffered entries to the database */
+  flush(): void {
+    if (this.buffer.length === 0) return;
+    const batch = this.buffer.splice(0);
+    for (const entry of batch) {
+      this.db.drizzle
+        .insert(activityLog)
+        .values(entry)
+        .run();
+    }
+  }
+
+  /** Stop the flush timer (for graceful shutdown) */
+  stop(): void {
+    if (this.flushTimer) {
+      clearInterval(this.flushTimer);
+      this.flushTimer = null;
+    }
+    this.flush();
+  }
+
   getRecent(limit: number = 50): ActivityEntry[] {
+    this.flush();
     const rows = this.db.drizzle
       .select()
       .from(activityLog)
@@ -70,6 +102,7 @@ export class ActivityLedger extends EventEmitter {
   }
 
   getByAgent(agentId: string, limit: number = 50): ActivityEntry[] {
+    this.flush();
     const rows = this.db.drizzle
       .select()
       .from(activityLog)
@@ -81,6 +114,7 @@ export class ActivityLedger extends EventEmitter {
   }
 
   getByType(actionType: ActionType, limit: number = 50): ActivityEntry[] {
+    this.flush();
     const rows = this.db.drizzle
       .select()
       .from(activityLog)
@@ -92,6 +126,7 @@ export class ActivityLedger extends EventEmitter {
   }
 
   getSince(timestamp: string): ActivityEntry[] {
+    this.flush();
     const rows = this.db.drizzle
       .select()
       .from(activityLog)
@@ -107,6 +142,7 @@ export class ActivityLedger extends EventEmitter {
     byType: Record<string, number>;
     recentFiles: string[];
   } {
+    this.flush();
     const totalRow = this.db.drizzle
       .select({ count: sql<number>`count(*)` })
       .from(activityLog)
@@ -159,6 +195,7 @@ export class ActivityLedger extends EventEmitter {
   }
 
   prune(keepCount: number = 10000): void {
+    this.flush();
     this.db.run(
       'DELETE FROM activity_log WHERE id NOT IN (SELECT id FROM activity_log ORDER BY id DESC LIMIT ?)',
       [keepCount],

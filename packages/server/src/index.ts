@@ -82,6 +82,7 @@ function gracefulShutdown(signal: string) {
   console.log(`\n${signal} received. Shutting down gracefully...`);
   contextRefresher.stop();
   agentManager.shutdownAll();
+  activityLedger.stop();
   lockRegistry.cleanExpired();
   db.close();
   httpServer.close(() => {
