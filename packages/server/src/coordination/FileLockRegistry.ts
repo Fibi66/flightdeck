@@ -1,5 +1,7 @@
 import { EventEmitter } from 'events';
+import { eq, and, sql } from 'drizzle-orm';
 import { Database } from '../db/database.js';
+import { fileLocks } from '../db/schema.js';
 
 export interface FileLock {
   filePath: string;
@@ -10,23 +12,14 @@ export interface FileLock {
   expiresAt: string;
 }
 
-interface FileLockRow {
-  file_path: string;
-  agent_id: string;
-  agent_role: string;
-  reason: string;
-  acquired_at: string;
-  expires_at: string;
-}
-
-function rowToFileLock(row: FileLockRow): FileLock {
+function rowToFileLock(row: typeof fileLocks.$inferSelect): FileLock {
   return {
-    filePath: row.file_path,
-    agentId: row.agent_id,
-    agentRole: row.agent_role,
-    reason: row.reason,
-    acquiredAt: row.acquired_at,
-    expiresAt: row.expires_at,
+    filePath: row.filePath,
+    agentId: row.agentId,
+    agentRole: row.agentRole,
+    reason: row.reason ?? '',
+    acquiredAt: row.acquiredAt!,
+    expiresAt: row.expiresAt,
   };
 }
 
@@ -47,6 +40,9 @@ function pathsConflict(existingPattern: string, requested: string): boolean {
   return false;
 }
 
+const activeFilter = sql`${fileLocks.expiresAt} > datetime('now')`;
+const expiredFilter = sql`${fileLocks.expiresAt} <= datetime('now')`;
+
 export class FileLockRegistry extends EventEmitter {
   private db: Database;
 
@@ -64,40 +60,47 @@ export class FileLockRegistry extends EventEmitter {
   ): { ok: boolean; holder?: string } {
     this._cleanExpired();
 
-    const activeLocks = this.db.all<FileLockRow>(
-      `SELECT * FROM file_locks WHERE expires_at > datetime('now')`,
-    );
+    const activeLocks = this.db.drizzle
+      .select()
+      .from(fileLocks)
+      .where(activeFilter)
+      .all();
 
     for (const lock of activeLocks) {
-      if (lock.agent_id === agentId && lock.file_path === filePath) {
+      if (lock.agentId === agentId && lock.filePath === filePath) {
         // Same agent re-acquiring same exact path — allow (refresh)
         const expiresAt = new Date(Date.now() + ttlSeconds * 1000).toISOString();
-        this.db.run(
-          `UPDATE file_locks SET expires_at = ?, reason = ? WHERE file_path = ?`,
-          [expiresAt, reason, filePath],
-        );
+        this.db.drizzle
+          .update(fileLocks)
+          .set({ expiresAt, reason })
+          .where(eq(fileLocks.filePath, filePath))
+          .run();
         return { ok: true };
       }
-      if (lock.agent_id !== agentId && pathsConflict(lock.file_path, filePath)) {
-        return { ok: false, holder: lock.agent_id };
+      if (lock.agentId !== agentId && pathsConflict(lock.filePath, filePath)) {
+        return { ok: false, holder: lock.agentId };
       }
     }
 
     const expiresAt = new Date(Date.now() + ttlSeconds * 1000).toISOString();
-    this.db.run(
-      `INSERT OR REPLACE INTO file_locks (file_path, agent_id, agent_role, reason, expires_at) VALUES (?, ?, ?, ?, ?)`,
-      [filePath, agentId, agentRole, reason, expiresAt],
-    );
+    this.db.drizzle
+      .insert(fileLocks)
+      .values({ filePath, agentId, agentRole, reason, expiresAt })
+      .onConflictDoUpdate({
+        target: fileLocks.filePath,
+        set: { agentId, agentRole, reason, expiresAt },
+      })
+      .run();
 
     this.emit('lock:acquired', { filePath, agentId, agentRole, reason });
     return { ok: true };
   }
 
   release(agentId: string, filePath: string): boolean {
-    const result = this.db.run(
-      `DELETE FROM file_locks WHERE file_path = ? AND agent_id = ?`,
-      [filePath, agentId],
-    );
+    const result = this.db.drizzle
+      .delete(fileLocks)
+      .where(and(eq(fileLocks.filePath, filePath), eq(fileLocks.agentId, agentId)))
+      .run();
     if (result.changes > 0) {
       this.emit('lock:released', { filePath, agentId });
       return true;
@@ -106,30 +109,33 @@ export class FileLockRegistry extends EventEmitter {
   }
 
   releaseAll(agentId: string): number {
-    const result = this.db.run(
-      `DELETE FROM file_locks WHERE agent_id = ?`,
-      [agentId],
-    );
+    const result = this.db.drizzle
+      .delete(fileLocks)
+      .where(eq(fileLocks.agentId, agentId))
+      .run();
     return result.changes;
   }
 
   isLocked(filePath: string): { locked: boolean; holder?: string; role?: string; reason?: string } {
     this._cleanExpired();
-    const row = this.db.get<FileLockRow>(
-      `SELECT * FROM file_locks WHERE file_path = ? AND expires_at > datetime('now')`,
-      [filePath],
-    );
+    const row = this.db.drizzle
+      .select()
+      .from(fileLocks)
+      .where(and(eq(fileLocks.filePath, filePath), activeFilter))
+      .get();
     if (row) {
-      return { locked: true, holder: row.agent_id, role: row.agent_role, reason: row.reason };
+      return { locked: true, holder: row.agentId, role: row.agentRole, reason: row.reason ?? '' };
     }
 
     // Check glob conflicts
-    const activeLocks = this.db.all<FileLockRow>(
-      `SELECT * FROM file_locks WHERE expires_at > datetime('now')`,
-    );
+    const activeLocks = this.db.drizzle
+      .select()
+      .from(fileLocks)
+      .where(activeFilter)
+      .all();
     for (const lock of activeLocks) {
-      if (pathsConflict(lock.file_path, filePath)) {
-        return { locked: true, holder: lock.agent_id, role: lock.agent_role, reason: lock.reason };
+      if (pathsConflict(lock.filePath, filePath)) {
+        return { locked: true, holder: lock.agentId, role: lock.agentRole, reason: lock.reason ?? '' };
       }
     }
 
@@ -138,18 +144,21 @@ export class FileLockRegistry extends EventEmitter {
 
   getAll(): FileLock[] {
     this._cleanExpired();
-    const rows = this.db.all<FileLockRow>(
-      `SELECT * FROM file_locks WHERE expires_at > datetime('now')`,
-    );
+    const rows = this.db.drizzle
+      .select()
+      .from(fileLocks)
+      .where(activeFilter)
+      .all();
     return rows.map(rowToFileLock);
   }
 
   getByAgent(agentId: string): FileLock[] {
     this._cleanExpired();
-    const rows = this.db.all<FileLockRow>(
-      `SELECT * FROM file_locks WHERE agent_id = ? AND expires_at > datetime('now')`,
-      [agentId],
-    );
+    const rows = this.db.drizzle
+      .select()
+      .from(fileLocks)
+      .where(and(eq(fileLocks.agentId, agentId), activeFilter))
+      .all();
     return rows.map(rowToFileLock);
   }
 
@@ -158,9 +167,10 @@ export class FileLockRegistry extends EventEmitter {
   }
 
   private _cleanExpired(): number {
-    const result = this.db.run(
-      `DELETE FROM file_locks WHERE expires_at <= datetime('now')`,
-    );
+    const result = this.db.drizzle
+      .delete(fileLocks)
+      .where(expiredFilter)
+      .run();
     return result.changes;
   }
 }

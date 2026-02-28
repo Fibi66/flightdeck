@@ -1,5 +1,7 @@
 import { EventEmitter } from 'events';
+import { eq, and, asc, desc } from 'drizzle-orm';
 import type { Database } from '../db/database.js';
+import { chatGroups, chatGroupMembers, chatGroupMessages } from '../db/schema.js';
 
 export interface ChatGroup {
   name: string;
@@ -30,16 +32,18 @@ export class ChatGroupRegistry extends EventEmitter {
     // Ensure lead is always a member
     const allMembers = new Set([leadId, ...memberIds]);
 
-    this.db.run(
-      'INSERT OR IGNORE INTO chat_groups (name, lead_id) VALUES (?, ?)',
-      [name, leadId],
-    );
+    this.db.drizzle
+      .insert(chatGroups)
+      .values({ name, leadId })
+      .onConflictDoNothing()
+      .run();
 
     for (const memberId of allMembers) {
-      this.db.run(
-        'INSERT OR IGNORE INTO chat_group_members (group_name, lead_id, agent_id) VALUES (?, ?, ?)',
-        [name, leadId, memberId],
-      );
+      this.db.drizzle
+        .insert(chatGroupMembers)
+        .values({ groupName: name, leadId, agentId: memberId })
+        .onConflictDoNothing()
+        .run();
     }
 
     const group: ChatGroup = {
@@ -55,15 +59,20 @@ export class ChatGroupRegistry extends EventEmitter {
   addMembers(leadId: string, name: string, memberIds: string[]): string[] {
     const added: string[] = [];
     for (const memberId of memberIds) {
-      const existing = this.db.get<any>(
-        'SELECT 1 FROM chat_group_members WHERE group_name = ? AND lead_id = ? AND agent_id = ?',
-        [name, leadId, memberId],
-      );
+      const existing = this.db.drizzle
+        .select()
+        .from(chatGroupMembers)
+        .where(and(
+          eq(chatGroupMembers.groupName, name),
+          eq(chatGroupMembers.leadId, leadId),
+          eq(chatGroupMembers.agentId, memberId),
+        ))
+        .get();
       if (!existing) {
-        this.db.run(
-          'INSERT INTO chat_group_members (group_name, lead_id, agent_id) VALUES (?, ?, ?)',
-          [name, leadId, memberId],
-        );
+        this.db.drizzle
+          .insert(chatGroupMembers)
+          .values({ groupName: name, leadId, agentId: memberId })
+          .run();
         added.push(memberId);
         this.emit('group:member_added', { group: name, leadId, agentId: memberId });
       }
@@ -76,10 +85,14 @@ export class ChatGroupRegistry extends EventEmitter {
     for (const memberId of memberIds) {
       // Don't allow removing the lead
       if (memberId === leadId) continue;
-      const result = this.db.run(
-        'DELETE FROM chat_group_members WHERE group_name = ? AND lead_id = ? AND agent_id = ?',
-        [name, leadId, memberId],
-      );
+      const result = this.db.drizzle
+        .delete(chatGroupMembers)
+        .where(and(
+          eq(chatGroupMembers.groupName, name),
+          eq(chatGroupMembers.leadId, leadId),
+          eq(chatGroupMembers.agentId, memberId),
+        ))
+        .run();
       if (result.changes > 0) {
         removed.push(memberId);
         this.emit('group:member_removed', { group: name, leadId, agentId: memberId });
@@ -90,19 +103,24 @@ export class ChatGroupRegistry extends EventEmitter {
 
   sendMessage(groupName: string, leadId: string, fromId: string, fromRole: string, content: string): GroupMessage | null {
     // Check membership
-    const isMember = this.db.get<any>(
-      'SELECT 1 FROM chat_group_members WHERE group_name = ? AND lead_id = ? AND agent_id = ?',
-      [groupName, leadId, fromId],
-    );
+    const isMember = this.db.drizzle
+      .select()
+      .from(chatGroupMembers)
+      .where(and(
+        eq(chatGroupMembers.groupName, groupName),
+        eq(chatGroupMembers.leadId, leadId),
+        eq(chatGroupMembers.agentId, fromId),
+      ))
+      .get();
     if (!isMember) return null;
 
     const id = `gmsg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const timestamp = new Date().toISOString();
 
-    this.db.run(
-      'INSERT INTO chat_group_messages (id, group_name, lead_id, from_agent_id, from_role, content, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [id, groupName, leadId, fromId, fromRole, content, timestamp],
-    );
+    this.db.drizzle
+      .insert(chatGroupMessages)
+      .values({ id, groupName, leadId, fromAgentId: fromId, fromRole, content, timestamp })
+      .run();
 
     const message: GroupMessage = { id, groupName, leadId, fromAgentId: fromId, fromRole, content, timestamp };
 
@@ -113,62 +131,77 @@ export class ChatGroupRegistry extends EventEmitter {
   }
 
   getGroups(leadId: string): ChatGroup[] {
-    const rows = this.db.all<any>(
-      'SELECT name, lead_id, created_at FROM chat_groups WHERE lead_id = ? ORDER BY created_at ASC',
-      [leadId],
-    );
+    const rows = this.db.drizzle
+      .select()
+      .from(chatGroups)
+      .where(eq(chatGroups.leadId, leadId))
+      .orderBy(asc(chatGroups.createdAt))
+      .all();
     return rows.map((row) => ({
       name: row.name,
-      leadId: row.lead_id,
-      memberIds: this.getMembers(row.name, row.lead_id),
-      createdAt: row.created_at,
+      leadId: row.leadId,
+      memberIds: this.getMembers(row.name, row.leadId),
+      createdAt: row.createdAt!,
     }));
   }
 
   getGroupsForAgent(agentId: string): ChatGroup[] {
-    const rows = this.db.all<any>(
-      `SELECT g.name, g.lead_id, g.created_at FROM chat_groups g
-       JOIN chat_group_members m ON g.name = m.group_name AND g.lead_id = m.lead_id
-       WHERE m.agent_id = ?
-       ORDER BY g.created_at ASC`,
-      [agentId],
-    );
+    const rows = this.db.drizzle
+      .select({
+        name: chatGroups.name,
+        leadId: chatGroups.leadId,
+        createdAt: chatGroups.createdAt,
+      })
+      .from(chatGroups)
+      .innerJoin(chatGroupMembers, and(
+        eq(chatGroups.name, chatGroupMembers.groupName),
+        eq(chatGroups.leadId, chatGroupMembers.leadId),
+      ))
+      .where(eq(chatGroupMembers.agentId, agentId))
+      .orderBy(asc(chatGroups.createdAt))
+      .all();
     return rows.map((row) => ({
       name: row.name,
-      leadId: row.lead_id,
-      memberIds: this.getMembers(row.name, row.lead_id),
-      createdAt: row.created_at,
+      leadId: row.leadId,
+      memberIds: this.getMembers(row.name, row.leadId),
+      createdAt: row.createdAt!,
     }));
   }
 
   getMembers(groupName: string, leadId: string): string[] {
-    const rows = this.db.all<any>(
-      'SELECT agent_id FROM chat_group_members WHERE group_name = ? AND lead_id = ? ORDER BY added_at ASC',
-      [groupName, leadId],
-    );
-    return rows.map((r) => r.agent_id);
+    const rows = this.db.drizzle
+      .select({ agentId: chatGroupMembers.agentId })
+      .from(chatGroupMembers)
+      .where(and(eq(chatGroupMembers.groupName, groupName), eq(chatGroupMembers.leadId, leadId)))
+      .orderBy(asc(chatGroupMembers.addedAt))
+      .all();
+    return rows.map((r) => r.agentId);
   }
 
   getMessages(groupName: string, leadId: string, limit = 50): GroupMessage[] {
-    const rows = this.db.all<any>(
-      'SELECT * FROM chat_group_messages WHERE group_name = ? AND lead_id = ? ORDER BY timestamp DESC LIMIT ?',
-      [groupName, leadId, limit],
-    );
+    const rows = this.db.drizzle
+      .select()
+      .from(chatGroupMessages)
+      .where(and(eq(chatGroupMessages.groupName, groupName), eq(chatGroupMessages.leadId, leadId)))
+      .orderBy(desc(chatGroupMessages.timestamp))
+      .limit(limit)
+      .all();
     return rows.reverse().map((r) => ({
       id: r.id,
-      groupName: r.group_name,
-      leadId: r.lead_id,
-      fromAgentId: r.from_agent_id,
-      fromRole: r.from_role,
+      groupName: r.groupName,
+      leadId: r.leadId,
+      fromAgentId: r.fromAgentId,
+      fromRole: r.fromRole,
       content: r.content,
-      timestamp: r.timestamp,
+      timestamp: r.timestamp!,
     }));
   }
 
   exists(name: string, leadId: string): boolean {
-    return !!this.db.get<any>(
-      'SELECT 1 FROM chat_groups WHERE name = ? AND lead_id = ?',
-      [name, leadId],
-    );
+    return !!this.db.drizzle
+      .select()
+      .from(chatGroups)
+      .where(and(eq(chatGroups.name, name), eq(chatGroups.leadId, leadId)))
+      .get();
   }
 }

@@ -1,5 +1,7 @@
 import { EventEmitter } from 'events';
+import { eq, desc, asc, gt, sql, inArray } from 'drizzle-orm';
 import { Database } from '../db/database.js';
+import { activityLog } from '../db/schema.js';
 import { logger } from '../utils/logger.js';
 
 export type ActionType =
@@ -43,48 +45,59 @@ export class ActivityLedger extends EventEmitter {
     details: Record<string, any> = {},
   ): ActivityEntry {
     const detailsJson = JSON.stringify(details);
-    const result = this.db.run(
-      'INSERT INTO activity_log (agent_id, agent_role, action_type, summary, details) VALUES (?, ?, ?, ?, ?)',
-      [agentId, agentRole, actionType, summary, detailsJson],
-    );
-    const row = this.db.get(
-      'SELECT * FROM activity_log WHERE id = ?',
-      [result.lastInsertRowid],
-    );
+    const result = this.db.drizzle
+      .insert(activityLog)
+      .values({ agentId, agentRole, actionType, summary, details: detailsJson })
+      .run();
+    const row = this.db.drizzle
+      .select()
+      .from(activityLog)
+      .where(eq(activityLog.id, Number(result.lastInsertRowid)))
+      .get();
     const entry = this._mapRow(row);
     this.emit('activity', entry);
     return entry;
   }
 
   getRecent(limit: number = 50): ActivityEntry[] {
-    const rows = this.db.all(
-      'SELECT * FROM activity_log ORDER BY id DESC LIMIT ?',
-      [limit],
-    );
+    const rows = this.db.drizzle
+      .select()
+      .from(activityLog)
+      .orderBy(desc(activityLog.id))
+      .limit(limit)
+      .all();
     return rows.map((row) => this._mapRow(row));
   }
 
   getByAgent(agentId: string, limit: number = 50): ActivityEntry[] {
-    const rows = this.db.all(
-      'SELECT * FROM activity_log WHERE agent_id = ? ORDER BY id DESC LIMIT ?',
-      [agentId, limit],
-    );
+    const rows = this.db.drizzle
+      .select()
+      .from(activityLog)
+      .where(eq(activityLog.agentId, agentId))
+      .orderBy(desc(activityLog.id))
+      .limit(limit)
+      .all();
     return rows.map((row) => this._mapRow(row));
   }
 
   getByType(actionType: ActionType, limit: number = 50): ActivityEntry[] {
-    const rows = this.db.all(
-      'SELECT * FROM activity_log WHERE action_type = ? ORDER BY id DESC LIMIT ?',
-      [actionType, limit],
-    );
+    const rows = this.db.drizzle
+      .select()
+      .from(activityLog)
+      .where(eq(activityLog.actionType, actionType))
+      .orderBy(desc(activityLog.id))
+      .limit(limit)
+      .all();
     return rows.map((row) => this._mapRow(row));
   }
 
   getSince(timestamp: string): ActivityEntry[] {
-    const rows = this.db.all(
-      'SELECT * FROM activity_log WHERE timestamp > ? ORDER BY id ASC',
-      [timestamp],
-    );
+    const rows = this.db.drizzle
+      .select()
+      .from(activityLog)
+      .where(gt(activityLog.timestamp, timestamp))
+      .orderBy(asc(activityLog.id))
+      .all();
     return rows.map((row) => this._mapRow(row));
   }
 
@@ -94,35 +107,44 @@ export class ActivityLedger extends EventEmitter {
     byType: Record<string, number>;
     recentFiles: string[];
   } {
-    const totalRow = this.db.get<{ count: number }>(
-      'SELECT COUNT(*) as count FROM activity_log',
-    );
+    const totalRow = this.db.drizzle
+      .select({ count: sql<number>`count(*)` })
+      .from(activityLog)
+      .get();
     const totalActions = totalRow?.count ?? 0;
 
-    const agentRows = this.db.all<{ agent_id: string; count: number }>(
-      'SELECT agent_id, COUNT(*) as count FROM activity_log GROUP BY agent_id',
-    );
+    const agentRows = this.db.drizzle
+      .select({ agentId: activityLog.agentId, count: sql<number>`count(*)` })
+      .from(activityLog)
+      .groupBy(activityLog.agentId)
+      .all();
     const byAgent: Record<string, number> = {};
     for (const row of agentRows) {
-      byAgent[row.agent_id] = row.count;
+      byAgent[row.agentId] = row.count;
     }
 
-    const typeRows = this.db.all<{ action_type: string; count: number }>(
-      'SELECT action_type, COUNT(*) as count FROM activity_log GROUP BY action_type',
-    );
+    const typeRows = this.db.drizzle
+      .select({ actionType: activityLog.actionType, count: sql<number>`count(*)` })
+      .from(activityLog)
+      .groupBy(activityLog.actionType)
+      .all();
     const byType: Record<string, number> = {};
     for (const row of typeRows) {
-      byType[row.action_type] = row.count;
+      byType[row.actionType] = row.count;
     }
 
-    const fileRows = this.db.all<{ details: string }>(
-      "SELECT details FROM activity_log WHERE action_type IN ('file_edit', 'file_read') ORDER BY id DESC LIMIT 50",
-    );
+    const fileRows = this.db.drizzle
+      .select({ details: activityLog.details })
+      .from(activityLog)
+      .where(inArray(activityLog.actionType, ['file_edit', 'file_read']))
+      .orderBy(desc(activityLog.id))
+      .limit(50)
+      .all();
     const recentFiles: string[] = [];
     const seen = new Set<string>();
     for (const row of fileRows) {
       try {
-        const parsed = JSON.parse(row.details);
+        const parsed = JSON.parse(row.details ?? '{}');
         const file = parsed.file ?? parsed.path;
         if (file && !seen.has(file)) {
           seen.add(file);
@@ -153,9 +175,9 @@ export class ActivityLedger extends EventEmitter {
     }
     return {
       id: row.id,
-      agentId: row.agent_id,
-      agentRole: row.agent_role,
-      actionType: row.action_type as ActionType,
+      agentId: row.agentId,
+      agentRole: row.agentRole,
+      actionType: row.actionType as ActionType,
       summary: row.summary,
       details,
       timestamp: row.timestamp,

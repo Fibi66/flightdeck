@@ -1,5 +1,7 @@
 import { EventEmitter } from 'events';
+import { eq, asc, and, inArray } from 'drizzle-orm';
 import type { Database } from '../db/database.js';
+import { decisions } from '../db/schema.js';
 
 export type DecisionStatus = 'recorded' | 'confirmed' | 'rejected';
 
@@ -16,6 +18,21 @@ export interface Decision {
   timestamp: string;
 }
 
+function rowToDecision(row: typeof decisions.$inferSelect): Decision {
+  return {
+    id: row.id,
+    agentId: row.agentId,
+    agentRole: row.agentRole,
+    leadId: row.leadId,
+    title: row.title,
+    rationale: row.rationale ?? '',
+    needsConfirmation: row.needsConfirmation === 1,
+    status: row.status as DecisionStatus,
+    confirmedAt: row.confirmedAt,
+    timestamp: row.createdAt!,
+  };
+}
+
 export class DecisionLog extends EventEmitter {
   private db: Database;
 
@@ -28,10 +45,17 @@ export class DecisionLog extends EventEmitter {
     const id = `dec-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const timestamp = new Date().toISOString();
 
-    this.db.run(
-      'INSERT INTO decisions (id, agent_id, agent_role, lead_id, title, rationale, needs_confirmation, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [id, agentId, agentRole, leadId || null, title, rationale, needsConfirmation ? 1 : 0, 'recorded', timestamp],
-    );
+    this.db.drizzle.insert(decisions).values({
+      id,
+      agentId,
+      agentRole,
+      leadId: leadId || null,
+      title,
+      rationale,
+      needsConfirmation: needsConfirmation ? 1 : 0,
+      status: 'recorded',
+      createdAt: timestamp,
+    }).run();
 
     const decision: Decision = { id, agentId, agentRole, leadId: leadId || null, title, rationale, needsConfirmation, status: 'recorded', confirmedAt: null, timestamp };
     this.emit('decision', decision);
@@ -39,34 +63,61 @@ export class DecisionLog extends EventEmitter {
   }
 
   getAll(): Decision[] {
-    return this.db.all<any>('SELECT * FROM decisions ORDER BY created_at ASC').map(rowToDecision);
+    return this.db.drizzle
+      .select()
+      .from(decisions)
+      .orderBy(asc(decisions.createdAt))
+      .all()
+      .map(rowToDecision);
   }
 
   getByAgent(agentId: string): Decision[] {
-    return this.db.all<any>('SELECT * FROM decisions WHERE agent_id = ? ORDER BY created_at ASC', [agentId]).map(rowToDecision);
+    return this.db.drizzle
+      .select()
+      .from(decisions)
+      .where(eq(decisions.agentId, agentId))
+      .orderBy(asc(decisions.createdAt))
+      .all()
+      .map(rowToDecision);
   }
 
   getByAgents(agentIds: string[]): Decision[] {
     if (agentIds.length === 0) return [];
-    const placeholders = agentIds.map(() => '?').join(',');
-    return this.db.all<any>(
-      `SELECT * FROM decisions WHERE agent_id IN (${placeholders}) ORDER BY created_at ASC`,
-      agentIds,
-    ).map(rowToDecision);
+    return this.db.drizzle
+      .select()
+      .from(decisions)
+      .where(inArray(decisions.agentId, agentIds))
+      .orderBy(asc(decisions.createdAt))
+      .all()
+      .map(rowToDecision);
   }
 
   getByLeadId(leadId: string): Decision[] {
-    return this.db.all<any>('SELECT * FROM decisions WHERE lead_id = ? ORDER BY created_at ASC', [leadId]).map(rowToDecision);
+    return this.db.drizzle
+      .select()
+      .from(decisions)
+      .where(eq(decisions.leadId, leadId))
+      .orderBy(asc(decisions.createdAt))
+      .all()
+      .map(rowToDecision);
   }
 
   getNeedingConfirmation(): Decision[] {
-    return this.db.all<any>(
-      "SELECT * FROM decisions WHERE needs_confirmation = 1 AND status = 'recorded' ORDER BY created_at ASC",
-    ).map(rowToDecision);
+    return this.db.drizzle
+      .select()
+      .from(decisions)
+      .where(and(eq(decisions.needsConfirmation, 1), eq(decisions.status, 'recorded')))
+      .orderBy(asc(decisions.createdAt))
+      .all()
+      .map(rowToDecision);
   }
 
   getById(id: string): Decision | undefined {
-    const row = this.db.get<any>('SELECT * FROM decisions WHERE id = ?', [id]);
+    const row = this.db.drizzle
+      .select()
+      .from(decisions)
+      .where(eq(decisions.id, id))
+      .get();
     return row ? rowToDecision(row) : undefined;
   }
 
@@ -74,7 +125,11 @@ export class DecisionLog extends EventEmitter {
     const existing = this.getById(id);
     if (!existing || existing.status !== 'recorded') return existing;
     const confirmedAt = new Date().toISOString();
-    this.db.run("UPDATE decisions SET status = 'confirmed', confirmed_at = ? WHERE id = ?", [confirmedAt, id]);
+    this.db.drizzle
+      .update(decisions)
+      .set({ status: 'confirmed', confirmedAt })
+      .where(eq(decisions.id, id))
+      .run();
     const decision = this.getById(id);
     if (decision) this.emit('decision:confirmed', decision);
     return decision;
@@ -84,28 +139,17 @@ export class DecisionLog extends EventEmitter {
     const existing = this.getById(id);
     if (!existing || existing.status !== 'recorded') return existing;
     const confirmedAt = new Date().toISOString();
-    this.db.run("UPDATE decisions SET status = 'rejected', confirmed_at = ? WHERE id = ?", [confirmedAt, id]);
+    this.db.drizzle
+      .update(decisions)
+      .set({ status: 'rejected', confirmedAt })
+      .where(eq(decisions.id, id))
+      .run();
     const decision = this.getById(id);
     if (decision) this.emit('decision:rejected', decision);
     return decision;
   }
 
   clear(): void {
-    this.db.run('DELETE FROM decisions');
+    this.db.drizzle.delete(decisions).run();
   }
-}
-
-function rowToDecision(row: any): Decision {
-  return {
-    id: row.id,
-    agentId: row.agent_id,
-    agentRole: row.agent_role,
-    leadId: row.lead_id,
-    title: row.title,
-    rationale: row.rationale,
-    needsConfirmation: row.needs_confirmation === 1,
-    status: row.status as DecisionStatus,
-    confirmedAt: row.confirmed_at,
-    timestamp: row.created_at,
-  };
 }

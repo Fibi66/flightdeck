@@ -1,5 +1,7 @@
 import { EventEmitter } from 'events';
+import { eq, and, desc, asc, sql, ne } from 'drizzle-orm';
 import type { Database } from '../db/database.js';
+import { dagTasks } from '../db/schema.js';
 
 export type DagTaskStatus = 'pending' | 'ready' | 'running' | 'done' | 'failed' | 'blocked' | 'paused' | 'skipped';
 
@@ -33,35 +35,20 @@ export interface FileConflict {
   tasks: string[];
 }
 
-interface DagTaskRow {
-  id: string;
-  lead_id: string;
-  role: string;
-  description: string;
-  files: string;
-  depends_on: string;
-  dag_status: string;
-  priority: number;
-  model: string | null;
-  assigned_agent_id: string | null;
-  created_at: string;
-  completed_at: string | null;
-}
-
-function rowToTask(row: DagTaskRow): DagTask {
+function rowToTask(row: typeof dagTasks.$inferSelect): DagTask {
   return {
     id: row.id,
-    leadId: row.lead_id,
+    leadId: row.leadId,
     role: row.role,
     description: row.description,
     files: JSON.parse(row.files || '[]'),
-    dependsOn: JSON.parse(row.depends_on || '[]'),
-    dagStatus: row.dag_status as DagTaskStatus,
-    priority: row.priority,
+    dependsOn: JSON.parse(row.dependsOn || '[]'),
+    dagStatus: row.dagStatus as DagTaskStatus,
+    priority: row.priority ?? 0,
     model: row.model || undefined,
-    assignedAgentId: row.assigned_agent_id || undefined,
-    createdAt: row.created_at,
-    completedAt: row.completed_at || undefined,
+    assignedAgentId: row.assignedAgentId || undefined,
+    createdAt: row.createdAt!,
+    completedAt: row.completedAt || undefined,
   };
 }
 
@@ -77,9 +64,12 @@ export class TaskDAG extends EventEmitter {
   declareTaskBatch(leadId: string, tasks: DagTaskInput[]): { tasks: DagTask[]; conflicts: FileConflict[] } {
     // Validate: all depends_on reference tasks in this batch or already existing
     const taskIds = new Set(tasks.map(t => t.id));
-    const existingIds = new Set(
-      this.db.all<{ id: string }>('SELECT id FROM dag_tasks WHERE lead_id = ?', [leadId]).map(r => r.id),
-    );
+    const existingRows = this.db.drizzle
+      .select({ id: dagTasks.id })
+      .from(dagTasks)
+      .where(eq(dagTasks.leadId, leadId))
+      .all();
+    const existingIds = new Set(existingRows.map(r => r.id));
     const allIds = new Set([...taskIds, ...existingIds]);
 
     for (const task of tasks) {
@@ -100,21 +90,17 @@ export class TaskDAG extends EventEmitter {
     const inserted: DagTask[] = [];
     for (const task of tasks) {
       const dagStatus = (task.depends_on && task.depends_on.length > 0) ? 'pending' : 'ready';
-      this.db.run(
-        `INSERT INTO dag_tasks (id, lead_id, role, description, files, depends_on, priority, model, dag_status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          task.id,
-          leadId,
-          task.role,
-          task.description || '',
-          JSON.stringify(task.files || []),
-          JSON.stringify(task.depends_on || []),
-          task.priority || 0,
-          task.model || null,
-          dagStatus,
-        ],
-      );
+      this.db.drizzle.insert(dagTasks).values({
+        id: task.id,
+        leadId,
+        role: task.role,
+        description: task.description || '',
+        files: JSON.stringify(task.files || []),
+        dependsOn: JSON.stringify(task.depends_on || []),
+        priority: task.priority || 0,
+        model: task.model || null,
+        dagStatus,
+      }).run();
       inserted.push(this.getTask(leadId, task.id)!);
     }
 
@@ -162,10 +148,12 @@ export class TaskDAG extends EventEmitter {
 
   /** Resolve which tasks are ready to run (all deps done, files available) */
   resolveReady(leadId: string): DagTask[] {
-    const pendingTasks = this.db.all<DagTaskRow>(
-      `SELECT * FROM dag_tasks WHERE lead_id = ? AND dag_status = 'pending'`,
-      [leadId],
-    ).map(rowToTask);
+    const pendingTasks = this.db.drizzle
+      .select()
+      .from(dagTasks)
+      .where(and(eq(dagTasks.leadId, leadId), eq(dagTasks.dagStatus, 'pending')))
+      .all()
+      .map(rowToTask);
 
     const ready: DagTask[] = [];
     for (const task of pendingTasks) {
@@ -188,10 +176,12 @@ export class TaskDAG extends EventEmitter {
   private areFilesAvailable(leadId: string, taskId: string, files: string[]): boolean {
     if (files.length === 0) return true;
 
-    const runningTasks = this.db.all<DagTaskRow>(
-      `SELECT * FROM dag_tasks WHERE lead_id = ? AND dag_status = 'running' AND id != ?`,
-      [leadId, taskId],
-    ).map(rowToTask);
+    const runningTasks = this.db.drizzle
+      .select()
+      .from(dagTasks)
+      .where(and(eq(dagTasks.leadId, leadId), eq(dagTasks.dagStatus, 'running'), ne(dagTasks.id, taskId)))
+      .all()
+      .map(rowToTask);
 
     for (const running of runningTasks) {
       const overlap = files.some(f =>
@@ -206,27 +196,30 @@ export class TaskDAG extends EventEmitter {
 
   /** Mark a task as running and assign to an agent */
   startTask(leadId: string, taskId: string, agentId: string): DagTask | null {
-    this.db.run(
-      `UPDATE dag_tasks SET dag_status = 'running', assigned_agent_id = ? WHERE id = ? AND lead_id = ?`,
-      [agentId, taskId, leadId],
-    );
+    this.db.drizzle
+      .update(dagTasks)
+      .set({ dagStatus: 'running', assignedAgentId: agentId })
+      .where(and(eq(dagTasks.id, taskId), eq(dagTasks.leadId, leadId)))
+      .run();
     this.emit('dag:updated', { leadId });
     return this.getTask(leadId, taskId);
   }
 
   /** Mark a task as complete. Returns newly ready tasks. */
   completeTask(leadId: string, taskId: string): DagTask[] {
-    this.db.run(
-      `UPDATE dag_tasks SET dag_status = 'done', completed_at = datetime('now') WHERE id = ? AND lead_id = ?`,
-      [taskId, leadId],
-    );
+    this.db.drizzle
+      .update(dagTasks)
+      .set({ dagStatus: 'done', completedAt: sql`datetime('now')` })
+      .where(and(eq(dagTasks.id, taskId), eq(dagTasks.leadId, leadId)))
+      .run();
     const newlyReady = this.resolveReady(leadId);
     // Auto-promote newly ready tasks from pending to ready
     for (const task of newlyReady) {
-      this.db.run(
-        `UPDATE dag_tasks SET dag_status = 'ready' WHERE id = ? AND lead_id = ? AND dag_status = 'pending'`,
-        [task.id, leadId],
-      );
+      this.db.drizzle
+        .update(dagTasks)
+        .set({ dagStatus: 'ready' })
+        .where(and(eq(dagTasks.id, task.id), eq(dagTasks.leadId, leadId), eq(dagTasks.dagStatus, 'pending')))
+        .run();
     }
     this.emit('dag:updated', { leadId });
     return newlyReady;
@@ -234,18 +227,20 @@ export class TaskDAG extends EventEmitter {
 
   /** Mark a task as failed. Block dependents. */
   failTask(leadId: string, taskId: string): void {
-    this.db.run(
-      `UPDATE dag_tasks SET dag_status = 'failed', completed_at = datetime('now') WHERE id = ? AND lead_id = ?`,
-      [taskId, leadId],
-    );
+    this.db.drizzle
+      .update(dagTasks)
+      .set({ dagStatus: 'failed', completedAt: sql`datetime('now')` })
+      .where(and(eq(dagTasks.id, taskId), eq(dagTasks.leadId, leadId)))
+      .run();
     // Block all tasks that depend on this one
     const allTasks = this.getTasks(leadId);
     for (const task of allTasks) {
       if (task.dependsOn.includes(taskId) && (task.dagStatus === 'pending' || task.dagStatus === 'ready')) {
-        this.db.run(
-          `UPDATE dag_tasks SET dag_status = 'blocked' WHERE id = ? AND lead_id = ?`,
-          [task.id, leadId],
-        );
+        this.db.drizzle
+          .update(dagTasks)
+          .set({ dagStatus: 'blocked' })
+          .where(and(eq(dagTasks.id, task.id), eq(dagTasks.leadId, leadId)))
+          .run();
       }
     }
     this.emit('dag:updated', { leadId });
@@ -269,10 +264,11 @@ export class TaskDAG extends EventEmitter {
       const dep = this.getTask(leadId, depId);
       return dep && (dep.dagStatus === 'done' || dep.dagStatus === 'skipped');
     }) ? 'ready' : 'pending';
-    this.db.run(
-      `UPDATE dag_tasks SET dag_status = ? WHERE id = ? AND lead_id = ?`,
-      [newStatus, taskId, leadId],
-    );
+    this.db.drizzle
+      .update(dagTasks)
+      .set({ dagStatus: newStatus })
+      .where(and(eq(dagTasks.id, taskId), eq(dagTasks.leadId, leadId)))
+      .run();
     this.emit('dag:updated', { leadId });
     return true;
   }
@@ -281,18 +277,20 @@ export class TaskDAG extends EventEmitter {
   retryTask(leadId: string, taskId: string): boolean {
     const task = this.getTask(leadId, taskId);
     if (!task || task.dagStatus !== 'failed') return false;
-    this.db.run(
-      `UPDATE dag_tasks SET dag_status = 'ready', assigned_agent_id = NULL, completed_at = NULL WHERE id = ? AND lead_id = ?`,
-      [taskId, leadId],
-    );
+    this.db.drizzle
+      .update(dagTasks)
+      .set({ dagStatus: 'ready', assignedAgentId: null, completedAt: null })
+      .where(and(eq(dagTasks.id, taskId), eq(dagTasks.leadId, leadId)))
+      .run();
     // Unblock dependents that were blocked by this failure
     const allTasks = this.getTasks(leadId);
     for (const t of allTasks) {
       if (t.dependsOn.includes(taskId) && t.dagStatus === 'blocked') {
-        this.db.run(
-          `UPDATE dag_tasks SET dag_status = 'pending' WHERE id = ? AND lead_id = ?`,
-          [t.id, leadId],
-        );
+        this.db.drizzle
+          .update(dagTasks)
+          .set({ dagStatus: 'pending' })
+          .where(and(eq(dagTasks.id, t.id), eq(dagTasks.leadId, leadId)))
+          .run();
       }
     }
     this.emit('dag:updated', { leadId });
@@ -303,10 +301,11 @@ export class TaskDAG extends EventEmitter {
   skipTask(leadId: string, taskId: string): boolean {
     const task = this.getTask(leadId, taskId);
     if (!task || task.dagStatus === 'done' || task.dagStatus === 'running') return false;
-    this.db.run(
-      `UPDATE dag_tasks SET dag_status = 'skipped', completed_at = datetime('now') WHERE id = ? AND lead_id = ?`,
-      [taskId, leadId],
-    );
+    this.db.drizzle
+      .update(dagTasks)
+      .set({ dagStatus: 'skipped', completedAt: sql`datetime('now')` })
+      .where(and(eq(dagTasks.id, taskId), eq(dagTasks.leadId, leadId)))
+      .run();
     // Resolve newly ready tasks (skipped counts as "done" for dependency resolution)
     const newlyReady = this.resolveReady(leadId);
     for (const t of newlyReady) {
@@ -337,19 +336,23 @@ export class TaskDAG extends EventEmitter {
 
   /** Get a single task */
   getTask(leadId: string, taskId: string): DagTask | null {
-    const row = this.db.get<DagTaskRow>(
-      'SELECT * FROM dag_tasks WHERE id = ? AND lead_id = ?',
-      [taskId, leadId],
-    );
+    const row = this.db.drizzle
+      .select()
+      .from(dagTasks)
+      .where(and(eq(dagTasks.id, taskId), eq(dagTasks.leadId, leadId)))
+      .get();
     return row ? rowToTask(row) : null;
   }
 
   /** Get all tasks for a lead */
   getTasks(leadId: string): DagTask[] {
-    return this.db.all<DagTaskRow>(
-      'SELECT * FROM dag_tasks WHERE lead_id = ? ORDER BY priority DESC, created_at ASC',
-      [leadId],
-    ).map(rowToTask);
+    return this.db.drizzle
+      .select()
+      .from(dagTasks)
+      .where(eq(dagTasks.leadId, leadId))
+      .orderBy(desc(dagTasks.priority), asc(dagTasks.createdAt))
+      .all()
+      .map(rowToTask);
   }
 
   /** Get full DAG status (for TASK_STATUS command) */
@@ -379,10 +382,15 @@ export class TaskDAG extends EventEmitter {
 
   /** Find task by assigned agent ID */
   getTaskByAgent(leadId: string, agentId: string): DagTask | null {
-    const row = this.db.get<DagTaskRow>(
-      `SELECT * FROM dag_tasks WHERE lead_id = ? AND assigned_agent_id = ? AND dag_status = 'running'`,
-      [leadId, agentId],
-    );
+    const row = this.db.drizzle
+      .select()
+      .from(dagTasks)
+      .where(and(
+        eq(dagTasks.leadId, leadId),
+        eq(dagTasks.assignedAgentId, agentId),
+        eq(dagTasks.dagStatus, 'running'),
+      ))
+      .get();
     return row ? rowToTask(row) : null;
   }
 }

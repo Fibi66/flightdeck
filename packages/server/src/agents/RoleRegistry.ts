@@ -1,3 +1,6 @@
+import { eq, and } from 'drizzle-orm';
+import { roles as rolesTable } from '../db/schema.js';
+
 export interface Role {
   id: string;
   name: string;
@@ -462,17 +465,19 @@ export class RoleRegistry {
     }
     // Load custom roles from DB
     if (db) {
-      const rows = db.all<{ id: string; name: string; description: string; system_prompt: string; color: string; icon: string; model: string | null }>(
-        'SELECT id, name, description, system_prompt, color, icon, model FROM roles WHERE built_in = 0'
-      );
+      const rows = db.drizzle
+        .select()
+        .from(rolesTable)
+        .where(eq(rolesTable.builtIn, 0))
+        .all();
       for (const row of rows) {
         this.roles.set(row.id, {
           id: row.id,
           name: row.name,
-          description: row.description,
-          systemPrompt: row.system_prompt + SELF_REPORT_INSTRUCTION,
-          color: row.color,
-          icon: row.icon,
+          description: row.description ?? '',
+          systemPrompt: (row.systemPrompt ?? '') + SELF_REPORT_INSTRUCTION,
+          color: row.color ?? '#888',
+          icon: row.icon ?? '🤖',
           builtIn: false,
           model: row.model ?? undefined,
         });
@@ -493,11 +498,31 @@ export class RoleRegistry {
     this.roles.set(full.id, full);
     // Persist to DB
     if (this.db) {
-      this.db.run(
-        `INSERT OR REPLACE INTO roles (id, name, description, system_prompt, color, icon, built_in, model)
-         VALUES (?, ?, ?, ?, ?, ?, 0, ?)`,
-        [full.id, full.name, full.description, role.systemPrompt, full.color, full.icon, full.model ?? null]
-      );
+      this.db.drizzle
+        .insert(rolesTable)
+        .values({
+          id: full.id,
+          name: full.name,
+          description: full.description,
+          systemPrompt: role.systemPrompt,
+          color: full.color,
+          icon: full.icon,
+          builtIn: 0,
+          model: full.model ?? null,
+        })
+        .onConflictDoUpdate({
+          target: rolesTable.id,
+          set: {
+            name: full.name,
+            description: full.description,
+            systemPrompt: role.systemPrompt,
+            color: full.color,
+            icon: full.icon,
+            builtIn: 0,
+            model: full.model ?? null,
+          },
+        })
+        .run();
     }
     return full;
   }
@@ -507,7 +532,10 @@ export class RoleRegistry {
     if (!role || role.builtIn) return false;
     this.roles.delete(id);
     if (this.db) {
-      this.db.run('DELETE FROM roles WHERE id = ? AND built_in = 0', [id]);
+      this.db.drizzle
+        .delete(rolesTable)
+        .where(and(eq(rolesTable.id, id), eq(rolesTable.builtIn, 0)))
+        .run();
     }
     return true;
   }
