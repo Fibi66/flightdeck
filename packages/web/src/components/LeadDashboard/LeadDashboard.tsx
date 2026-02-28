@@ -35,7 +35,7 @@ export function LeadDashboard({ api, ws }: Props) {
   const [pendingBannerExpanded, setPendingBannerExpanded] = useState(false);
   const isResizing = useRef(false);
 
-  const leadAgents = agents.filter((a) => a.role.id === 'lead');
+  const leadAgents = agents.filter((a) => a.role.id === 'lead' && !a.parentId);
   const currentProject = selectedLeadId ? projects[selectedLeadId] : null;
   const leadAgent = agents.find((a) => a.id === selectedLeadId);
   const isActive = leadAgent && (leadAgent.status === 'running' || leadAgent.status === 'idle');

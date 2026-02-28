@@ -123,7 +123,7 @@ function SessionsView({ api }: { api: any }) {
   const [progress, setProgress] = useState<LeadProgress | null>(null);
 
   // Find all leads
-  const leads = agents.filter((a: AgentInfo) => a.role?.id === 'lead');
+  const leads = agents.filter((a: AgentInfo) => a.role?.id === 'lead' && !a.parentId);
 
   // Auto-select first lead
   useEffect(() => {
@@ -244,7 +244,7 @@ export function TaskQueuePanel({ api }: Props) {
   const { agents } = useAppStore();
   const [tab, setTab] = useState<'sessions' | 'queue'>(() => {
     // Default to sessions if there are leads
-    return agents.some((a: AgentInfo) => a.role?.id === 'lead') ? 'sessions' : 'queue';
+    return agents.some((a: AgentInfo) => a.role?.id === 'lead' && !a.parentId) ? 'sessions' : 'queue';
   });
   const [showCreate, setShowCreate] = useState(false);
   const [newTitle, setNewTitle] = useState('');
@@ -269,7 +269,7 @@ export function TaskQueuePanel({ api }: Props) {
     completed: tasks.filter((t) => ['done', 'failed'].includes(t.status)),
   };
 
-  const leadCount = agents.filter((a: AgentInfo) => a.role?.id === 'lead').length;
+  const leadCount = agents.filter((a: AgentInfo) => a.role?.id === 'lead' && !a.parentId).length;
 
   return (
     <div className="flex-1 overflow-auto p-4">

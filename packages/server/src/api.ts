@@ -259,7 +259,7 @@ export function apiRouter(
 
   router.get('/lead', (_req, res) => {
     const leads = agentManager.getAll()
-      .filter((a) => a.role.id === 'lead')
+      .filter((a) => a.role.id === 'lead' && !a.parentId)
       .map((a) => a.toJSON());
     res.json(leads);
   });
