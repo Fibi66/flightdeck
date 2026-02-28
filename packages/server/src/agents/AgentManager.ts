@@ -1,4 +1,3 @@
-import { EventEmitter } from 'events';
 import { Agent } from './Agent.js';
 import type { AgentContextInfo } from './Agent.js';
 import type { Role, RoleRegistry } from './RoleRegistry.js';
@@ -8,20 +7,57 @@ import type { ActivityLedger } from '../coordination/ActivityLedger.js';
 import type { MessageBus } from '../comms/MessageBus.js';
 import type { DecisionLog } from '../coordination/DecisionLog.js';
 import type { AgentMemory } from './AgentMemory.js';
-import type { ChatGroupRegistry } from '../comms/ChatGroupRegistry.js';
+import type { ChatGroupRegistry, ChatGroup, GroupMessage } from '../comms/ChatGroupRegistry.js';
 import type { Database } from '../db/database.js';
 import { TaskDAG } from '../tasks/TaskDAG.js';
 import { logger } from '../utils/logger.js';
 import { writeAgentFiles } from './agentFiles.js';
 import { CommandDispatcher } from './CommandDispatcher.js';
+import type { Delegation } from './CommandDispatcher.js';
 import { HeartbeatMonitor } from './HeartbeatMonitor.js';
+import { TypedEmitter } from '../utils/TypedEmitter.js';
+import type { ToolCallInfo, PlanEntry } from '../acp/AcpConnection.js';
 import { agentPlans } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 
 // Re-export Delegation so existing consumers (api.ts, etc.) continue to work
 export type { Delegation } from './CommandDispatcher.js';
 
-export class AgentManager extends EventEmitter {
+// ── Typed event map for AgentManager ────────────────────────────────
+export interface AgentManagerEvents {
+  'agent:spawned': ReturnType<Agent['toJSON']>;
+  'agent:killed': string;
+  'agent:exit': { agentId: string; code: number };
+  'agent:text': { agentId: string; text: string };
+  'agent:tool_call': { agentId: string; toolCall: ToolCallInfo };
+  'agent:content': { agentId: string; content: string };
+  'agent:plan': { agentId: string; plan: PlanEntry[] };
+  'agent:permission_request': { agentId: string; request: any };
+  'agent:session_ready': { agentId: string; sessionId: string };
+  'agent:message_sent': { from: string; fromRole: string; to: string; toRole: string; content: string };
+  'agent:context_compacted': { agentId: string; previousUsed: number; currentUsed: number; percentDrop: number };
+  'agent:status': { agentId: string; status: string };
+  'agent:crashed': { agentId: string; code: number };
+  'agent:auto_restarted': { agentId: string; previousAgentId: string; crashCount: number };
+  'agent:restart_limit': { agentId: string };
+  'agent:hung': { agentId: string; elapsedMs: number };
+  'agent:hung_killed': { agentId: string };
+  'agent:restarted': { oldId: string; newAgent: ReturnType<Agent['toJSON']> };
+  // Events emitted via CommandDispatcher pass-through
+  'agent:sub_spawned': { parentId: string; child: ReturnType<Agent['toJSON']> };
+  'agent:spawn_error': { agentId: string; message: string };
+  'agent:delegated': { parentId: string; childId: string; delegation: Delegation };
+  'agent:delegate_error': { agentId: string; message: string };
+  'agent:completion_reported': { childId: string; parentId: string | undefined; status: string };
+  'lead:decision': { id: number; agentId: string; agentRole: string; leadId: string; title: string; rationale: string; needsConfirmation: boolean; status: string };
+  'lead:progress': Record<string, any>;
+  'lead:stalled': { leadId: string; nudgeCount: number; idleDuration: number };
+  'dag:updated': { leadId: string };
+  'group:created': { group: ChatGroup; leadId: string };
+  'group:message': { message: GroupMessage; groupName: string; leadId: string };
+}
+
+export class AgentManager extends TypedEmitter<AgentManagerEvents> {
   private agents: Map<string, Agent> = new Map();
   private config: ServerConfig;
   private roleRegistry: RoleRegistry;
@@ -77,7 +113,7 @@ export class AgentManager extends EventEmitter {
       getRunningCount: () => this.getRunningCount(),
       spawnAgent: (role, task, parentId, autopilot, model, cwd) => this.spawn(role, task, parentId, autopilot, model, cwd),
       killAgent: (id) => this.kill(id),
-      emit: (event, ...args) => this.emit(event, ...args),
+      emit: (event: string, ...args: any[]) => this.emit(event as any, args[0]),
       roleRegistry: this.roleRegistry,
       config: this.config,
       lockRegistry: this.lockRegistry,
@@ -94,7 +130,7 @@ export class AgentManager extends EventEmitter {
     this.heartbeat = new HeartbeatMonitor({
       getAllAgents: () => this.getAll(),
       getDelegationsMap: () => this.dispatcher.getDelegationsMap(),
-      emit: (event, ...args) => this.emit(event, ...args),
+      emit: (event: string, ...args: any[]) => this.emit(event as any, args[0]),
     });
     this.heartbeat.start();
 
@@ -164,7 +200,7 @@ export class AgentManager extends EventEmitter {
 
     // Listen for data to detect sub-agent spawn requests and coordination commands
     agent.onData((data) => {
-      this.emit('agent:text', agent.id, data);
+      this.emit('agent:text', { agentId: agent.id, text: data });
       // Buffer ACP text and scan for complete command patterns
       this.dispatcher.appendToBuffer(agent.id, data);
       this.dispatcher.scanBuffer(agent);
@@ -256,7 +292,7 @@ export class AgentManager extends EventEmitter {
         role: agent.role.id,
         status: agent.status,
       });
-      this.emit('agent:exit', agent.id, code);
+      this.emit('agent:exit', { agentId: agent.id, code });
 
       // Release any file locks held by the exiting agent
       const releasedCount = this.lockRegistry.releaseAll(agent.id);

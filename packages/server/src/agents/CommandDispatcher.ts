@@ -384,7 +384,7 @@ export class CommandDispatcher {
       if (req.model) this.ctx.agentMemory.store(agent.id, child.id, 'model', req.model);
       if (req.task) this.ctx.agentMemory.store(agent.id, child.id, 'task', req.task.slice(0, 200));
 
-      this.ctx.emit('agent:sub_spawned', agent.id, child.toJSON());
+      this.ctx.emit('agent:sub_spawned', { parentId: agent.id, child: child.toJSON() });
     } catch (err: any) {
       // Send meaningful error back to the lead with budget info
       if (err.message?.includes('Concurrency limit')) {
@@ -397,7 +397,7 @@ export class CommandDispatcher {
       } else {
         agent.sendMessage(`[System] Failed to create agent: ${err.message}`);
       }
-      this.ctx.emit('agent:spawn_error', agent.id, err.message);
+      this.ctx.emit('agent:spawn_error', { agentId: agent.id, message: err.message });
     }
   }
 
@@ -608,7 +608,7 @@ export class CommandDispatcher {
 
       this.ctx.emit('agent:delegated', { parentId: agent.id, childId: child.id, delegation });
     } catch (err: any) {
-      this.ctx.emit('agent:delegate_error', agent.id, err.message);
+      this.ctx.emit('agent:delegate_error', { agentId: agent.id, message: err.message });
     }
   }
 

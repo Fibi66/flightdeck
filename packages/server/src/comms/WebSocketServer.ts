@@ -74,9 +74,9 @@ export class WebSocketServer {
   }
 
   private wireAgentEvents(agentManager: AgentManager): void {
-    agentManager.on('agent:data', (agentId: string, data: string) => {
+    agentManager.on('agent:text', ({ agentId, text }: { agentId: string; text: string }) => {
       this.broadcast(
-        { type: 'agent:data', agentId, data },
+        { type: 'agent:data', agentId, data: text },
         (c) => c.subscribedAgents.has(agentId) || c.subscribedAgents.has('*'),
       );
     });
@@ -89,7 +89,7 @@ export class WebSocketServer {
       this.broadcastAll({ type: 'agent:killed', agentId });
     });
 
-    agentManager.on('agent:exit', (agentId: string, code: number) => {
+    agentManager.on('agent:exit', ({ agentId, code }: { agentId: string; code: number }) => {
       this.broadcastAll({ type: 'agent:exit', agentId, code });
     });
 
@@ -109,15 +109,15 @@ export class WebSocketServer {
       this.broadcastAll({ type: 'agent:restart_limit', ...data });
     });
 
-    agentManager.on('agent:sub_spawned', (parentId: string, childJson: any) => {
-      this.broadcastAll({ type: 'agent:sub_spawned', parentId, child: childJson });
+    agentManager.on('agent:sub_spawned', (data: any) => {
+      this.broadcastAll({ type: 'agent:sub_spawned', parentId: data.parentId, child: data.child });
     });
 
     agentManager.on('agent:tool_call', (data: any) => {
       this.broadcastAll({ type: 'agent:tool_call', ...data });
     });
 
-    agentManager.on('agent:text', (agentId: string, text: string) => {
+    agentManager.on('agent:text', ({ agentId, text }: { agentId: string; text: string }) => {
       this.broadcastAll({ type: 'agent:text', agentId, text });
     });
 
