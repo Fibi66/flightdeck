@@ -259,7 +259,8 @@ export function apiRouter(
 
     try {
       const agent = agentManager.spawn(role, task, undefined, true, model, cwd, resumeSessionId);
-      agent.projectName = name || task?.slice(0, 60) || `Project ${new Date().toLocaleDateString()}`;
+      // Set initial project name from explicit name only; task is NOT used as name
+      agent.projectName = name || `Project ${new Date().toLocaleDateString()}`;
       logger.info('lead', `${resumeSessionId ? 'Resumed' : 'Started'} project "${agent.projectName}" (${agent.id.slice(0, 8)})`, {
         task: task?.slice(0, 80),
         model: model || role.model,
@@ -271,9 +272,11 @@ export function apiRouter(
       if (projectRegistry) {
         let project;
         if (projectId) {
-          // Resume an existing project
+          // Resume an existing project — keep its original name
           project = projectRegistry.get(projectId);
-          if (!project) {
+          if (project) {
+            agent.projectName = project.name;
+          } else {
             logger.warn('lead', `Project ${projectId} not found — creating new`);
           }
         }
