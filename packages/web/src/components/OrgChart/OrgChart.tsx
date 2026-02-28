@@ -129,9 +129,20 @@ function roleColor(role: string): string {
 // CommsList — chronological message list (1:1 + group)
 // ---------------------------------------------------------------------------
 function CommsList({ entries }: { entries: CommEntry[] }) {
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
   if (entries.length === 0) {
     return <div className="text-gray-500 text-sm text-center py-4">No messages yet</div>;
   }
+
+  const toggle = (id: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   return (
     <div className="space-y-1 max-h-[400px] overflow-y-auto">
@@ -144,31 +155,46 @@ function CommsList({ entries }: { entries: CommEntry[] }) {
             minute: '2-digit',
             second: '2-digit',
           });
-          const preview = c.content?.length > 120 ? `${c.content.slice(0, 120)}…` : c.content;
+          const isLong = c.content?.length > 120;
+          const isExpanded = expandedIds.has(c.id);
+          const preview = isLong && !isExpanded ? `${c.content.slice(0, 120)}…` : c.content;
           return (
-            <div key={c.id} className="text-xs px-2 py-1 hover:bg-gray-700/30 rounded">
-              <span className="text-gray-500">[{time}]</span>{' '}
-              <span className={roleColor(c.fromRole)}>
-                {c.fromRole} ({c.fromId?.slice(0, 6)})
-              </span>
-              {c.groupName ? (
-                <>
-                  <span className="text-gray-500"> → </span>
-                  <span className="inline-flex items-center gap-0.5 text-purple-400">
-                    <Users className="w-2.5 h-2.5 inline" />
-                    {c.groupName}
+            <button
+              key={c.id}
+              onClick={() => toggle(c.id)}
+              className="w-full text-left text-xs px-2 py-1.5 hover:bg-gray-700/30 rounded cursor-pointer transition-colors"
+            >
+              <div className="flex items-center gap-1">
+                <span className="text-gray-500 shrink-0">[{time}]</span>
+                <span className={`shrink-0 ${roleColor(c.fromRole)}`}>
+                  {c.fromRole} ({c.fromId?.slice(0, 6)})
+                </span>
+                {c.groupName ? (
+                  <>
+                    <span className="text-gray-500"> → </span>
+                    <span className="inline-flex items-center gap-0.5 text-purple-400 shrink-0">
+                      <Users className="w-2.5 h-2.5 inline" />
+                      {c.groupName}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-gray-500"> → </span>
+                    <span className={`shrink-0 ${roleColor(c.toRole)}`}>
+                      {c.toRole} ({c.toId?.slice(0, 6)})
+                    </span>
+                  </>
+                )}
+                {isLong && (
+                  <span className="ml-auto text-gray-500 text-[10px] shrink-0">
+                    {isExpanded ? '▾' : '▸'} {c.content.length} chars
                   </span>
-                </>
-              ) : (
-                <>
-                  <span className="text-gray-500"> → </span>
-                  <span className={roleColor(c.toRole)}>
-                    {c.toRole} ({c.toId?.slice(0, 6)})
-                  </span>
-                </>
-              )}
-              <span className="text-gray-400">: {preview}</span>
-            </div>
+                )}
+              </div>
+              <div className={`text-gray-400 mt-0.5 ${isExpanded ? 'whitespace-pre-wrap break-words' : 'truncate'}`}>
+                {preview}
+              </div>
+            </button>
           );
         })}
     </div>
