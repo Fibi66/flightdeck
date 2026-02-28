@@ -422,6 +422,16 @@ export function apiRouter(
     chatGroups.addMembers(leadId, groupName, ['human']);
     const message = chatGroups.sendMessage(groupName, leadId, 'human', 'Human User', content);
     if (!message) return res.status(500).json({ error: 'Failed to send message' });
+
+    // Deliver to agent members and wake idle agents
+    const members = chatGroups.getMembers(groupName, leadId).filter((id: string) => id !== 'human');
+    for (const memberId of members) {
+      const agent = agentManager.get(memberId);
+      if (agent && (agent.status === 'running' || agent.status === 'idle')) {
+        agent.sendMessage(`[Group "${groupName}" — Human]: ${content}`);
+      }
+    }
+
     res.status(201).json(message);
   });
 
