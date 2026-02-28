@@ -29,6 +29,8 @@ export function LeadDashboard({ api, ws }: Props) {
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const [sidebarWidth, setSidebarWidth] = useState(320);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarTab, setSidebarTab] = useState<string>('comms');
+  const [sidebarTabHeight, setSidebarTabHeight] = useState(280);
   const [showProgressDetail, setShowProgressDetail] = useState(false);
   const [expandedReport, setExpandedReport] = useState<AgentReport | null>(null);
   const [reportsExpanded, setReportsExpanded] = useState(true);
@@ -347,6 +349,34 @@ export function LeadDashboard({ api, ws }: Props) {
     document.addEventListener('mouseup', onMouseUp);
   }, [sidebarWidth]);
 
+  const isTabResizing = useRef(false);
+  const startTabResize = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isTabResizing.current = true;
+    const startY = e.clientY;
+    const startHeight = sidebarTabHeight;
+
+    const onMouseMove = (ev: MouseEvent) => {
+      if (!isTabResizing.current) return;
+      const delta = startY - ev.clientY;
+      const newHeight = Math.min(600, Math.max(120, startHeight + delta));
+      setSidebarTabHeight(newHeight);
+    };
+
+    const onMouseUp = () => {
+      isTabResizing.current = false;
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    document.body.style.cursor = 'row-resize';
+    document.body.style.userSelect = 'none';
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  }, [sidebarTabHeight]);
+
   const startLead = useCallback(async (name: string, task?: string, model?: string, cwd?: string, sessionId?: string) => {
     setStarting(true);
     try {
@@ -376,15 +406,15 @@ export function LeadDashboard({ api, ws }: Props) {
     }
   }, []);
 
-  const sendMessage = useCallback(async () => {
+  const sendMessage = useCallback(async (mode: 'queue' | 'interrupt' = 'queue') => {
     if (!input.trim() || !selectedLeadId) return;
     const text = input.trim();
     setInput('');
-    useLeadStore.getState().addMessage(selectedLeadId, { type: 'text', text, sender: 'user', queued: true, timestamp: Date.now() });
+    useLeadStore.getState().addMessage(selectedLeadId, { type: 'text', text, sender: 'user', queued: mode === 'queue', timestamp: Date.now() });
     await fetch(`/api/lead/${selectedLeadId}/message`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text, mode }),
     });
   }, [input, selectedLeadId]);
 
@@ -406,6 +436,10 @@ export function LeadDashboard({ api, ws }: Props) {
     }
   }, [selectedLeadId]);
 
+  const handleOpenAgentChat = useCallback((agentId: string) => {
+    useAppStore.getState().setSelectedAgent(agentId);
+  }, []);
+
   const messages = currentProject?.messages ?? [];
   const decisions = currentProject?.decisions ?? [];
   const pendingConfirmations = decisions.filter((d: any) => d.needsConfirmation && d.status === 'recorded');
@@ -419,6 +453,13 @@ export function LeadDashboard({ api, ws }: Props) {
   const groupMessages = currentProject?.groupMessages ?? {};
   const dagStatus = currentProject?.dagStatus ?? null;
   const teamAgents = agents.filter((a) => a.parentId === selectedLeadId);
+
+  // Auto-switch to decisions tab when there are pending confirmations
+  useEffect(() => {
+    if (pendingConfirmations.length > 0) {
+      setSidebarTab('decisions');
+    }
+  }, [pendingConfirmations.length]);
 
   return (
     <div className="flex-1 flex overflow-hidden">
@@ -916,10 +957,14 @@ export function LeadDashboard({ api, ws }: Props) {
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault();
-                      sendMessage();
+                      sendMessage('queue');
+                    }
+                    if (e.key === 'Enter' && e.ctrlKey) {
+                      e.preventDefault();
+                      sendMessage('interrupt');
                     }
                   }}
-                  placeholder={isActive ? 'Message the Project Lead... (Shift+Enter for new line)' : 'Project Lead is not active'}
+                  placeholder={isActive ? 'Message the Lead... (Enter = queue, Ctrl+Enter = interrupt)' : 'Project Lead is not active'}
                   disabled={!isActive}
                   rows={1}
                   onInput={(e) => {
@@ -930,14 +975,28 @@ export function LeadDashboard({ api, ws }: Props) {
                   className="flex-1 bg-gray-800 border border-gray-600 rounded px-3 py-2 text-sm font-mono text-gray-200 focus:outline-none focus:border-yellow-500 disabled:opacity-50 resize-none overflow-y-auto"
                   style={{ maxHeight: 150 }}
                 />
-                <button
-                  type="button"
-                  onClick={sendMessage}
-                  disabled={!isActive || !input.trim()}
-                  className="bg-yellow-600 hover:bg-yellow-500 disabled:bg-gray-600 text-black px-3 py-2 rounded shrink-0"
-                >
-                  <Send className="w-4 h-4" />
-                </button>
+                <div className="flex flex-col gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => sendMessage('queue')}
+                    disabled={!isActive || !input.trim()}
+                    title="Send (queued) — Enter"
+                    className="bg-yellow-600 hover:bg-yellow-500 disabled:bg-gray-600 text-black px-3 py-1.5 rounded text-xs font-medium flex items-center gap-1"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    Queue
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => sendMessage('interrupt')}
+                    disabled={!isActive || !input.trim()}
+                    title="Interrupt current work — Ctrl+Enter"
+                    className="bg-red-700 hover:bg-red-600 disabled:bg-gray-600 text-white px-3 py-1.5 rounded text-xs font-medium flex items-center gap-1"
+                  >
+                    <AlertCircle className="w-3.5 h-3.5" />
+                    Interrupt
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -975,24 +1034,62 @@ export function LeadDashboard({ api, ws }: Props) {
                     <PanelRightClose className="w-3.5 h-3.5" />
                   </button>
                 </div>
-                <CollapsibleSection title="Decisions" icon={<Lightbulb className="w-3.5 h-3.5 text-yellow-400" />} badge={decisions.length} defaultHeight={150}>
-                  <DecisionPanelContent decisions={decisions} onConfirm={handleConfirmDecision} onReject={handleRejectDecision} />
-                </CollapsibleSection>
-                <CollapsibleSection title="Agent Comms" icon={<MessageSquare className="w-3.5 h-3.5 text-purple-400" />} badge={comms.length} defaultHeight={200}>
-                  <CommsPanelContent comms={comms} />
-                </CollapsibleSection>
-                <CollapsibleSection title="Groups" icon={<Users className="w-3.5 h-3.5 text-teal-400" />} badge={groups.length} defaultHeight={200}>
-                  <GroupsPanelContent groups={groups} groupMessages={groupMessages} leadId={selectedLeadId} />
-                </CollapsibleSection>
-                <CollapsibleSection title="Task DAG" icon={<Network className="w-3.5 h-3.5 text-cyan-400" />} badge={dagStatus?.tasks.length} defaultHeight={220}>
-                  <TaskDagPanelContent dagStatus={dagStatus} />
-                </CollapsibleSection>
-                <CollapsibleSection title="Activity" icon={<Wrench className="w-3.5 h-3.5 text-gray-400" />} badge={activity.length} defaultHeight={180}>
-                  <ActivityFeedContent activity={activity} agents={agents} />
-                </CollapsibleSection>
-                <CollapsibleSection title="Team" icon={<Bot className="w-3.5 h-3.5 text-blue-400" />} badge={teamAgents.length} defaultHeight={180}>
-                  <TeamStatusContent agents={teamAgents} delegations={progress?.delegations ?? []} comms={comms} activity={activity} allAgents={agents} />
-                </CollapsibleSection>
+                {/* Team — always visible at top */}
+                <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+                  <div className="px-3 py-2 flex items-center gap-2 border-b border-gray-700 shrink-0">
+                    <Bot className="w-3.5 h-3.5 text-blue-400" />
+                    <span className="text-xs font-semibold">Team</span>
+                    <span className="text-[10px] text-gray-500 ml-auto">{teamAgents.length}</span>
+                  </div>
+                  <div className="flex-1 min-h-0 overflow-y-auto">
+                    <TeamStatusContent agents={teamAgents} delegations={progress?.delegations ?? []} comms={comms} activity={activity} allAgents={agents} onOpenChat={handleOpenAgentChat} />
+                  </div>
+                </div>
+
+                {/* Tabbed bottom panels */}
+                <div className="border-t border-gray-700 flex flex-col relative" style={{ height: sidebarTabHeight }}>
+                  <div className="flex border-b border-gray-700 shrink-0 overflow-x-auto">
+                    {[
+                      { id: 'comms', icon: <MessageSquare className="w-3 h-3" />, label: 'Comms', badge: comms.length },
+                      { id: 'groups', icon: <Users className="w-3 h-3" />, label: 'Groups', badge: groups.length },
+                      { id: 'dag', icon: <Network className="w-3 h-3" />, label: 'DAG', badge: dagStatus?.tasks.length },
+                      { id: 'decisions', icon: <Lightbulb className="w-3 h-3" />, label: 'Decisions', badge: decisions.length },
+                      { id: 'activity', icon: <Wrench className="w-3 h-3" />, label: 'Activity', badge: activity.length },
+                    ].map((tab) => (
+                      <button
+                        key={tab.id}
+                        onClick={() => setSidebarTab(tab.id)}
+                        className={`flex items-center gap-1 px-2.5 py-1.5 text-[11px] whitespace-nowrap border-b-2 transition-colors ${
+                          sidebarTab === tab.id
+                            ? 'border-yellow-500 text-yellow-400'
+                            : 'border-transparent text-gray-500 hover:text-gray-300'
+                        }`}
+                      >
+                        {tab.icon}
+                        {tab.label}
+                        {tab.badge !== undefined && tab.badge > 0 && (
+                          <span className="text-[9px] bg-gray-700 text-gray-400 px-1 rounded-full ml-0.5">{tab.badge}</span>
+                        )}
+                        {tab.id === 'decisions' && pendingConfirmations.length > 0 && (
+                          <span className="w-2 h-2 bg-yellow-500 rounded-full ml-0.5" title={`${pendingConfirmations.length} pending`} />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex-1 min-h-0 overflow-hidden">
+                    {sidebarTab === 'comms' && <CommsPanelContent comms={comms} />}
+                    {sidebarTab === 'groups' && <GroupsPanelContent groups={groups} groupMessages={groupMessages} leadId={selectedLeadId} />}
+                    {sidebarTab === 'dag' && <TaskDagPanelContent dagStatus={dagStatus} />}
+                    {sidebarTab === 'decisions' && <DecisionPanelContent decisions={decisions} onConfirm={handleConfirmDecision} onReject={handleRejectDecision} />}
+                    {sidebarTab === 'activity' && <ActivityFeedContent activity={activity} agents={agents} />}
+                  </div>
+                  {/* Resize handle for tabbed section */}
+                  <div
+                    onMouseDown={startTabResize}
+                    className="h-1 cursor-row-resize hover:bg-blue-500/50 active:bg-blue-500 transition-colors shrink-0 absolute top-0 left-0 right-0"
+                    style={{ transform: 'translateY(-2px)' }}
+                  />
+                </div>
               </div>
             </div>
           )}
@@ -1409,7 +1506,7 @@ function DecisionPanelContent({ decisions, onConfirm, onReject }: { decisions: a
   );
 }
 
-function TeamStatusContent({ agents, delegations, comms, activity, allAgents }: { agents: any[]; delegations: any[]; comms?: AgentComm[]; activity?: ActivityEvent[]; allAgents?: any[] }) {
+function TeamStatusContent({ agents, delegations, comms, activity, allAgents, onOpenChat }: { agents: any[]; delegations: any[]; comms?: AgentComm[]; activity?: ActivityEvent[]; allAgents?: any[]; onOpenChat?: (agentId: string) => void }) {
   const STATUS_COLOR: Record<string, string> = {
     creating: 'text-gray-400', running: 'text-blue-400', idle: 'text-yellow-400',
     completed: 'text-green-400', failed: 'text-red-400',
@@ -1453,6 +1550,15 @@ function TeamStatusContent({ agents, delegations, comms, activity, allAgents }: 
                   )}
                   <span className="text-xs font-mono text-gray-400 ml-auto">{agent.id.slice(0, 8)}</span>
                 </div>
+                {onOpenChat && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onOpenChat(agent.id); }}
+                    className="text-[10px] font-mono text-blue-400 hover:text-blue-300 bg-blue-900/30 hover:bg-blue-900/50 px-1.5 py-0.5 rounded transition-colors mt-1"
+                    title="Open agent chat panel"
+                  >
+                    💬 Chat
+                  </button>
+                )}
               </div>
             );
           })
