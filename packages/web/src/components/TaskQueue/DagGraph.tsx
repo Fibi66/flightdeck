@@ -1,20 +1,31 @@
-import { useRef, useState, useCallback, useMemo, useEffect } from 'react';
+import { useMemo, useCallback, useEffect, useRef } from 'react';
+import {
+  ReactFlow,
+  Background,
+  Controls,
+  MiniMap,
+  useNodesState,
+  useEdgesState,
+  useReactFlow,
+  ReactFlowProvider,
+  Handle,
+  Position,
+  type Node,
+  type Edge,
+  type NodeProps,
+  MarkerType,
+} from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
 import type { DagStatus, DagTask } from '../../types';
-import { RotateCcw, ZoomIn, ZoomOut } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-const NODE_W = 160;
-const NODE_H = 60;
-const NODE_RX = 8;
-const H_GAP = 220;
-const V_GAP = 80;
+const NODE_W = 180;
+const NODE_H = 70;
+const H_GAP = 240;
+const V_GAP = 90;
 const PAD = 40;
-const MIN_ZOOM = 0.3;
-const MAX_ZOOM = 3.0;
-const ZOOM_STEP = 0.1;
-const ARROW_SIZE = 8;
 
 // ---------------------------------------------------------------------------
 // Status → visual config
@@ -41,30 +52,136 @@ const STATUS_STYLES: Record<DagTaskStatus, StatusStyle> = {
 };
 
 // ---------------------------------------------------------------------------
-// Layout: layered topological sort
+// Helpers
 // ---------------------------------------------------------------------------
-interface LayoutNode {
-  task: DagTask;
-  layer: number;
-  order: number;
-  x: number;
-  y: number;
+function truncate(s: string, maxLen: number): string {
+  return s.length > maxLen ? s.slice(0, maxLen - 1) + '…' : s;
 }
 
-interface LayoutEdge {
-  from: string;
-  to: string;
-  status: DagTaskStatus;
+function edgeColor(status: DagTaskStatus): string {
+  if (status === 'done') return '#34d399';
+  if (status === 'failed') return '#ef4444';
+  return '#4b5563';
 }
 
-interface GraphLayout {
-  nodes: Map<string, LayoutNode>;
-  edges: LayoutEdge[];
-  width: number;
-  height: number;
+// ---------------------------------------------------------------------------
+// Custom node component
+// ---------------------------------------------------------------------------
+type DagTaskNodeData = { task: DagTask };
+
+function DagTaskNode({ data }: NodeProps<Node<DagTaskNodeData>>) {
+  const task = data.task;
+  const style = STATUS_STYLES[task.dagStatus];
+
+  return (
+    <div
+      style={{
+        width: NODE_W,
+        height: NODE_H,
+        background: style.bg,
+        border: `1.5px solid ${style.border}`,
+        borderRadius: 8,
+        opacity: style.opacity,
+        padding: '6px 10px',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'center',
+        gap: 2,
+        cursor: 'pointer',
+      }}
+      className={style.pulse ? 'dag-node-pulse' : undefined}
+    >
+      <Handle
+        type="target"
+        position={Position.Left}
+        style={{ background: style.border, width: 6, height: 6, border: 'none' }}
+      />
+
+      {/* Row 1: icon + task ID */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4, minHeight: 18 }}>
+        <span style={{ fontSize: 13, lineHeight: 1 }}>{style.icon}</span>
+        <span
+          style={{
+            fontFamily: 'monospace',
+            fontSize: 11,
+            color: '#e5e7eb',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
+          {truncate(task.id, 16)}
+        </span>
+      </div>
+
+      {/* Row 2: role */}
+      <div
+        style={{
+          fontSize: 10,
+          color: '#9ca3af',
+          textAlign: 'center',
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+        }}
+      >
+        {task.role}
+      </div>
+
+      {/* Row 3: description (2 lines max) */}
+      {task.description && (
+        <div
+          style={{
+            fontSize: 9,
+            color: '#6b7280',
+            lineHeight: '1.2',
+            overflow: 'hidden',
+            display: '-webkit-box',
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: 'vertical',
+          }}
+        >
+          {task.description}
+        </div>
+      )}
+
+      {/* Agent badge */}
+      {task.assignedAgentId && (
+        <div
+          style={{
+            fontSize: 8,
+            color: '#60a5fa',
+            background: '#1e3a5f',
+            borderRadius: 3,
+            padding: '1px 4px',
+            alignSelf: 'flex-start',
+            marginTop: 1,
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            maxWidth: '100%',
+          }}
+        >
+          🤖 {truncate(task.assignedAgentId, 14)}
+        </div>
+      )}
+
+      <Handle
+        type="source"
+        position={Position.Right}
+        style={{ background: style.border, width: 6, height: 6, border: 'none' }}
+      />
+    </div>
+  );
 }
 
-function computeLayout(tasks: DagTask[]): GraphLayout {
+// Register at module level to avoid re-renders
+const nodeTypes = { dagTask: DagTaskNode };
+
+// ---------------------------------------------------------------------------
+// Layout: layered topological sort → React Flow nodes & edges
+// ---------------------------------------------------------------------------
+function dagToFlow(tasks: DagTask[]): { nodes: Node<DagTaskNodeData>[]; edges: Edge[] } {
   const taskMap = new Map<string, DagTask>();
   for (const t of tasks) taskMap.set(t.id, t);
 
@@ -105,13 +222,11 @@ function computeLayout(tasks: DagTask[]): GraphLayout {
 
   const layerCount = layerGroups.size === 0 ? 0 : Math.max(...layerGroups.keys()) + 1;
 
-  // 3. Minimize crossings: order nodes within each layer by median of parents in previous layer
-  // First pass: initial order (by priority then id)
+  // 3. Minimize crossings via barycenter heuristic
   const orderMap = new Map<string, number>();
 
   for (let l = 0; l < layerCount; l++) {
     const group = layerGroups.get(l) ?? [];
-    // Sort by priority desc, then id for stability
     group.sort((a, b) => {
       const ta = taskMap.get(a)!;
       const tb = taskMap.get(b)!;
@@ -120,7 +235,6 @@ function computeLayout(tasks: DagTask[]): GraphLayout {
     group.forEach((id, idx) => orderMap.set(id, idx));
   }
 
-  // Two barycenter sweeps to reduce crossings
   for (let sweep = 0; sweep < 2; sweep++) {
     for (let l = 1; l < layerCount; l++) {
       const group = layerGroups.get(l) ?? [];
@@ -134,8 +248,7 @@ function computeLayout(tasks: DagTask[]): GraphLayout {
         }
         if (parentOrders.length > 0) {
           parentOrders.sort((a, b) => a - b);
-          const mid = Math.floor(parentOrders.length / 2);
-          medians.set(id, parentOrders[mid]);
+          medians.set(id, parentOrders[Math.floor(parentOrders.length / 2)]);
         } else {
           medians.set(id, orderMap.get(id) ?? 0);
         }
@@ -146,225 +259,178 @@ function computeLayout(tasks: DagTask[]): GraphLayout {
     }
   }
 
-  // 4. Compute positions
-  const nodes = new Map<string, LayoutNode>();
+  // 4. Compute positions & normalize
+  const positions = new Map<string, { x: number; y: number }>();
 
   for (let l = 0; l < layerCount; l++) {
     const group = layerGroups.get(l) ?? [];
     const layerHeight = group.length * (NODE_H + V_GAP) - V_GAP;
-    const startY = -layerHeight / 2; // center vertically around 0
+    const startY = -layerHeight / 2;
 
     group.forEach((id, idx) => {
-      const task = taskMap.get(id)!;
-      nodes.set(id, {
-        task,
-        layer: l,
-        order: idx,
+      positions.set(id, {
         x: PAD + l * (NODE_W + H_GAP),
         y: startY + idx * (NODE_H + V_GAP),
       });
     });
   }
 
-  // 5. Normalize: shift all nodes so the min y is PAD
+  // Shift so min y = PAD
   let minY = Infinity;
-  let maxY = -Infinity;
-  let maxX = 0;
-  for (const n of nodes.values()) {
-    if (n.y < minY) minY = n.y;
-    if (n.y + NODE_H > maxY) maxY = n.y + NODE_H;
-    if (n.x + NODE_W > maxX) maxX = n.x + NODE_W;
+  for (const pos of positions.values()) {
+    if (pos.y < minY) minY = pos.y;
   }
-
   const yShift = PAD - minY;
-  for (const n of nodes.values()) {
-    n.y += yShift;
+  for (const pos of positions.values()) {
+    pos.y += yShift;
   }
 
-  // 6. Compute edges
-  const edges: LayoutEdge[] = [];
+  // 5. Build React Flow nodes
+  const flowNodes: Node<DagTaskNodeData>[] = tasks.map((task) => {
+    const pos = positions.get(task.id) ?? { x: 0, y: 0 };
+    return {
+      id: task.id,
+      type: 'dagTask',
+      position: pos,
+      data: { task },
+      width: NODE_W,
+      height: NODE_H,
+    };
+  });
+
+  // 6. Build React Flow edges
+  const flowEdges: Edge[] = [];
   for (const t of tasks) {
     for (const dep of t.dependsOn) {
       if (taskMap.has(dep)) {
         const depTask = taskMap.get(dep)!;
-        edges.push({
-          from: dep,
-          to: t.id,
-          status: depTask.dagStatus,
+        const status = depTask.dagStatus;
+        const color = edgeColor(status);
+        flowEdges.push({
+          id: `${dep}->${t.id}`,
+          source: dep,
+          target: t.id,
+          type: 'smoothstep',
+          animated: status === 'running',
+          style: { stroke: color, strokeWidth: 1.5, opacity: 0.8 },
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            color,
+            width: 16,
+            height: 16,
+          },
         });
       }
     }
   }
 
-  const width = maxX + PAD;
-  const height = maxY + yShift + PAD;
-
-  return { nodes, edges, width, height };
+  return { nodes: flowNodes, edges: flowEdges };
 }
 
 // ---------------------------------------------------------------------------
-// Tooltip component
+// Inner component (needs ReactFlowProvider above it to use useReactFlow)
 // ---------------------------------------------------------------------------
-interface TooltipData {
-  task: DagTask;
-  x: number;
-  y: number;
-}
+function DagGraphInner({ dagStatus }: { dagStatus: DagStatus }) {
+  const { fitView } = useReactFlow();
+  const prevTaskKeyRef = useRef('');
 
-function Tooltip({ data }: { data: TooltipData }) {
-  const { task, x, y } = data;
+  const { initialNodes, initialEdges } = useMemo(() => {
+    const { nodes, edges } = dagToFlow(dagStatus.tasks);
+    return { initialNodes: nodes, initialEdges: edges };
+  }, [dagStatus]);
+
+  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+
+  // Sync when data changes — update nodes/edges and fit view
+  useEffect(() => {
+    const taskKey = dagStatus.tasks.map((t) => `${t.id}:${t.dagStatus}`).join('|');
+    setNodes(initialNodes);
+    setEdges(initialEdges);
+
+    // Fit view on structural changes (new/removed tasks), not just status updates
+    const structKey = dagStatus.tasks.map((t) => t.id).sort().join(',');
+    const prevStructKey = prevTaskKeyRef.current;
+    prevTaskKeyRef.current = structKey;
+    if (prevStructKey !== structKey || prevStructKey === '') {
+      // Allow React Flow to process the new nodes before fitting
+      requestAnimationFrame(() => {
+        fitView({ padding: 0.15, duration: 200 });
+      });
+    }
+  }, [initialNodes, initialEdges, dagStatus.tasks, setNodes, setEdges, fitView]);
+
   return (
-    <div
-      className="fixed z-[9999] pointer-events-none bg-gray-900 border border-gray-600 rounded-lg shadow-xl px-3 py-2 text-xs text-gray-200 max-w-xs"
-      style={{ left: x + 12, top: y - 8 }}
+    <ReactFlow
+      nodes={nodes}
+      edges={edges}
+      onNodesChange={onNodesChange}
+      onEdgesChange={onEdgesChange}
+      nodeTypes={nodeTypes}
+      fitView
+      fitViewOptions={{ padding: 0.15 }}
+      minZoom={0.2}
+      maxZoom={3}
+      proOptions={{ hideAttribution: true }}
+      style={{ background: 'transparent' }}
+      nodesDraggable={false}
+      nodesConnectable={false}
+      elementsSelectable={false}
     >
-      <div className="font-mono font-bold text-white mb-1 break-all">{task.id}</div>
-      <div className="text-gray-300 mb-1">{task.description || '(no description)'}</div>
-      <div className="space-y-0.5 text-[10px] text-gray-400">
-        <div><span className="text-gray-500">Role:</span> {task.role}</div>
-        <div><span className="text-gray-500">Status:</span> {STATUS_STYLES[task.dagStatus].icon} {task.dagStatus}</div>
-        {task.assignedAgentId && (
-          <div><span className="text-gray-500">Agent:</span> {task.assignedAgentId}</div>
-        )}
-        {task.files.length > 0 && (
-          <div><span className="text-gray-500">Files:</span> {task.files.join(', ')}</div>
-        )}
-        {task.dependsOn.length > 0 && (
-          <div><span className="text-gray-500">Depends on:</span> {task.dependsOn.join(', ')}</div>
-        )}
-      </div>
-    </div>
+      <Background color="#374151" gap={20} size={1} />
+      <Controls
+        showInteractive={false}
+        style={{ background: '#1f2937', borderColor: '#374151' }}
+      />
+      <MiniMap
+        nodeColor={(node) => {
+          const task = (node.data as DagTaskNodeData).task;
+          return STATUS_STYLES[task.dagStatus].border;
+        }}
+        maskColor="rgba(0, 0, 0, 0.7)"
+        style={{ background: '#111827', borderColor: '#374151' }}
+        position="bottom-right"
+      />
+    </ReactFlow>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Edge path builder: cubic bezier from right side of source to left side of target
+// Dark theme overrides + pulse animation
 // ---------------------------------------------------------------------------
-function buildEdgePath(from: LayoutNode, to: LayoutNode): string {
-  const x1 = from.x + NODE_W;
-  const y1 = from.y + NODE_H / 2;
-  const x2 = to.x;
-  const y2 = to.y + NODE_H / 2;
-  const dx = (x2 - x1) * 0.5;
-  return `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
-}
+const darkStyles = `
+  .dag-flow-container .react-flow__controls button {
+    background: #1f2937;
+    border-color: #374151;
+    color: #9ca3af;
+    fill: #9ca3af;
+  }
+  .dag-flow-container .react-flow__controls button:hover {
+    background: #374151;
+    color: #e5e7eb;
+    fill: #e5e7eb;
+  }
+  .dag-flow-container .react-flow__minimap {
+    background: #111827;
+    border: 1px solid #374151;
+  }
+  @keyframes dagNodePulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.5); }
+    50% { box-shadow: 0 0 8px 2px rgba(59, 130, 246, 0.4); }
+  }
+  .dag-node-pulse {
+    animation: dagNodePulse 2s ease-in-out infinite;
+  }
+`;
 
-function edgeColor(status: DagTaskStatus): string {
-  if (status === 'done') return '#34d399';
-  if (status === 'failed') return '#ef4444';
-  return '#4b5563';
-}
-
 // ---------------------------------------------------------------------------
-// Truncate long text
-// ---------------------------------------------------------------------------
-function truncate(s: string, maxLen: number): string {
-  return s.length > maxLen ? s.slice(0, maxLen - 1) + '…' : s;
-}
-
-// ---------------------------------------------------------------------------
-// DagGraph component
+// Exported component
 // ---------------------------------------------------------------------------
 interface DagGraphProps {
   dagStatus: DagStatus | null;
 }
 
 export function DagGraph({ dagStatus }: DagGraphProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const svgRef = useRef<SVGSVGElement>(null);
-
-  // Pan/zoom state stored in refs to avoid re-renders during drag
-  const transformRef = useRef({ x: 0, y: 0, scale: 1 });
-  const [transform, setTransform] = useState({ x: 0, y: 0, scale: 1 });
-  const isDragging = useRef(false);
-  const dragStart = useRef({ x: 0, y: 0 });
-
-  const [tooltip, setTooltip] = useState<TooltipData | null>(null);
-
-  const layout = useMemo(() => {
-    if (!dagStatus || dagStatus.tasks.length === 0) return null;
-    return computeLayout(dagStatus.tasks);
-  }, [dagStatus]);
-
-  // Reset view: center the graph
-  const resetView = useCallback(() => {
-    const t = { x: 0, y: 0, scale: 1 };
-    transformRef.current = t;
-    setTransform(t);
-  }, []);
-
-  // Auto-reset when layout changes
-  useEffect(() => {
-    resetView();
-  }, [layout, resetView]);
-
-  // Mouse handlers for pan
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    if (e.button !== 0) return;
-    isDragging.current = true;
-    dragStart.current = { x: e.clientX - transformRef.current.x, y: e.clientY - transformRef.current.y };
-    e.preventDefault();
-  }, []);
-
-  const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    if (!isDragging.current) return;
-    const x = e.clientX - dragStart.current.x;
-    const y = e.clientY - dragStart.current.y;
-    transformRef.current = { ...transformRef.current, x, y };
-    setTransform({ ...transformRef.current });
-  }, []);
-
-  const handleMouseUp = useCallback(() => {
-    isDragging.current = false;
-  }, []);
-
-  // Wheel handler for zoom
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    e.preventDefault();
-    const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
-    const newScale = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, transformRef.current.scale + delta));
-
-    // Zoom toward cursor position
-    const rect = containerRef.current?.getBoundingClientRect();
-    if (rect) {
-      const cx = e.clientX - rect.left;
-      const cy = e.clientY - rect.top;
-      const scaleChange = newScale / transformRef.current.scale;
-      const newX = cx - scaleChange * (cx - transformRef.current.x);
-      const newY = cy - scaleChange * (cy - transformRef.current.y);
-      transformRef.current = { x: newX, y: newY, scale: newScale };
-    } else {
-      transformRef.current = { ...transformRef.current, scale: newScale };
-    }
-
-    setTransform({ ...transformRef.current });
-  }, []);
-
-  const zoomIn = useCallback(() => {
-    const newScale = Math.min(MAX_ZOOM, transformRef.current.scale + ZOOM_STEP * 2);
-    transformRef.current = { ...transformRef.current, scale: newScale };
-    setTransform({ ...transformRef.current });
-  }, []);
-
-  const zoomOut = useCallback(() => {
-    const newScale = Math.max(MIN_ZOOM, transformRef.current.scale - ZOOM_STEP * 2);
-    transformRef.current = { ...transformRef.current, scale: newScale };
-    setTransform({ ...transformRef.current });
-  }, []);
-
-  // Node hover handlers
-  const handleNodeEnter = useCallback((task: DagTask, e: React.MouseEvent) => {
-    setTooltip({ task, x: e.clientX, y: e.clientY });
-  }, []);
-
-  const handleNodeMove = useCallback((task: DagTask, e: React.MouseEvent) => {
-    setTooltip({ task, x: e.clientX, y: e.clientY });
-  }, []);
-
-  const handleNodeLeave = useCallback(() => {
-    setTooltip(null);
-  }, []);
-
   if (!dagStatus || dagStatus.tasks.length === 0) {
     return (
       <div className="flex items-center justify-center h-full text-gray-500 text-sm">
@@ -373,214 +439,15 @@ export function DagGraph({ dagStatus }: DagGraphProps) {
     );
   }
 
-  if (!layout) return null;
-
-  const { nodes, edges, width, height } = layout;
-
   return (
     <div
-      ref={containerRef}
-      className="relative w-full h-full overflow-hidden bg-gray-900/50 rounded-lg"
+      className="dag-flow-container relative w-full h-full overflow-hidden bg-gray-900/50 rounded-lg"
       style={{ minHeight: 400 }}
     >
-      {/* Controls */}
-      <div className="absolute top-2 right-2 z-10 flex gap-1">
-        <button
-          onClick={zoomIn}
-          className="p-1.5 bg-gray-800 border border-gray-600 rounded text-gray-300 hover:text-white hover:bg-gray-700 transition-colors"
-          title="Zoom in"
-        >
-          <ZoomIn size={14} />
-        </button>
-        <button
-          onClick={zoomOut}
-          className="p-1.5 bg-gray-800 border border-gray-600 rounded text-gray-300 hover:text-white hover:bg-gray-700 transition-colors"
-          title="Zoom out"
-        >
-          <ZoomOut size={14} />
-        </button>
-        <button
-          onClick={resetView}
-          className="p-1.5 bg-gray-800 border border-gray-600 rounded text-gray-300 hover:text-white hover:bg-gray-700 transition-colors"
-          title="Reset view"
-        >
-          <RotateCcw size={14} />
-        </button>
-        <span className="flex items-center px-2 text-[10px] text-gray-500 font-mono">
-          {Math.round(transform.scale * 100)}%
-        </span>
-      </div>
-
-      {/* SVG canvas */}
-      <svg
-        ref={svgRef}
-        width="100%"
-        height="100%"
-        className="cursor-grab active:cursor-grabbing select-none"
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
-        onWheel={handleWheel}
-      >
-        {/* Defs: arrow markers + pulse animation */}
-        <defs>
-          <marker
-            id="arrow-gray"
-            viewBox="0 0 10 10"
-            refX="10"
-            refY="5"
-            markerWidth={ARROW_SIZE}
-            markerHeight={ARROW_SIZE}
-            orient="auto-start-reverse"
-          >
-            <path d="M 0 0 L 10 5 L 0 10 z" fill="#4b5563" />
-          </marker>
-          <marker
-            id="arrow-green"
-            viewBox="0 0 10 10"
-            refX="10"
-            refY="5"
-            markerWidth={ARROW_SIZE}
-            markerHeight={ARROW_SIZE}
-            orient="auto-start-reverse"
-          >
-            <path d="M 0 0 L 10 5 L 0 10 z" fill="#34d399" />
-          </marker>
-          <marker
-            id="arrow-red"
-            viewBox="0 0 10 10"
-            refX="10"
-            refY="5"
-            markerWidth={ARROW_SIZE}
-            markerHeight={ARROW_SIZE}
-            orient="auto-start-reverse"
-          >
-            <path d="M 0 0 L 10 5 L 0 10 z" fill="#ef4444" />
-          </marker>
-        </defs>
-
-        {/* Pan/zoom group */}
-        <g
-          transform={`translate(${transform.x}, ${transform.y}) scale(${transform.scale})`}
-          style={{ transition: isDragging.current ? 'none' : 'transform 0.1s ease-out' }}
-        >
-          {/* Edges */}
-          {edges.map((edge) => {
-            const fromNode = nodes.get(edge.from);
-            const toNode = nodes.get(edge.to);
-            if (!fromNode || !toNode) return null;
-            const color = edgeColor(edge.status);
-            const markerId = edge.status === 'done' ? 'arrow-green' : edge.status === 'failed' ? 'arrow-red' : 'arrow-gray';
-            return (
-              <path
-                key={`${edge.from}->${edge.to}`}
-                d={buildEdgePath(fromNode, toNode)}
-                fill="none"
-                stroke={color}
-                strokeWidth={1.5}
-                markerEnd={`url(#${markerId})`}
-                opacity={0.8}
-              />
-            );
-          })}
-
-          {/* Nodes */}
-          {Array.from(nodes.values()).map((node) => {
-            const style = STATUS_STYLES[node.task.dagStatus];
-            return (
-              <g
-                key={node.task.id}
-                transform={`translate(${node.x}, ${node.y})`}
-                opacity={style.opacity}
-                onMouseEnter={(e) => handleNodeEnter(node.task, e)}
-                onMouseMove={(e) => handleNodeMove(node.task, e)}
-                onMouseLeave={handleNodeLeave}
-                className="cursor-pointer"
-              >
-                {/* Node background */}
-                <rect
-                  width={NODE_W}
-                  height={NODE_H}
-                  rx={NODE_RX}
-                  ry={NODE_RX}
-                  fill={style.bg}
-                  stroke={style.border}
-                  strokeWidth={1.5}
-                >
-                  {style.pulse && (
-                    <animate
-                      attributeName="stroke-opacity"
-                      values="1;0.4;1"
-                      dur="2s"
-                      repeatCount="indefinite"
-                    />
-                  )}
-                </rect>
-
-                {/* Hover highlight */}
-                <rect
-                  width={NODE_W}
-                  height={NODE_H}
-                  rx={NODE_RX}
-                  ry={NODE_RX}
-                  fill="white"
-                  opacity={0}
-                  className="transition-opacity duration-150"
-                  onMouseEnter={(e) => {
-                    (e.target as SVGRectElement).setAttribute('opacity', '0.08');
-                  }}
-                  onMouseLeave={(e) => {
-                    (e.target as SVGRectElement).setAttribute('opacity', '0');
-                  }}
-                />
-
-                {/* Status icon */}
-                <text
-                  x={12}
-                  y={NODE_H / 2 - 6}
-                  fontSize="14"
-                  textAnchor="start"
-                  dominantBaseline="central"
-                >
-                  {style.icon}
-                </text>
-
-                {/* Task ID */}
-                <text
-                  x={32}
-                  y={NODE_H / 2 - 6}
-                  fontSize="11"
-                  fontFamily="monospace"
-                  fill="#e5e7eb"
-                  textAnchor="start"
-                  dominantBaseline="central"
-                >
-                  {truncate(node.task.id, 14)}
-                </text>
-
-                {/* Role */}
-                <text
-                  x={NODE_W / 2}
-                  y={NODE_H / 2 + 12}
-                  fontSize="10"
-                  fill="#9ca3af"
-                  textAnchor="middle"
-                  dominantBaseline="central"
-                >
-                  {truncate(node.task.role, 18)}
-                </text>
-              </g>
-            );
-          })}
-        </g>
-
-        {/* Hidden rect to capture background mouse events for viewBox sizing */}
-        <rect width="100%" height="100%" fill="transparent" pointerEvents="none" />
-      </svg>
-
-      {/* Tooltip overlay */}
-      {tooltip && <Tooltip data={tooltip} />}
+      <style>{darkStyles}</style>
+      <ReactFlowProvider>
+        <DagGraphInner dagStatus={dagStatus} />
+      </ReactFlowProvider>
     </div>
   );
 }
