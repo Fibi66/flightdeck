@@ -740,7 +740,7 @@ export function apiRouter(
     res.json({ ...briefing, formatted: projectRegistry.formatBriefing(briefing) });
   });
 
-  // Resume a project — starts a new lead session with project context
+  // Resume a project — starts a new lead session with project context + message history
   router.post('/projects/:id/resume', (req, res) => {
     if (!projectRegistry) return res.status(500).json({ error: 'Projects not available' });
     const project = projectRegistry.get(req.params.id);
@@ -764,8 +764,11 @@ export function apiRouter(
       agent.projectId = project.id;
       projectRegistry.startSession(project.id, agent.id, task);
 
-      // Send project briefing
+      // Gather context from previous session
+      const lastLeadId = projectRegistry.getLastLeadId(project.id);
       const briefing = projectRegistry.buildBriefing(project.id);
+
+      // Send project briefing
       if (briefing && briefing.sessions.length > 1) {
         const briefingText = projectRegistry.formatBriefing(briefing);
         setTimeout(() => {
@@ -773,10 +776,26 @@ export function apiRouter(
         }, 3000);
       }
 
+      // Send condensed message history from previous lead so the new lead has conversation context
+      if (lastLeadId && lastLeadId !== agent.id) {
+        const prevMessages = agentManager.getMessageHistory(lastLeadId, 100);
+        if (prevMessages.length > 0) {
+          const historyLines = prevMessages.map((m) => {
+            const role = m.sender === 'human' ? 'Human' : m.sender === 'agent' ? 'Lead' : 'System';
+            const text = m.content.length > 500 ? m.content.slice(0, 500) + '...' : m.content;
+            return `[${role}] ${text}`;
+          });
+          const historyText = historyLines.join('\n\n');
+          setTimeout(() => {
+            agent.sendMessage(`[System — Previous Session Conversation]\nHere is the conversation from the previous session for context:\n\n${historyText}`);
+          }, 4000);
+        }
+      }
+
       if (task) {
         setTimeout(() => {
           agent.sendMessage(task);
-        }, task ? 4000 : 2000);
+        }, 5000);
       }
 
       logger.info('project', `Resumed project "${project.name}" with new lead (${agent.id.slice(0, 8)})`);
@@ -785,6 +804,15 @@ export function apiRouter(
       logger.error('project', `Failed to resume project: ${err.message}`);
       res.status(429).json({ error: err.message });
     }
+  });
+
+  // Delete a project and all its sessions
+  router.delete('/projects/:id', (req, res) => {
+    if (!projectRegistry) return res.status(500).json({ error: 'Projects not available' });
+    const deleted = projectRegistry.delete(req.params.id as string);
+    if (!deleted) return res.status(404).json({ error: 'Project not found' });
+    logger.info('project', `Deleted project ${(req.params.id as string).slice(0, 8)}`);
+    res.json({ ok: true });
   });
 
   // --- Database Browser ---

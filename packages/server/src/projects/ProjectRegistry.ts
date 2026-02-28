@@ -210,4 +210,19 @@ export class ProjectRegistry {
 
     return lines.filter(l => l !== undefined).join('\n');
   }
+
+  /** Delete a project and all associated sessions */
+  delete(id: string): boolean {
+    const project = this.get(id);
+    if (!project) return false;
+    this.db.drizzle.delete(projectSessions).where(eq(projectSessions.projectId, id)).run();
+    this.db.drizzle.delete(projects).where(eq(projects.id, id)).run();
+    return true;
+  }
+
+  /** Get the lead ID from the most recent session of a project */
+  getLastLeadId(projectId: string): string | undefined {
+    const sessions = this.getSessions(projectId);
+    return sessions[0]?.leadId;
+  }
 }

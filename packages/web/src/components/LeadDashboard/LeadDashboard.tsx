@@ -797,6 +797,22 @@ export function LeadDashboard({ api, ws }: Props) {
                       >
                         {resumingProjectId === proj.id ? <Loader2 size={10} className="animate-spin" /> : 'Resume'}
                       </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (!confirm(`Delete project "${proj.name}"? This cannot be undone.`)) return;
+                          fetch(`/api/projects/${proj.id}`, { method: 'DELETE' })
+                            .then(() => {
+                              setPersistedProjects((prev) => prev.filter((p) => p.id !== proj.id));
+                              useLeadStore.getState().removeProject(`project:${proj.id}`);
+                            })
+                            .catch(() => {});
+                        }}
+                        className="p-0.5 hover:bg-red-900/40 rounded opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                        title="Delete project"
+                      >
+                        <X className="w-3.5 h-3.5 text-gray-500 hover:text-red-400" />
+                      </button>
                     </div>
                     <div className="text-xs text-gray-600 mt-0.5 pl-4 font-mono">
                       {proj.status} · {proj.updatedAt?.slice(0, 10)}
