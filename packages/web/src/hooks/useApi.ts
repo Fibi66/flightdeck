@@ -105,6 +105,8 @@ export function useApi() {
   }, [loadRoles, loadConfig]);
 
   const updateAgent = useCallback(async (id: string, patch: { model?: string }) => {
+    // Optimistically update local store so the dropdown reflects the change immediately
+    useAppStore.getState().updateAgent(id, patch);
     return fetchJSON(`/agents/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(patch),
