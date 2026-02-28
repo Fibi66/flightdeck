@@ -29,7 +29,7 @@ Always consider: Will this architecture be easy for AI agents to navigate, under
     color: '#f0883e',
     icon: '🏗️',
     builtIn: true,
-    model: 'claude-opus-4.6',
+    model: 'gpt-5.3-codex',
   },
   {
     id: 'code-reviewer',
@@ -225,7 +225,7 @@ Rules of engagement:
     color: '#fb923c',
     icon: '🚀',
     builtIn: true,
-    model: 'gpt-5.3-codex',
+    model: 'gemini-3-pro-preview',
   },
   {
     id: 'secretary',
