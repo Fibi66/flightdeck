@@ -441,8 +441,8 @@ export function DagGraph({ dagStatus }: DagGraphProps) {
 
   return (
     <div
-      className="dag-flow-container relative w-full h-full overflow-hidden bg-gray-900/50 rounded-lg"
-      style={{ minHeight: 400 }}
+      className="dag-flow-container relative w-full overflow-hidden bg-gray-900/50 rounded-lg"
+      style={{ height: 500 }}
     >
       <style>{darkStyles}</style>
       <ReactFlowProvider>
