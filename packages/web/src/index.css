@@ -31,3 +31,31 @@ body {
 .animate-slide-in {
   animation: slide-in 0.2s ease-out;
 }
+
+@keyframes pulse-border {
+  0%, 100% {
+    border-color: rgb(234 179 8 / 0.4);
+    background-color: rgb(113 63 18 / 0.2);
+  }
+  50% {
+    border-color: rgb(234 179 8 / 0.7);
+    background-color: rgb(113 63 18 / 0.35);
+  }
+}
+
+@keyframes pulse-slow {
+  0%, 100% {
+    border-color: rgb(234 179 8 / 0.5);
+  }
+  50% {
+    border-color: rgb(234 179 8 / 0.8);
+  }
+}
+
+.animate-pulse-border {
+  animation: pulse-border 2s ease-in-out infinite;
+}
+
+.animate-pulse-slow {
+  animation: pulse-slow 3s ease-in-out infinite;
+}

@@ -10,6 +10,7 @@ import { ChatPanel } from './components/ChatPanel/ChatPanel';
 import { SettingsPanel } from './components/Settings/SettingsPanel';
 import { LeadDashboard } from './components/LeadDashboard';
 import { OrgChart } from './components/OrgChart/OrgChart';
+import { OverviewPage } from './components/OverviewPage/OverviewPage';
 import { Sidebar } from './components/Sidebar';
 import { ToastContainer, useToastStore } from './components/Toast';
 import { PermissionDialog } from './components/PermissionDialog';
@@ -83,7 +84,7 @@ export function App() {
             <Route path="/" element={<LeadDashboard api={api} ws={ws} />} />
             <Route path="/lead" element={<Navigate to="/" replace />} />
             <Route path="/agents" element={<AgentDashboard api={api} ws={ws} />} />
-            <Route path="/overview" element={<Navigate to="/agents" replace />} />
+            <Route path="/overview" element={<OverviewPage api={api} ws={ws} />} />
             <Route path="/org" element={<OrgChart api={api} ws={ws} />} />
             <Route path="/tasks" element={<TaskQueuePanel api={api} />} />
             <Route path="/settings" element={<SettingsPanel api={api} />} />

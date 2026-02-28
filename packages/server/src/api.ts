@@ -407,5 +407,18 @@ export function apiRouter(
     res.json(decision);
   });
 
+  router.post('/decisions/:id/respond', (req, res) => {
+    const { message } = req.body;
+    if (!message) return res.status(400).json({ error: 'message required' });
+    const decision = decisionLog.confirm(req.params.id);
+    if (!decision) return res.status(404).json({ error: 'Decision not found' });
+    // Send the user's feedback to the agent that made the decision
+    const agent = agentManager.get(decision.agentId);
+    if (agent && (agent.status === 'running' || agent.status === 'idle')) {
+      agent.sendMessage(`[User feedback on decision "${decision.title}"] ${message}`);
+    }
+    res.json(decision);
+  });
+
   return router;
 }
