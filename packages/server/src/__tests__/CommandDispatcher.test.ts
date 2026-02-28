@@ -368,6 +368,60 @@ describe('CommandDispatcher', () => {
         expect.stringContaining('Only the Project Lead'),
       );
     });
+
+    it('allows terminating a sub-lead\'s child agent (grandchild)', () => {
+      const subLead = makeAgent({
+        id: 'agent-sub-0003-0000-000000000003',
+        role: { id: 'lead', name: 'Sub Lead', description: '', systemPrompt: '', color: '', icon: '', builtIn: true },
+        parentId: leadAgent.id,
+      });
+      const grandchild = makeChildAgent(subLead.id, {
+        id: 'agent-gc-0004-0000-000000000004',
+      });
+      (ctx.getAllAgents as any).mockReturnValue([leadAgent, subLead, grandchild]);
+
+      dispatch(dispatcher, leadAgent, `[[[ TERMINATE_AGENT {"id": "${grandchild.id}", "reason": "cleanup"} ]]]`);
+
+      expect(ctx.killAgent).toHaveBeenCalledWith(grandchild.id);
+      expect((leadAgent.sendMessage as any)).toHaveBeenCalledWith(
+        expect.stringContaining('Terminated'),
+      );
+    });
+
+    it('rejects terminating an agent belonging to another top-level lead', () => {
+      const otherLead = makeAgent({
+        id: 'agent-other-0005-0000-000000000005',
+        role: { id: 'lead', name: 'Other Lead', description: '', systemPrompt: '', color: '', icon: '', builtIn: true },
+        parentId: undefined,
+      });
+      const otherChild = makeChildAgent(otherLead.id, {
+        id: 'agent-oc-0006-0000-000000000006',
+      });
+      (ctx.getAllAgents as any).mockReturnValue([leadAgent, otherLead, otherChild]);
+
+      dispatch(dispatcher, leadAgent, `[[[ TERMINATE_AGENT {"id": "${otherChild.id}", "reason": "steal"} ]]]`);
+
+      expect(ctx.killAgent).not.toHaveBeenCalled();
+      expect((leadAgent.sendMessage as any)).toHaveBeenCalledWith(
+        expect.stringContaining('belongs to another lead'),
+      );
+    });
+
+    it('rejects terminating another top-level lead itself', () => {
+      const otherLead = makeAgent({
+        id: 'agent-other-0005-0000-000000000005',
+        role: { id: 'lead', name: 'Other Lead', description: '', systemPrompt: '', color: '', icon: '', builtIn: true },
+        parentId: undefined,
+      });
+      (ctx.getAllAgents as any).mockReturnValue([leadAgent, otherLead]);
+
+      dispatch(dispatcher, leadAgent, `[[[ TERMINATE_AGENT {"id": "${otherLead.id}", "reason": "remove"} ]]]`);
+
+      expect(ctx.killAgent).not.toHaveBeenCalled();
+      expect((leadAgent.sendMessage as any)).toHaveBeenCalledWith(
+        expect.stringContaining('belongs to another lead'),
+      );
+    });
   });
 
   // ── Multiple commands in one text ──────────────────────────────────

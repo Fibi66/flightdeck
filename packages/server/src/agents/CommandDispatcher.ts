@@ -807,15 +807,21 @@ CREW_ROSTER ]]]`;
         return;
       }
 
-      // Find target (partial match)
-      const target = this.ctx.getAllAgents().find((a) =>
+      // Find target (partial match) — must be a descendant of this lead (direct child or sub-lead's child)
+      const allAgents = this.ctx.getAllAgents();
+      const target = allAgents.find((a) =>
         (a.id === req.id || a.id.startsWith(req.id)) &&
-        a.parentId === agent.id &&
         a.id !== agent.id
       );
 
       if (!target) {
         agent.sendMessage(`[System] Agent not found: ${req.id}. Use QUERY_CREW to see available agents.`);
+        return;
+      }
+
+      // Walk up the parent chain to verify the requesting lead is an ancestor
+      if (!this.isAncestor(agent.id, target, allAgents)) {
+        agent.sendMessage(`[System] Cannot terminate ${target.role.name} (${target.id.slice(0, 8)}): it belongs to another lead. You can only terminate your own agents and sub-lead agents.`);
         return;
       }
 
@@ -838,6 +844,19 @@ CREW_ROSTER ]]]`;
     } catch (err) {
       logger.debug('command', 'Failed to parse TERMINATE_AGENT command', { error: (err as Error).message });
     }
+  }
+
+  /** Check if `ancestorId` is a parent, grandparent, etc. of `target` by walking up parentId chain */
+  private isAncestor(ancestorId: string, target: Agent, allAgents: Agent[]): boolean {
+    let current: Agent | undefined = target;
+    const visited = new Set<string>();
+    while (current) {
+      if (visited.has(current.id)) break; // prevent infinite loop
+      visited.add(current.id);
+      if (current.parentId === ancestorId) return true;
+      current = current.parentId ? allAgents.find(a => a.id === current!.parentId) : undefined;
+    }
+    return false;
   }
 
   // ── Task DAG handlers ──────────────────────────────────────────────
