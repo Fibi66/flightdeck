@@ -1051,6 +1051,7 @@ CREW_ROSTER ]]]`;
     if (agent.role.id !== 'lead') { agent.sendMessage('[System] Only the Project Lead can halt heartbeat.'); return; }
     this.ctx.markHumanInterrupt(agent.id);
     logger.info('lead', `Heartbeat halted by ${agent.role.name} (${agent.id.slice(0, 8)})`);
+    this.ctx.activityLedger.log(agent.id, agent.role.id, 'heartbeat_halted', `Heartbeat halted by lead`, {});
     agent.sendMessage('[System] Heartbeat nudges paused. They will resume automatically when you start running again.');
   }
 
@@ -1076,6 +1077,7 @@ CREW_ROSTER ]]]`;
       );
       this.pendingSystemActions.set(decision.id, { type: 'set_max_concurrent', value: newLimit, agentId: agent.id });
       logger.info('lead', `Limit change requested by ${agent.role.name} (${agent.id.slice(0, 8)}): ${currentLimit} → ${newLimit}`);
+      this.ctx.activityLedger.log(agent.id, agent.role.id, 'limit_change_requested', `Requested agent limit change: ${currentLimit} → ${newLimit}`, { currentLimit, newLimit, reason: req.reason });
       agent.sendMessage(`[System] Your request to change the agent limit from ${currentLimit} to ${newLimit} has been submitted for user approval. You will be notified when the user responds.`);
     } catch { agent.sendMessage('[System] REQUEST_LIMIT_CHANGE error: invalid payload. Use {"limit": 15, "reason": "..."}'); }
   }

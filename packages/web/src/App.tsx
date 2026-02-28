@@ -20,6 +20,7 @@ import { PermissionDialog } from './components/PermissionDialog';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { playAttentionSound, playCompletionSound } from './utils/notificationSound';
 import { Search } from 'lucide-react';
+import { useGlassTooltips } from './hooks/useGlassTooltips';
 
 export function App() {
   const ws = useWebSocket();
@@ -29,6 +30,9 @@ export function App() {
   const addToast = useToastStore((s) => s.add);
   const prevAgentStatesRef = useRef<Map<string, string>>(new Map());
   const [searchOpen, setSearchOpen] = useState(false);
+
+  // Apply glass-style tooltips globally
+  useGlassTooltips();
 
   // Cmd/Ctrl+K to open search
   const openSearch = useCallback(() => setSearchOpen(true), []);

@@ -18,6 +18,8 @@ export type ActionType =
   | 'lock_denied'
   | 'message_sent'
   | 'delegated'
+  | 'heartbeat_halted'
+  | 'limit_change_requested'
   | 'error';
 
 export interface ActivityEntry {
