@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Crown, Send, Users, CheckCircle, AlertCircle, Clock, Loader2, Plus, Trash2, Wrench, MessageSquare, GitBranch, PanelRightClose, PanelRightOpen, ChevronDown, ChevronRight, ChevronUp, Lightbulb, Bot, FolderOpen, Check, X, BarChart3, AlertTriangle, RefreshCw, Network, Pencil } from 'lucide-react';
+import { Crown, Send, Users, CheckCircle, AlertCircle, Clock, Loader2, Plus, Trash2, Wrench, MessageSquare, GitBranch, PanelRightClose, PanelRightOpen, ChevronDown, ChevronRight, ChevronUp, Lightbulb, Bot, FolderOpen, Check, X, BarChart3, AlertTriangle, RefreshCw, Network, Pencil, Hand, Square } from 'lucide-react';
 import { useLeadStore } from '../../stores/leadStore';
 import type { ActivityEvent, AgentComm, ProgressSnapshot, AgentReport } from '../../stores/leadStore';
 import type { AcpTextChunk, ChatGroup, GroupMessage, DagStatus, Project } from '../../types';
@@ -1875,6 +1875,29 @@ function TeamStatusContent({ agents, delegations, comms, activity, allAgents, on
                   )}
                 </div>
               </div>
+              {(selectedAgent.status === 'running' || selectedAgent.status === 'idle') && (
+                <div className="flex items-center gap-1 mr-2">
+                  <button
+                    onClick={() => fetch(`/api/agents/${selectedAgent.id}/interrupt`, { method: 'POST' })}
+                    className="flex items-center gap-1 px-2 py-1 text-xs rounded bg-orange-600/20 text-orange-400 hover:bg-orange-600/40 transition-colors"
+                    title="Interrupt — cancel current work"
+                  >
+                    <Hand size={12} /> Interrupt
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (confirm('Stop this agent?')) {
+                        fetch(`/api/agents/${selectedAgent.id}`, { method: 'DELETE' });
+                        setSelectedAgent(null);
+                      }
+                    }}
+                    className="flex items-center gap-1 px-2 py-1 text-xs rounded bg-red-600/20 text-red-400 hover:bg-red-600/40 transition-colors"
+                    title="Stop agent"
+                  >
+                    <Square size={12} /> Stop
+                  </button>
+                </div>
+              )}
               <button
                 onClick={() => setSelectedAgent(null)}
                 className="text-gray-400 hover:text-white text-lg leading-none p-1"
