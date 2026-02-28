@@ -24,7 +24,7 @@ const DECISION_REGEX = /\[\[\[\s*DECISION\s*(\{.*?\})\s*\]\]\]/s;
 const PROGRESS_REGEX = /\[\[\[\s*PROGRESS\s*(\{.*?\})\s*\]\]\]/s;
 const QUERY_CREW_REGEX = /\[\[\[\s*QUERY_CREW\s*\]\]\]/s;
 const BROADCAST_REGEX = /\[\[\[\s*BROADCAST\s*(\{.*?\})\s*\]\]\]/s;
-const KILL_AGENT_REGEX = /\[\[\[\s*KILL_AGENT\s*(\{.*?\})\s*\]\]\]/s;
+const TERMINATE_AGENT_REGEX = /\[\[\[\s*TERMINATE_AGENT\s*(\{.*?\})\s*\]\]\]/s;
 const CREATE_GROUP_REGEX = /\[\[\[\s*CREATE_GROUP\s*(\{.*?\})\s*\]\]\]/s;
 const ADD_TO_GROUP_REGEX = /\[\[\[\s*ADD_TO_GROUP\s*(\{.*?\})\s*\]\]\]/s;
 const REMOVE_FROM_GROUP_REGEX = /\[\[\[\s*REMOVE_FROM_GROUP\s*(\{.*?\})\s*\]\]\]/s;
@@ -111,7 +111,7 @@ export class CommandDispatcher {
       { regex: PROGRESS_REGEX, name: 'PROGRESS', handler: (a, d) => this.detectProgress(a, d) },
       { regex: QUERY_CREW_REGEX, name: 'QUERY_CREW', handler: (a, _d) => this.handleQueryCrew(a) },
       { regex: BROADCAST_REGEX, name: 'BROADCAST', handler: (a, d) => this.detectBroadcast(a, d) },
-      { regex: KILL_AGENT_REGEX, name: 'KILL_AGENT', handler: (a, d) => this.detectKillAgent(a, d) },
+      { regex: TERMINATE_AGENT_REGEX, name: 'TERMINATE_AGENT', handler: (a, d) => this.detectTerminateAgent(a, d) },
       { regex: CREATE_GROUP_REGEX, name: 'CREATE_GROUP', handler: (a, d) => this.detectCreateGroup(a, d) },
       { regex: ADD_TO_GROUP_REGEX, name: 'ADD_TO_GROUP', handler: (a, d) => this.detectAddToGroup(a, d) },
       { regex: REMOVE_FROM_GROUP_REGEX, name: 'REMOVE_FROM_GROUP', handler: (a, d) => this.detectRemoveFromGroup(a, d) },
@@ -393,7 +393,7 @@ export class CommandDispatcher {
         const idleList = idle.length > 0
           ? `\nIdle agents you can kill to free slots:\n${idle.map((a) => `- ${a.id.slice(0, 8)} — ${a.role.name}${a.sessionId ? ` (session: ${a.sessionId})` : ''}`).join('\n')}`
           : '\nNo idle agents to kill — wait for a running agent to finish.';
-        agent.sendMessage(`[System] Cannot create agent: concurrency limit reached (${running}/${this.ctx.maxConcurrent}).${idleList}\nUse KILL_AGENT to free a slot, then try CREATE_AGENT again.`);
+        agent.sendMessage(`[System] Cannot create agent: concurrency limit reached (${running}/${this.ctx.maxConcurrent}).${idleList}\nUse TERMINATE_AGENT to free a slot, then try CREATE_AGENT again.`);
       } else {
         agent.sendMessage(`[System] Failed to create agent: ${err.message}`);
       }
@@ -743,8 +743,8 @@ To assign a task to an agent, use their ID:
 \`[[[ DELEGATE {"to": "agent-id", "task": "your task"} ]]]\`
 To create a new agent:
 \`[[[ CREATE_AGENT {"role": "developer", "model": "claude-opus-4.6", "task": "optional task"} ]]]\`
-To kill an agent and free a slot:
-\`[[[ KILL_AGENT {"id": "agent-id", "reason": "no longer needed"} ]]]\`
+To terminate an agent and free a slot:
+\`[[[ TERMINATE_AGENT {"id": "agent-id", "reason": "no longer needed"} ]]]\`
 CREW_ROSTER ]]]`;
 
     logger.info('agent', `QUERY_CREW response sent to ${agent.role.name} (${agent.id.slice(0, 8)}): ${roster.length} agents`);
@@ -793,17 +793,17 @@ CREW_ROSTER ]]]`;
     }
   }
 
-  private detectKillAgent(agent: Agent, data: string): void {
-    const match = data.match(KILL_AGENT_REGEX);
+  private detectTerminateAgent(agent: Agent, data: string): void {
+    const match = data.match(TERMINATE_AGENT_REGEX);
     if (!match) return;
 
     try {
       const req = JSON.parse(match[1]);
       if (!req.id) return;
 
-      // Only lead agents can kill agents
+      // Only lead agents can terminate agents
       if (agent.role.id !== 'lead') {
-        agent.sendMessage(`[System] Only the Project Lead can kill agents.`);
+        agent.sendMessage(`[System] Only the Project Lead can terminate agents.`);
         return;
       }
 
@@ -825,18 +825,18 @@ CREW_ROSTER ]]]`;
 
       this.ctx.killAgent(target.id);
 
-      const ackMsg = `[System] Killed ${roleName} (${shortId}).${sessionId ? ` Session ID: ${sessionId} — use this in CREATE_AGENT with "sessionId" to resume later.` : ''} Freed 1 agent slot. ${req.reason ? `Reason: ${req.reason}` : ''}`;
+      const ackMsg = `[System] Terminated ${roleName} (${shortId}).${sessionId ? ` Session ID: ${sessionId} — use this in CREATE_AGENT with "sessionId" to resume later.` : ''} Freed 1 agent slot. ${req.reason ? `Reason: ${req.reason}` : ''}`;
       agent.sendMessage(ackMsg);
 
-      this.ctx.activityLedger.log(agent.id, agent.role.id, 'agent_killed', `Killed ${roleName} (${shortId})${req.reason ? ': ' + req.reason.slice(0, 100) : ''}`, {
-        killedAgentId: target.id,
-        killedRole: target.role.id,
+      this.ctx.activityLedger.log(agent.id, agent.role.id, 'agent_terminated', `Terminated ${roleName} (${shortId})${req.reason ? ': ' + req.reason.slice(0, 100) : ''}`, {
+        terminatedAgentId: target.id,
+        terminatedRole: target.role.id,
         sessionId: sessionId || null,
       });
 
-      logger.info('agent', `Lead ${agent.id.slice(0, 8)} killed ${roleName} (${shortId})${req.reason ? ': ' + req.reason : ''}`);
+      logger.info('agent', `Lead ${agent.id.slice(0, 8)} terminated ${roleName} (${shortId})${req.reason ? ': ' + req.reason : ''}`);
     } catch (err) {
-      logger.debug('command', 'Failed to parse KILL_AGENT command', { error: (err as Error).message });
+      logger.debug('command', 'Failed to parse TERMINATE_AGENT command', { error: (err as Error).message });
     }
   }
 

@@ -13,7 +13,7 @@ const TBL_CREATE_GROUP = /\[\[\[\s*CREATE_GROUP\s*(\{[\s\S]*?\})\s*\]\]\]/;
 const TBL_GROUP_MESSAGE = /\[\[\[\s*GROUP_MESSAGE\s*(\{[\s\S]*?\})\s*\]\]\]/;
 const TBL_PROGRESS = /\[\[\[\s*PROGRESS\s*(\{[\s\S]*?\})\s*\]\]\]/;
 const TBL_DECISION = /\[\[\[\s*DECISION\s*(\{[\s\S]*?\})\s*\]\]\]/;
-const TBL_KILL_AGENT = /\[\[\[\s*KILL_AGENT\s*(\{[\s\S]*?\})\s*\]\]\]/;
+const TBL_TERMINATE_AGENT = /\[\[\[\s*TERMINATE_AGENT\s*(\{[\s\S]*?\})\s*\]\]\]/;
 const TBL_DECLARE_TASKS = /\[\[\[\s*DECLARE_TASKS\s*(\{[\s\S]*?\})\s*\]\]\]/;
 const TBL_TASK_STATUS = /\[\[\[\s*TASK_STATUS\s*\]\]\]/;
 
@@ -171,11 +171,11 @@ describe('Message Handling — Command Parsing', () => {
     });
   });
 
-  // ─── Triple-bracket KILL_AGENT ──────────────────────────────────────
-  describe('Triple-bracket KILL_AGENT', () => {
-    it('matches kill with reason', () => {
-      const input = '[[[ KILL_AGENT {"id": "abc123", "reason": "task complete"} ]]]';
-      const match = input.match(TBL_KILL_AGENT);
+  // ─── Triple-bracket TERMINATE_AGENT ──────────────────────────────────────
+  describe('Triple-bracket TERMINATE_AGENT', () => {
+    it('matches terminate with reason', () => {
+      const input = '[[[ TERMINATE_AGENT {"id": "abc123", "reason": "task complete"} ]]]';
+      const match = input.match(TBL_TERMINATE_AGENT);
       expect(match).toBeTruthy();
     });
   });

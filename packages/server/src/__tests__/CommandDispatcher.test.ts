@@ -340,18 +340,18 @@ describe('CommandDispatcher', () => {
     });
   });
 
-  // ── KILL_AGENT ─────────────────────────────────────────────────────
+  // ── TERMINATE_AGENT ─────────────────────────────────────────────────────
 
-  describe('KILL_AGENT', () => {
-    it('kills the targeted child agent', () => {
+  describe('TERMINATE_AGENT', () => {
+    it('terminates the targeted child agent', () => {
       const child = makeChildAgent(leadAgent.id);
       (ctx.getAllAgents as any).mockReturnValue([leadAgent, child]);
 
-      dispatch(dispatcher, leadAgent, `[[[ KILL_AGENT {"id": "${child.id}", "reason": "done"} ]]]`);
+      dispatch(dispatcher, leadAgent, `[[[ TERMINATE_AGENT {"id": "${child.id}", "reason": "done"} ]]]`);
 
       expect(ctx.killAgent).toHaveBeenCalledWith(child.id);
       expect((leadAgent.sendMessage as any)).toHaveBeenCalledWith(
-        expect.stringContaining('Killed'),
+        expect.stringContaining('Terminated'),
       );
     });
 
@@ -361,7 +361,7 @@ describe('CommandDispatcher', () => {
         role: makeRole(),
       });
 
-      dispatch(dispatcher, devAgent, '[[[ KILL_AGENT {"id": "agent-123", "reason": "done"} ]]]');
+      dispatch(dispatcher, devAgent, '[[[ TERMINATE_AGENT {"id": "agent-123", "reason": "done"} ]]]');
 
       expect(ctx.killAgent).not.toHaveBeenCalled();
       expect((devAgent.sendMessage as any)).toHaveBeenCalledWith(
