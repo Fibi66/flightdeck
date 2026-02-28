@@ -29,12 +29,14 @@ export class WebSocketServer {
     this.wss = new WsServer({ server, path: '/ws' });
 
     this.wss.on('connection', (ws, req) => {
-      // Check auth if secret is configured
+      // Check auth if secret is configured (allow localhost without token)
       const secret = getAuthSecret();
       if (secret) {
+        const ip = req.socket.remoteAddress || '';
+        const isLocalhost = ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
         const url = new URL(req.url || '', `http://${req.headers.host}`);
         const token = url.searchParams.get('token');
-        if (token !== secret) {
+        if (!isLocalhost && token !== secret) {
           ws.close(4401, 'Authentication required');
           return;
         }

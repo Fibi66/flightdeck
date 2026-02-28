@@ -27,12 +27,21 @@ export function initAuth(): string | null {
  * Bearer token auth middleware.
  * If a secret exists (either SERVER_SECRET or auto-generated), requires auth.
  * Auth can be explicitly disabled with AUTH=none env var.
+ * Localhost requests are allowed without auth for seamless local development.
  */
 export function authMiddleware(req: Request, res: Response, next: NextFunction): void {
   const secret = getAuthSecret();
 
   // If no secret configured, auth is disabled
   if (!secret) {
+    next();
+    return;
+  }
+
+  // Allow localhost requests without auth (local dev with Vite proxy, etc.)
+  const ip = req.ip || req.socket.remoteAddress || '';
+  const isLocalhost = ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1' || ip === 'localhost';
+  if (isLocalhost && !req.headers.authorization) {
     next();
     return;
   }

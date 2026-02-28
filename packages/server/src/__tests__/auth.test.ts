@@ -2,8 +2,12 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { authMiddleware } from '../middleware/auth.js';
 import type { Request, Response, NextFunction } from 'express';
 
-function mockReq(headers: Record<string, string> = {}): Request {
-  return { headers } as unknown as Request;
+function mockReq(headers: Record<string, string> = {}, ip?: string): Request {
+  return {
+    headers,
+    ip: ip ?? '10.0.0.1',
+    socket: { remoteAddress: ip ?? '10.0.0.1' },
+  } as unknown as Request;
 }
 
 function mockRes(): Response & { _status: number; _json: any } {
@@ -80,6 +84,32 @@ describe('authMiddleware', () => {
     const next = vi.fn();
     const res = mockRes();
     authMiddleware(mockReq({ authorization: 'Bearer ' }), res, next);
+    expect(next).not.toHaveBeenCalled();
+    expect(res._status).toBe(403);
+  });
+
+  it('allows localhost requests without auth when no Authorization header', () => {
+    process.env.SERVER_SECRET = 'test-secret';
+    const next = vi.fn();
+    const res = mockRes();
+    authMiddleware(mockReq({}, '127.0.0.1'), res, next);
+    expect(next).toHaveBeenCalledOnce();
+    expect(res._status).toBe(0);
+  });
+
+  it('allows ::1 localhost requests without auth', () => {
+    process.env.SERVER_SECRET = 'test-secret';
+    const next = vi.fn();
+    const res = mockRes();
+    authMiddleware(mockReq({}, '::1'), res, next);
+    expect(next).toHaveBeenCalledOnce();
+  });
+
+  it('still validates token for localhost when Authorization header is provided', () => {
+    process.env.SERVER_SECRET = 'test-secret';
+    const next = vi.fn();
+    const res = mockRes();
+    authMiddleware(mockReq({ authorization: 'Bearer wrong' }, '127.0.0.1'), res, next);
     expect(next).not.toHaveBeenCalled();
     expect(res._status).toBe(403);
   });

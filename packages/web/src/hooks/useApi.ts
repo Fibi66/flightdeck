@@ -23,6 +23,10 @@ async function fetchJSON<T>(path: string, opts?: RequestInit): Promise<T> {
     ...opts,
     headers: { 'Content-Type': 'application/json', ...authHeaders(), ...opts?.headers },
   });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(body.error || `HTTP ${res.status}`);
+  }
   return res.json();
 }
 
@@ -91,8 +95,8 @@ export function useApi() {
 
   // Load initial data
   useEffect(() => {
-    loadRoles();
-    loadConfig();
+    loadRoles().catch(() => {});
+    loadConfig().catch(() => {});
   }, [loadRoles, loadConfig]);
 
   const updateAgent = useCallback(async (id: string, patch: { model?: string }) => {
