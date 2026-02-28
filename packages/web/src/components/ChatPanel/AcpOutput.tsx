@@ -247,10 +247,10 @@ export function AcpOutput({ agentId }: Props) {
   );
 }
 
-/** Collapsed-by-default <!-- command --> block with click to expand */
+/** Collapsed-by-default [[[ command ]]] block with click to expand */
 function CollapsibleCommandBlockSimple({ text }: { text: string }) {
   const [expanded, setExpanded] = useState(false);
-  const nameMatch = text.match(/<!--\s*(\w+)/);
+  const nameMatch = text.match(/\[\[\[\s*(\w+)/);
   const label = nameMatch ? nameMatch[1] : 'command';
   const jsonMatch = text.match(/\{[\s\S]*\}/);
   let preview = '';
@@ -281,18 +281,18 @@ function CollapsibleCommandBlockSimple({ text }: { text: string }) {
   );
 }
 
-/** Render agent text with <!-- --> blocks separated and inline markdown + tables */
+/** Render agent text with [[[ ]]] blocks separated and inline markdown + tables */
 function AgentTextBlockSimple({ text }: { text: string }) {
-  const segments = text.split(/(<!--[\s\S]*?-->)/g);
+  const segments = text.split(/(\[\[\[[\s\S]*?\]\]\])/g);
   return (
     <>
       {segments.map((seg, i) => {
-        if (seg.startsWith('<!--') && seg.endsWith('-->')) {
+        if (seg.startsWith('[[[') && seg.endsWith(']]]')) {
           return <CollapsibleCommandBlockSimple key={i} text={seg} />;
         }
-        // Unclosed <!-- block
-        if (seg.includes('<!--') && !seg.includes('-->')) {
-          const idx = seg.indexOf('<!--');
+        // Unclosed [[[ block
+        if (seg.includes('[[[') && !seg.includes(']]]')) {
+          const idx = seg.indexOf('[[[');
           const before = seg.slice(0, idx);
           const cmdBlock = seg.slice(idx);
           return (

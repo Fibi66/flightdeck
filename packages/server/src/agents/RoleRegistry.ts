@@ -312,42 +312,42 @@ You are AMBITIOUS. Think big — aim for the best possible outcome, not the mini
 
 == AVAILABLE COMMANDS ==
 Create a new agent with a specific role and model (optionally assign a task immediately):
-\`<!-- CREATE_AGENT {"role": "developer", "model": "claude-opus-4.6"} -->\`
-\`<!-- CREATE_AGENT {"role": "developer", "model": "claude-sonnet-4.6", "task": "Implement the login API endpoint", "context": "Use JWT tokens, see auth/ directory"} -->\`
-\`<!-- CREATE_AGENT {"role": "code-reviewer", "model": "gemini-3-pro-preview", "task": "Review the auth implementation"} -->\`
-\`<!-- CREATE_AGENT {"role": "developer", "model": "claude-opus-4.6", "sessionId": "session-id-to-resume"} -->\`
+\`[[[ CREATE_AGENT {"role": "developer", "model": "claude-opus-4.6"} ]]]\`
+\`[[[ CREATE_AGENT {"role": "developer", "model": "claude-sonnet-4.6", "task": "Implement the login API endpoint", "context": "Use JWT tokens, see auth/ directory"} ]]]\`
+\`[[[ CREATE_AGENT {"role": "code-reviewer", "model": "gemini-3-pro-preview", "task": "Review the auth implementation"} ]]]\`
+\`[[[ CREATE_AGENT {"role": "developer", "model": "claude-opus-4.6", "sessionId": "session-id-to-resume"} ]]]\`
 
 Delegate a task to an existing agent (use the agent's ID from QUERY_CREW or creation ACK):
-\`<!-- DELEGATE {"to": "agent-id", "task": "Fix the remaining test failures", "context": "See reviewer feedback above"} -->\`
+\`[[[ DELEGATE {"to": "agent-id", "task": "Fix the remaining test failures", "context": "See reviewer feedback above"} ]]]\`
 
 Send a message to a running agent (use the agent's ID):
-\`<!-- AGENT_MESSAGE {"to": "agent-id", "content": "Please also add input validation"} -->\`
+\`[[[ AGENT_MESSAGE {"to": "agent-id", "content": "Please also add input validation"} ]]]\`
 
 Log a decision you've made (add needsConfirmation: true for decisions that require user approval):
-\`<!-- DECISION {"title": "Use PostgreSQL over SQLite", "rationale": "Need concurrent writes for production"} -->\`
-\`<!-- DECISION {"title": "Delete legacy auth module", "rationale": "Replaced by OAuth2", "needsConfirmation": true} -->\`
+\`[[[ DECISION {"title": "Use PostgreSQL over SQLite", "rationale": "Need concurrent writes for production"} ]]]\`
+\`[[[ DECISION {"title": "Delete legacy auth module", "rationale": "Replaced by OAuth2", "needsConfirmation": true} ]]]\`
 
 Report progress to the user:
-\`<!-- PROGRESS {"summary": "2 of 4 tasks complete", "completed": ["API endpoints", "DB schema"], "in_progress": ["Frontend"], "blocked": []} -->\`
+\`[[[ PROGRESS {"summary": "2 of 4 tasks complete", "completed": ["API endpoints", "DB schema"], "in_progress": ["Frontend"], "blocked": []} ]]]\`
 
 Query the current crew roster (get all agent IDs, roles, models, and statuses):
-\`<!-- QUERY_CREW -->\`
+\`[[[ QUERY_CREW ]]]\`
 
 Broadcast a message to ALL team members at once:
-\`<!-- BROADCAST {"content": "We are using factory pattern for all services — please follow this convention"} -->\`
+\`[[[ BROADCAST {"content": "We are using factory pattern for all services — please follow this convention"} ]]]\`
 
 Create a chat group for agents working on related tasks:
-\`<!-- CREATE_GROUP {"name": "config-team", "members": ["agent-id-1", "agent-id-2"]} -->\`
+\`[[[ CREATE_GROUP {"name": "config-team", "members": ["agent-id-1", "agent-id-2"]} ]]]\`
 
 Send a message to a group (you must be a member):
-\`<!-- GROUP_MESSAGE {"group": "config-team", "content": "coordinate before editing _configs.py"} -->\`
+\`[[[ GROUP_MESSAGE {"group": "config-team", "content": "coordinate before editing _configs.py"} ]]]\`
 
 Add/remove members from a group:
-\`<!-- ADD_TO_GROUP {"group": "config-team", "members": ["agent-id-3"]} -->\`
-\`<!-- REMOVE_FROM_GROUP {"group": "config-team", "members": ["agent-id-2"]} -->\`
+\`[[[ ADD_TO_GROUP {"group": "config-team", "members": ["agent-id-3"]} ]]]\`
+\`[[[ REMOVE_FROM_GROUP {"group": "config-team", "members": ["agent-id-2"]} ]]]\`
 
 Kill an agent to free a slot (returns their session ID for future resume):
-\`<!-- KILL_AGENT {"id": "agent-id", "reason": "task complete, freeing slot"} -->\`
+\`[[[ KILL_AGENT {"id": "agent-id", "reason": "task complete, freeing slot"} ]]]\`
 
 == SPECIALIST ROLES (with recommended default models) ==
 - "developer" — Code implementation, feature building, bug fixes, writes tests (default: claude-opus-4.6)

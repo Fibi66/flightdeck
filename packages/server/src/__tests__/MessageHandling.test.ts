@@ -3,19 +3,7 @@ import { describe, it, expect } from 'vitest';
 // These regex patterns are NOT exported from AgentManager, so we replicate
 // them here for testing — same approach as AgentManagerParsing.test.ts.
 
-// --- HTML comment patterns (current syntax) ---
-const HTML_CREATE_AGENT = /<!--\s*CREATE_AGENT\s*(\{[\s\S]*?\})\s*-->/;
-const HTML_DELEGATE = /<!--\s*DELEGATE\s*(\{[\s\S]*?\})\s*-->/;
-const HTML_AGENT_MESSAGE = /<!--\s*AGENT_MESSAGE\s*(\{[\s\S]*?\})\s*-->/;
-const HTML_BROADCAST = /<!--\s*BROADCAST\s*(\{[\s\S]*?\})\s*-->/;
-const HTML_QUERY_CREW = /<!--\s*QUERY_CREW\s*-->/;
-const HTML_CREATE_GROUP = /<!--\s*CREATE_GROUP\s*(\{[\s\S]*?\})\s*-->/;
-const HTML_GROUP_MESSAGE = /<!--\s*GROUP_MESSAGE\s*(\{[\s\S]*?\})\s*-->/;
-const HTML_PROGRESS = /<!--\s*PROGRESS\s*(\{[\s\S]*?\})\s*-->/;
-const HTML_DECISION = /<!--\s*DECISION\s*(\{[\s\S]*?\})\s*-->/;
-const HTML_KILL_AGENT = /<!--\s*KILL_AGENT\s*(\{[\s\S]*?\})\s*-->/;
-
-// --- Triple-bracket patterns (new syntax) ---
+// --- Triple-bracket patterns (the only supported syntax) ---
 const TBL_CREATE_AGENT = /\[\[\[\s*CREATE_AGENT\s*(\{[\s\S]*?\})\s*\]\]\]/;
 const TBL_DELEGATE = /\[\[\[\s*DELEGATE\s*(\{[\s\S]*?\})\s*\]\]\]/;
 const TBL_AGENT_MESSAGE = /\[\[\[\s*AGENT_MESSAGE\s*(\{[\s\S]*?\})\s*\]\]\]/;
@@ -257,135 +245,6 @@ Finally, let me check who is available:
     });
   });
 
-  // ─── HTML comment syntax (backward compat) ─────────────────────────
-  describe('HTML comment CREATE_AGENT', () => {
-    it('matches basic create agent', () => {
-      const input = '<!-- CREATE_AGENT {"role": "developer"} -->';
-      const match = input.match(HTML_CREATE_AGENT);
-      expect(match).toBeTruthy();
-      expect(JSON.parse(match![1])).toEqual({ role: 'developer' });
-    });
-
-    it('matches with extra whitespace', () => {
-      const input = '<!--  CREATE_AGENT  {"role": "dev"}  -->';
-      const match = input.match(HTML_CREATE_AGENT);
-      expect(match).toBeTruthy();
-    });
-
-    it('does not match without closing -->', () => {
-      expect('<!-- CREATE_AGENT {"role": "dev"}'.match(HTML_CREATE_AGENT)).toBeNull();
-    });
-  });
-
-  describe('HTML comment DELEGATE', () => {
-    it('matches delegate', () => {
-      const input = '<!-- DELEGATE {"to": "abc", "task": "Review"} -->';
-      const match = input.match(HTML_DELEGATE);
-      expect(match).toBeTruthy();
-      const parsed = JSON.parse(match![1]);
-      expect(parsed.to).toBe('abc');
-      expect(parsed.task).toBe('Review');
-    });
-  });
-
-  describe('HTML comment QUERY_CREW', () => {
-    it('matches no-payload', () => {
-      expect('<!-- QUERY_CREW -->'.match(HTML_QUERY_CREW)).toBeTruthy();
-    });
-
-    it('matches with whitespace', () => {
-      expect('<!--  QUERY_CREW  -->'.match(HTML_QUERY_CREW)).toBeTruthy();
-    });
-  });
-
-  describe('HTML comment GROUP commands', () => {
-    it('CREATE_GROUP matches', () => {
-      const input = '<!-- CREATE_GROUP {"name": "team", "members": ["a"]} -->';
-      const match = input.match(HTML_CREATE_GROUP);
-      expect(match).toBeTruthy();
-      expect(JSON.parse(match![1]).name).toBe('team');
-    });
-
-    it('GROUP_MESSAGE matches', () => {
-      const input = '<!-- GROUP_MESSAGE {"group": "team", "content": "hello"} -->';
-      const match = input.match(HTML_GROUP_MESSAGE);
-      expect(match).toBeTruthy();
-    });
-  });
-
-  describe('HTML comment KILL_AGENT', () => {
-    it('matches kill', () => {
-      const input = '<!-- KILL_AGENT {"id": "abc123"} -->';
-      const match = input.match(HTML_KILL_AGENT);
-      expect(match).toBeTruthy();
-      expect(JSON.parse(match![1]).id).toBe('abc123');
-    });
-  });
-
-  describe('HTML comment BROADCAST', () => {
-    it('matches broadcast', () => {
-      const input = '<!-- BROADCAST {"content": "Align on REST conventions"} -->';
-      const match = input.match(HTML_BROADCAST);
-      expect(match).toBeTruthy();
-    });
-  });
-
-  // ─── Syntax parity: same payload in both formats ───────────────────
-  describe('Syntax parity — same payload, both formats', () => {
-    const payloads = [
-      { cmd: 'CREATE_AGENT', json: '{"role": "developer", "task": "Build API"}' },
-      { cmd: 'DELEGATE', json: '{"to": "abc", "task": "Review", "context": "PR #42"}' },
-      { cmd: 'AGENT_MESSAGE', json: '{"to": "xyz", "content": "Done with refactor"}' },
-      { cmd: 'BROADCAST', json: '{"content": "Standup at 10am"}' },
-      { cmd: 'PROGRESS', json: '{"summary": "50%", "completed": ["A"]}' },
-      { cmd: 'DECISION', json: '{"title": "Use Redis", "rationale": "Speed"}' },
-      { cmd: 'KILL_AGENT', json: '{"id": "abc123", "reason": "done"}' },
-      { cmd: 'CREATE_GROUP', json: '{"name": "team", "members": ["a", "b"]}' },
-      { cmd: 'GROUP_MESSAGE', json: '{"group": "team", "content": "Update"}' },
-    ];
-
-    const htmlPatterns: Record<string, RegExp> = {
-      CREATE_AGENT: HTML_CREATE_AGENT,
-      DELEGATE: HTML_DELEGATE,
-      AGENT_MESSAGE: HTML_AGENT_MESSAGE,
-      BROADCAST: HTML_BROADCAST,
-      PROGRESS: HTML_PROGRESS,
-      DECISION: HTML_DECISION,
-      KILL_AGENT: HTML_KILL_AGENT,
-      CREATE_GROUP: HTML_CREATE_GROUP,
-      GROUP_MESSAGE: HTML_GROUP_MESSAGE,
-    };
-
-    const tblPatterns: Record<string, RegExp> = {
-      CREATE_AGENT: TBL_CREATE_AGENT,
-      DELEGATE: TBL_DELEGATE,
-      AGENT_MESSAGE: TBL_AGENT_MESSAGE,
-      BROADCAST: TBL_BROADCAST,
-      PROGRESS: TBL_PROGRESS,
-      DECISION: TBL_DECISION,
-      KILL_AGENT: TBL_KILL_AGENT,
-      CREATE_GROUP: TBL_CREATE_GROUP,
-      GROUP_MESSAGE: TBL_GROUP_MESSAGE,
-    };
-
-    for (const { cmd, json } of payloads) {
-      it(`${cmd}: HTML and triple-bracket extract identical JSON`, () => {
-        const htmlInput = `<!-- ${cmd} ${json} -->`;
-        const tblInput = `[[[ ${cmd} ${json} ]]]`;
-
-        const htmlMatch = htmlInput.match(htmlPatterns[cmd]);
-        const tblMatch = tblInput.match(tblPatterns[cmd]);
-
-        expect(htmlMatch).toBeTruthy();
-        expect(tblMatch).toBeTruthy();
-
-        const htmlParsed = JSON.parse(htmlMatch![1]);
-        const tblParsed = JSON.parse(tblMatch![1]);
-        expect(htmlParsed).toEqual(tblParsed);
-      });
-    }
-  });
-
   // ─── Edge cases ────────────────────────────────────────────────────
   describe('Edge cases', () => {
     it('handles JSON with special characters in strings', () => {
@@ -424,12 +283,12 @@ Finally, let me check who is available:
       expect(JSON.parse(match![1])).toEqual({ role: 'dev' });
     });
 
-    it('HTML comment does not match without opening <!--', () => {
-      expect('CREATE_AGENT {"role": "dev"} -->'.match(HTML_CREATE_AGENT)).toBeNull();
+    it('does not match without opening [[[', () => {
+      expect('CREATE_AGENT {"role": "dev"} ]]]'.match(TBL_CREATE_AGENT)).toBeNull();
     });
 
-    it('HTML comment does not match without closing -->', () => {
-      expect('<!-- CREATE_AGENT {"role": "dev"}'.match(HTML_CREATE_AGENT)).toBeNull();
+    it('does not match without closing ]]]', () => {
+      expect('[[[ CREATE_AGENT {"role": "dev"}'.match(TBL_CREATE_AGENT)).toBeNull();
     });
 
     it('nested braces in JSON are handled by non-greedy match', () => {

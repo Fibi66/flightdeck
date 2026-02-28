@@ -388,21 +388,21 @@ All team members have access to this directory. Create your subdirectory before 
 == COORDINATION RULES ==
 1. DO NOT modify files that another agent has locked (listed above).
 2. ALWAYS acquire a file lock BEFORE editing any file:
-\`<!-- LOCK_REQUEST {"filePath": "path/to/file", "reason": "why"} -->\`
+\`[[[ LOCK_FILE {"filePath": "path/to/file", "reason": "why"} ]]]\`
 3. When you finish editing a file, release the lock:
-\`<!-- LOCK_RELEASE {"filePath": "path/to/file"} -->\`
+\`[[[ UNLOCK_FILE {"filePath": "path/to/file"} ]]]\`
 4. To communicate with another agent, use:
-\`<!-- AGENT_MESSAGE {"to": "agent-id", "content": "message"} -->\`
+\`[[[ AGENT_MESSAGE {"to": "agent-id", "content": "message"} ]]]\`
 5. To broadcast a message to ALL team members, use:
-\`<!-- BROADCAST {"content": "message"} -->\`
+\`[[[ BROADCAST {"content": "message"} ]]]\`
 6. To send a message to a group you belong to:
-\`<!-- GROUP_MESSAGE {"group": "group-name", "content": "message"} -->\`
-7. To list your groups: \`<!-- LIST_GROUPS -->\`
+\`[[[ GROUP_MESSAGE {"group": "group-name", "content": "message"} ]]]\`
+7. To list your groups: \`[[[ LIST_GROUPS ]]]\`
 8. To get an updated roster of all agents and their IDs, use:
-\`<!-- QUERY_CREW -->\`
+\`[[[ QUERY_CREW ]]]\`
 9. Stay within your role's scope. Defer to the appropriate specialist for work outside your expertise.
 10. Log important decisions by outputting:
-\`<!-- ACTIVITY {"action": "decision_made", "summary": "what you decided"} -->\`
+\`[[[ ACTIVITY {"action": "decision_made", "summary": "what you decided"} ]]]\`
 
 == SKILLS (reusable knowledge for future work) ==
 Skills are reusable instructions that Copilot CLI loads automatically when relevant. Use them to capture REUSABLE KNOWLEDGE — patterns, techniques, and approaches that will benefit future work sessions.
@@ -500,11 +500,11 @@ When you discover something important about the codebase, a pattern, a gotcha, o
       ? `\n== AGENT BUDGET ==\nRunning: ${this.budget.runningCount} / ${this.budget.maxConcurrent} | Available slots: ${Math.max(0, this.budget.maxConcurrent - this.budget.runningCount)}${this.budget.runningCount >= this.budget.maxConcurrent ? ' | ⚠ AT CAPACITY' : ''}`
       : '';
 
-    const update = `<!-- CREW_UPDATE
+    const update = `[[[ CREW_UPDATE
 ${crewStatus}${budgetLine}
 == RECENT ACTIVITY ==
 ${activityLines}
-CREW_UPDATE -->`;
+CREW_UPDATE ]]]`;
 
     if (this.mode === 'acp') {
       if (this.acpConnection?.isConnected) {

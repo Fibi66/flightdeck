@@ -1194,9 +1194,9 @@ function parseAgentReport(content: string): { header: string; task: string; outp
   const sessionMatch = content.match(/\nSession ID:\s*(.*?)(?:\n|$)/);
   const outputMatch = content.match(/\nOutput summary:\s*([\s\S]*)$/);
 
-  // Clean output: strip <!-- ... --> fragments and normalize whitespace
+  // Clean output: strip [[[ ... ]]] fragments and normalize whitespace
   let output = outputMatch ? outputMatch[1].trim() : '';
-  output = output.replace(/<!--[\s\S]*?-->/g, '').replace(/<!--[\s\S]*$/g, '').replace(/^[\s\S]*?-->/g, '').trim();
+  output = output.replace(/\[\[\[[\s\S]*?\]\]\]/g, '').replace(/\[\[\[[\s\S]*$/g, '').replace(/^[\s\S]*?\]\]\]/g, '').trim();
   output = output.replace(/\n\s(?=\S)/g, ' ');
 
   return {
@@ -2087,7 +2087,7 @@ function InlineMarkdown({ text }: { text: string }) {
   );
 }
 
-/** Renders agent text, separating <!-- command --> blocks from normal markdown */
+/** Renders agent text, separating [[[ command ]]] blocks from normal markdown */
 function RichContentBlock({ msg }: { msg: AcpTextChunk }) {
   if (msg.contentType === 'image' && msg.data) {
     return (
@@ -2130,10 +2130,10 @@ function RichContentBlock({ msg }: { msg: AcpTextChunk }) {
   return null;
 }
 
-/** Collapsed-by-default <!-- command --> block with click to expand */
+/** Collapsed-by-default [[[ command ]]] block with click to expand */
 function CollapsibleCommandBlock({ text }: { text: string }) {
   const [expanded, setExpanded] = useState(false);
-  const nameMatch = text.match(/<!--\s*(\w+)/);
+  const nameMatch = text.match(/\[\[\[\s*(\w+)/);
   const label = nameMatch ? nameMatch[1] : 'command';
   // Extract a preview from the JSON payload
   const jsonMatch = text.match(/\{[\s\S]*\}/);
@@ -2166,18 +2166,18 @@ function CollapsibleCommandBlock({ text }: { text: string }) {
 }
 
 function AgentTextBlock({ text }: { text: string }) {
-  // Split on <!-- ... --> blocks (complete) and also detect unclosed <!-- blocks
-  const segments = text.split(/(<!--[\s\S]*?-->)/g);
+  // Split on [[[ ... ]]] blocks (complete) and also detect unclosed [[[ blocks
+  const segments = text.split(/(\[\[\[[\s\S]*?\]\]\])/g);
   return (
     <>
       {segments.map((seg, i) => {
-        // Complete <!-- --> block
-        if (seg.startsWith('<!--') && seg.endsWith('-->')) {
+        // Complete [[[ ]]] block
+        if (seg.startsWith('[[[') && seg.endsWith(']]]')) {
           return <CollapsibleCommandBlock key={i} text={seg} />;
         }
-        // Unclosed <!-- block (still streaming or split across messages)
-        if (seg.includes('<!--') && !seg.includes('-->')) {
-          const idx = seg.indexOf('<!--');
+        // Unclosed [[[ block (still streaming or split across messages)
+        if (seg.includes('[[[') && !seg.includes(']]]')) {
+          const idx = seg.indexOf('[[[');
           const before = seg.slice(0, idx);
           const cmdBlock = seg.slice(idx);
           return (
@@ -2187,9 +2187,9 @@ function AgentTextBlock({ text }: { text: string }) {
             </span>
           );
         }
-        // Dangling --> from a block that started in a previous message
-        if (seg.includes('-->') && !seg.includes('<!--')) {
-          const idx = seg.indexOf('-->') + 3;
+        // Dangling ]]] from a block that started in a previous message
+        if (seg.includes(']]]') && !seg.includes('[[[')) {
+          const idx = seg.indexOf(']]]') + 3;
           const cmdBlock = seg.slice(0, idx);
           const after = seg.slice(idx);
           return (

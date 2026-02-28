@@ -13,23 +13,23 @@ import { logger } from '../utils/logger.js';
 import { writeAgentFiles } from './agentFiles.js';
 
 // JSON pattern agents can emit to request sub-agent spawning
-const SPAWN_REQUEST_REGEX = /<!--\s*SPAWN_AGENT\s*(\{.*?\})\s*-->/s;
-const CREATE_AGENT_REGEX = /<!--\s*CREATE_AGENT\s*(\{.*?\})\s*-->/s;
-const LOCK_REQUEST_REGEX = /<!--\s*LOCK_REQUEST\s*(\{.*?\})\s*-->/s;
-const LOCK_RELEASE_REGEX = /<!--\s*LOCK_RELEASE\s*(\{.*?\})\s*-->/s;
-const ACTIVITY_REGEX = /<!--\s*ACTIVITY\s*(\{.*?\})\s*-->/s;
-const AGENT_MESSAGE_REGEX = /<!--\s*AGENT_MESSAGE\s*(\{.*?\})\s*-->/s;
-const DELEGATE_REGEX = /<!--\s*DELEGATE\s*(\{.*?\})\s*-->/s;
-const DECISION_REGEX = /<!--\s*DECISION\s*(\{.*?\})\s*-->/s;
-const PROGRESS_REGEX = /<!--\s*PROGRESS\s*(\{.*?\})\s*-->/s;
-const QUERY_CREW_REGEX = /<!--\s*QUERY_CREW\s*-->/s;
-const BROADCAST_REGEX = /<!--\s*BROADCAST\s*(\{.*?\})\s*-->/s;
-const KILL_AGENT_REGEX = /<!--\s*KILL_AGENT\s*(\{.*?\})\s*-->/s;
-const CREATE_GROUP_REGEX = /<!--\s*CREATE_GROUP\s*(\{.*?\})\s*-->/s;
-const ADD_TO_GROUP_REGEX = /<!--\s*ADD_TO_GROUP\s*(\{.*?\})\s*-->/s;
-const REMOVE_FROM_GROUP_REGEX = /<!--\s*REMOVE_FROM_GROUP\s*(\{.*?\})\s*-->/s;
-const GROUP_MESSAGE_REGEX = /<!--\s*GROUP_MESSAGE\s*(\{.*?\})\s*-->/s;
-const LIST_GROUPS_REGEX = /<!--\s*LIST_GROUPS\s*-->/s;
+const SPAWN_REQUEST_REGEX = /\[\[\[\s*SPAWN_AGENT\s*(\{.*?\})\s*\]\]\]/s;
+const CREATE_AGENT_REGEX = /\[\[\[\s*CREATE_AGENT\s*(\{.*?\})\s*\]\]\]/s;
+const LOCK_REQUEST_REGEX = /\[\[\[\s*LOCK_FILE\s*(\{.*?\})\s*\]\]\]/s;
+const LOCK_RELEASE_REGEX = /\[\[\[\s*UNLOCK_FILE\s*(\{.*?\})\s*\]\]\]/s;
+const ACTIVITY_REGEX = /\[\[\[\s*ACTIVITY\s*(\{.*?\})\s*\]\]\]/s;
+const AGENT_MESSAGE_REGEX = /\[\[\[\s*AGENT_MESSAGE\s*(\{.*?\})\s*\]\]\]/s;
+const DELEGATE_REGEX = /\[\[\[\s*DELEGATE\s*(\{.*?\})\s*\]\]\]/s;
+const DECISION_REGEX = /\[\[\[\s*DECISION\s*(\{.*?\})\s*\]\]\]/s;
+const PROGRESS_REGEX = /\[\[\[\s*PROGRESS\s*(\{.*?\})\s*\]\]\]/s;
+const QUERY_CREW_REGEX = /\[\[\[\s*QUERY_CREW\s*\]\]\]/s;
+const BROADCAST_REGEX = /\[\[\[\s*BROADCAST\s*(\{.*?\})\s*\]\]\]/s;
+const KILL_AGENT_REGEX = /\[\[\[\s*KILL_AGENT\s*(\{.*?\})\s*\]\]\]/s;
+const CREATE_GROUP_REGEX = /\[\[\[\s*CREATE_GROUP\s*(\{.*?\})\s*\]\]\]/s;
+const ADD_TO_GROUP_REGEX = /\[\[\[\s*ADD_TO_GROUP\s*(\{.*?\})\s*\]\]\]/s;
+const REMOVE_FROM_GROUP_REGEX = /\[\[\[\s*REMOVE_FROM_GROUP\s*(\{.*?\})\s*\]\]\]/s;
+const GROUP_MESSAGE_REGEX = /\[\[\[\s*GROUP_MESSAGE\s*(\{.*?\})\s*\]\]\]/s;
+const LIST_GROUPS_REGEX = /\[\[\[\s*LIST_GROUPS\s*\]\]\]/s;
 
 export interface Delegation {
   id: string;
@@ -520,7 +520,7 @@ export class AgentManager extends EventEmitter {
     }
 
     // Keep only last 500 chars that might contain an incomplete command
-    const lastOpen = buf.lastIndexOf('<!--');
+    const lastOpen = buf.lastIndexOf('[[[');
     if (lastOpen >= 0) {
       // Keep from the last incomplete opening tag
       buf = buf.slice(lastOpen);
@@ -644,7 +644,7 @@ export class AgentManager extends EventEmitter {
           filePath: request.filePath,
           reason: request.reason,
         });
-        agent.sendMessage(`[System] Lock acquired on \`${request.filePath}\`. You may proceed with edits. Remember to release it when done with <!-- LOCK_RELEASE {"filePath": "${request.filePath}"} -->`);
+        agent.sendMessage(`[System] Lock acquired on \`${request.filePath}\`. You may proceed with edits. Remember to release it when done with [[[ UNLOCK_FILE {"filePath": "${request.filePath}"} ]]]`);
       } else {
         const holderShort = result.holder?.slice(0, 8) ?? 'unknown';
         agent.sendMessage(`[System] Lock DENIED on \`${request.filePath}\` — currently held by agent ${holderShort}. Wait for them to release it, or coordinate via AGENT_MESSAGE.`);
@@ -963,17 +963,17 @@ export class AgentManager extends EventEmitter {
       humanMsgIndicator = `\n⚠️ UNREAD HUMAN MESSAGE (${agoStr}): "${agent.lastHumanMessageText}"\nRespond to this FIRST before continuing other work.\n`;
     }
 
-    const response = `<!-- CREW_ROSTER${humanMsgIndicator}
+    const response = `[[[ CREW_ROSTER${humanMsgIndicator}
 == ACTIVE CREW MEMBERS ==
 ${rosterLines}
 ${budgetLine}${siblingSection}${memorySection}
 To assign a task to an agent, use their ID:
-\`<!-- DELEGATE {"to": "agent-id", "task": "your task"} -->\`
+\`[[[ DELEGATE {"to": "agent-id", "task": "your task"} ]]]\`
 To create a new agent:
-\`<!-- CREATE_AGENT {"role": "developer", "model": "claude-opus-4.6", "task": "optional task"} -->\`
+\`[[[ CREATE_AGENT {"role": "developer", "model": "claude-opus-4.6", "task": "optional task"} ]]]\`
 To kill an agent and free a slot:
-\`<!-- KILL_AGENT {"id": "agent-id", "reason": "no longer needed"} -->\`
-CREW_ROSTER -->`;
+\`[[[ KILL_AGENT {"id": "agent-id", "reason": "no longer needed"} ]]]\`
+CREW_ROSTER ]]]`;
 
     logger.info('agent', `QUERY_CREW response sent to ${agent.role.name} (${agent.id.slice(0, 8)}): ${roster.length} agents`);
     agent.sendMessage(response);
@@ -1089,8 +1089,8 @@ CREW_ROSTER -->`;
     }
 
     const rawOutput = agent.getBufferedOutput().slice(-8000);
-    // Strip <!-- ... --> command blocks from output
-    const cleanPreview = rawOutput.replace(/<!--[\s\S]*?-->/g, '').replace(/<!--[\s\S]*$/g, '').trim().slice(-6000);
+    // Strip [[[ ... ]]] command blocks from output
+    const cleanPreview = rawOutput.replace(/\[\[\[[\s\S]*?\]\]\]/g, '').replace(/\[\[\[[\s\S]*$/g, '').trim().slice(-6000);
     const sessionLine = agent.sessionId ? `\nSession ID: ${agent.sessionId}` : '';
     const summary = `[Agent Report] ${agent.role.name} (${agent.id.slice(0, 8)}) finished work.\nTask: ${agent.task || 'none'}${sessionLine}\nOutput summary: ${cleanPreview || '(no output)'}`;
 
@@ -1142,7 +1142,7 @@ CREW_ROSTER -->`;
 
     const status = exitCode === 0 ? 'completed successfully' : `failed (exit code ${exitCode})`;
     const rawOutput2 = agent.getBufferedOutput().slice(-8000);
-    const cleanPreview2 = rawOutput2.replace(/<!--[\s\S]*?-->/g, '').replace(/<!--[\s\S]*$/g, '').trim().slice(-6000);
+    const cleanPreview2 = rawOutput2.replace(/\[\[\[[\s\S]*?\]\]\]/g, '').replace(/\[\[\[[\s\S]*$/g, '').trim().slice(-6000);
     const sessionLine2 = agent.sessionId ? `\nSession ID: ${agent.sessionId}` : '';
     const summary = `[Agent Report] ${agent.role.name} (${agent.id.slice(0, 8)}) ${status}.\nTask: ${agent.task || 'none'}${sessionLine2}\nOutput summary: ${cleanPreview2 || '(no output)'}`;
 
@@ -1212,7 +1212,7 @@ CREW_ROSTER -->`;
         if (memberId === agent.id) continue;
         const member = this.agents.get(memberId);
         if (member && (member.status === 'running' || member.status === 'idle')) {
-          member.sendMessage(`[System] You've been added to group "${req.name}". Members: ${memberNames}.\nSend messages: <!-- GROUP_MESSAGE {"group": "${req.name}", "content": "your message"} -->`);
+          member.sendMessage(`[System] You've been added to group "${req.name}". Members: ${memberNames}.\nSend messages: [[[ GROUP_MESSAGE {"group": "${req.name}", "content": "your message"} ]]]`);
         }
       }
 
@@ -1252,7 +1252,7 @@ CREW_ROSTER -->`;
             if (history.length > 0) {
               historyText = '\nRecent messages:\n' + history.map((m) => `  [${m.fromRole} (${m.fromAgentId.slice(0, 8)})]: ${m.content}`).join('\n');
             }
-            member.sendMessage(`[System] You've been added to group "${req.group}". Members: ${memberNames}.${historyText}\nSend messages: <!-- GROUP_MESSAGE {"group": "${req.group}", "content": "..."} -->`);
+            member.sendMessage(`[System] You've been added to group "${req.group}". Members: ${memberNames}.${historyText}\nSend messages: [[[ GROUP_MESSAGE {"group": "${req.group}", "content": "..."} ]]]`);
           }
         }
         const names = added.map((id) => this.agents.get(id)?.role.name || id.slice(0, 8)).join(', ');
@@ -1337,7 +1337,7 @@ CREW_ROSTER -->`;
       }).join(', ');
       return `- "${g.name}" — ${g.memberIds.length} members: ${memberNames}`;
     });
-    agent.sendMessage(`[System] Your groups:\n${lines.join('\n')}\nSend messages: <!-- GROUP_MESSAGE {"group": "name", "content": "..."} -->`);
+    agent.sendMessage(`[System] Your groups:\n${lines.join('\n')}\nSend messages: [[[ GROUP_MESSAGE {"group": "name", "content": "..."} ]]]`);
   }
 
   /** Keep all lead agents' budget info in sync with current state */
