@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Crown, Send, Users, CheckCircle, AlertCircle, Clock, Loader2, Plus, Trash2, Wrench, MessageSquare, GitBranch, PanelRightClose, PanelRightOpen, ChevronDown, ChevronRight, ChevronUp, Lightbulb, Bot, FolderOpen, Check, X, BarChart3, AlertTriangle, RefreshCw, Network } from 'lucide-react';
+import { Crown, Send, Users, CheckCircle, AlertCircle, Clock, Loader2, Plus, Trash2, Wrench, MessageSquare, GitBranch, PanelRightClose, PanelRightOpen, ChevronDown, ChevronRight, ChevronUp, Lightbulb, Bot, FolderOpen, Check, X, BarChart3, AlertTriangle, RefreshCw, Network, Pencil } from 'lucide-react';
 import { useLeadStore } from '../../stores/leadStore';
 import type { ActivityEvent, AgentComm, ProgressSnapshot, AgentReport } from '../../stores/leadStore';
 import type { AcpTextChunk, ChatGroup, GroupMessage, DagStatus } from '../../types';
@@ -47,6 +47,8 @@ export function LeadDashboard({ api, ws }: Props) {
   const [expandedReport, setExpandedReport] = useState<AgentReport | null>(null);
   const [reportsExpanded, setReportsExpanded] = useState(true);
   const [pendingBannerExpanded, setPendingBannerExpanded] = useState(false);
+  const [renamingLeadId, setRenamingLeadId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
   const isResizing = useRef(false);
 
   const leadAgents = agents.filter((a) => a.role.id === 'lead' && !a.parentId);
@@ -575,8 +577,66 @@ export function LeadDashboard({ api, ws }: Props) {
               >
                 <div className="flex items-center gap-2">
                   <span className={`w-2 h-2 rounded-full shrink-0 ${isRunning ? 'bg-green-400' : 'bg-gray-500'}`} />
-                  <span className="text-sm font-mono truncate flex-1">
-                    {lead.projectName || lead.task?.slice(0, 40) || lead.id.slice(0, 8)}
+                  {renamingLeadId === lead.id ? (
+                    <input
+                      autoFocus
+                      className="text-sm font-mono truncate flex-1 bg-gray-700 border border-gray-500 rounded px-1 py-0 text-white focus:outline-none focus:border-accent"
+                      value={renameValue}
+                      onChange={(e) => setRenameValue(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          const trimmed = renameValue.trim();
+                          if (trimmed) {
+                            fetch(`/api/lead/${lead.id}`, {
+                              method: 'PATCH',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ projectName: trimmed }),
+                            }).catch(() => {});
+                            useAppStore.getState().updateAgent(lead.id, { projectName: trimmed });
+                          }
+                          setRenamingLeadId(null);
+                        }
+                        if (e.key === 'Escape') setRenamingLeadId(null);
+                      }}
+                      onBlur={() => {
+                        const trimmed = renameValue.trim();
+                        if (trimmed && trimmed !== (lead.projectName || '')) {
+                          fetch(`/api/lead/${lead.id}`, {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ projectName: trimmed }),
+                          }).catch(() => {});
+                          useAppStore.getState().updateAgent(lead.id, { projectName: trimmed });
+                        }
+                        setRenamingLeadId(null);
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  ) : (
+                    <span
+                      className="text-sm font-mono truncate flex-1"
+                      onDoubleClick={(e) => {
+                        e.stopPropagation();
+                        setRenamingLeadId(lead.id);
+                        setRenameValue(lead.projectName || lead.task?.slice(0, 40) || '');
+                      }}
+                      title="Double-click to rename"
+                    >
+                      {lead.projectName || lead.task?.slice(0, 40) || lead.id.slice(0, 8)}
+                    </span>
+                  )}
+                  <span
+                    role="button"
+                    title="Rename project"
+                    className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-gray-700 rounded transition-opacity shrink-0"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setRenamingLeadId(lead.id);
+                      setRenameValue(lead.projectName || lead.task?.slice(0, 40) || '');
+                    }}
+                  >
+                    <Pencil className="w-3 h-3 text-gray-500 hover:text-gray-300" />
                   </span>
                   <span
                     role="button"
