@@ -20,8 +20,6 @@ import { PermissionDialog } from './components/PermissionDialog';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { playAttentionSound, playCompletionSound } from './utils/notificationSound';
 import { Search } from 'lucide-react';
-import { useGlassTooltips } from './hooks/useGlassTooltips';
-
 export function App() {
   const ws = useWebSocket();
   const api = useApi();
@@ -30,9 +28,6 @@ export function App() {
   const addToast = useToastStore((s) => s.add);
   const prevAgentStatesRef = useRef<Map<string, string>>(new Map());
   const [searchOpen, setSearchOpen] = useState(false);
-
-  // Apply glass-style tooltips globally
-  useGlassTooltips();
 
   // Cmd/Ctrl+K to open search
   const openSearch = useCallback(() => setSearchOpen(true), []);
@@ -63,6 +58,13 @@ export function App() {
       } else if (msg.type === 'agent:context_compacted') {
         const pct = msg.percentDrop ? ` (${msg.percentDrop}% reduction)` : '';
         addToast('info', `🔄 Context compacted for agent ${msg.agentId.slice(0, 8)}${pct}`);
+      } else if (msg.type === 'activity') {
+        const e = msg.entry;
+        if (e?.action === 'heartbeat_halted') {
+          addToast('info', `⏸️ Heartbeat halted by ${e.agentId?.slice(0, 8) ?? 'agent'}`);
+        } else if (e?.action === 'limit_change_requested') {
+          addToast('info', `⚙️ Agent limit change requested: ${e.details ?? ''}`);
+        }
       }
     };
     window.addEventListener('ws-message', handler);
