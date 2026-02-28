@@ -77,6 +77,7 @@ interface LeadState {
   setProgressSummary: (leadId: string, summary: string) => void;
   addProgressSnapshot: (leadId: string, snapshot: ProgressSnapshot) => void;
   addMessage: (leadId: string, msg: AcpTextChunk) => void;
+  setMessages: (leadId: string, messages: AcpTextChunk[]) => void;
   appendToLastAgentMessage: (leadId: string, text: string) => void;
   promoteQueuedMessages: (leadId: string) => void;
   updateToolCall: (leadId: string, toolCall: AcpToolCall) => void;
@@ -164,6 +165,12 @@ export const useLeadStore = create<LeadState>((set) => ({
       const proj = s.projects[leadId] || emptyProject();
       const withTs = { ...msg, timestamp: msg.timestamp ?? Date.now() };
       return { projects: { ...s.projects, [leadId]: { ...proj, messages: [...proj.messages, withTs] } } };
+    }),
+
+  setMessages: (leadId, messages) =>
+    set((s) => {
+      const proj = s.projects[leadId] || emptyProject();
+      return { projects: { ...s.projects, [leadId]: { ...proj, messages } } };
     }),
 
   appendToLastAgentMessage: (leadId, text) =>

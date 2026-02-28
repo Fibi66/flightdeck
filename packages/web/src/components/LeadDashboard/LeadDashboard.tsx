@@ -62,6 +62,24 @@ export function LeadDashboard({ api, ws }: Props) {
       if (Array.isArray(leads)) {
         leads.forEach((l) => {
           useLeadStore.getState().addProject(l.id);
+          // Pre-load message history for each lead
+          fetch(`/api/agents/${l.id}/messages?limit=200`)
+            .then((r) => r.json())
+            .then((data: any) => {
+              if (Array.isArray(data.messages) && data.messages.length > 0) {
+                const msgs: AcpTextChunk[] = data.messages.map((m: any) => ({
+                  type: 'text' as const,
+                  text: m.content,
+                  sender: m.sender as 'agent' | 'user' | 'system',
+                  timestamp: new Date(m.timestamp).getTime(),
+                }));
+                const current = useLeadStore.getState().projects[l.id];
+                if (!current || current.messages.length === 0) {
+                  useLeadStore.getState().setMessages(l.id, msgs);
+                }
+              }
+            })
+            .catch(() => {});
         });
         // Auto-select first running lead if none selected
         if (!useLeadStore.getState().selectedLeadId) {
@@ -72,11 +90,33 @@ export function LeadDashboard({ api, ws }: Props) {
     }).catch(() => {});
   }, []);
 
-  // Subscribe to selected lead agent WS stream
+  // Subscribe to selected lead agent WS stream and load message history
   useEffect(() => {
     if (!selectedLeadId) return;
     chatInitialScroll.current = false; // reset so we scroll to bottom on lead change
     ws.subscribe(selectedLeadId);
+    // Load persisted message history if we don't have any messages yet
+    const proj = useLeadStore.getState().projects[selectedLeadId];
+    if (!proj || proj.messages.length === 0) {
+      fetch(`/api/agents/${selectedLeadId}/messages?limit=200`)
+        .then((r) => r.json())
+        .then((data: any) => {
+          if (Array.isArray(data.messages) && data.messages.length > 0) {
+            const msgs: AcpTextChunk[] = data.messages.map((m: any) => ({
+              type: 'text' as const,
+              text: m.content,
+              sender: m.sender as 'agent' | 'user' | 'system',
+              timestamp: new Date(m.timestamp).getTime(),
+            }));
+            // Only set if still no messages (avoid overwriting live data)
+            const current = useLeadStore.getState().projects[selectedLeadId];
+            if (!current || current.messages.length === 0) {
+              useLeadStore.getState().setMessages(selectedLeadId, msgs);
+            }
+          }
+        })
+        .catch(() => {});
+    }
     return () => ws.unsubscribe(selectedLeadId);
   }, [selectedLeadId, ws]);
 

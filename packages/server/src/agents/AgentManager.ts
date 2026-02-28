@@ -9,6 +9,7 @@ import type { DecisionLog } from '../coordination/DecisionLog.js';
 import type { AgentMemory } from './AgentMemory.js';
 import type { ChatGroupRegistry, ChatGroup, GroupMessage } from '../comms/ChatGroupRegistry.js';
 import type { Database } from '../db/database.js';
+import { ConversationStore } from '../db/ConversationStore.js';
 import { TaskDAG } from '../tasks/TaskDAG.js';
 import { logger } from '../utils/logger.js';
 import { writeAgentFiles } from './agentFiles.js';
@@ -71,6 +72,8 @@ export class AgentManager extends TypedEmitter<AgentManagerEvents> {
   private chatGroupRegistry: ChatGroupRegistry;
   private taskDAG: TaskDAG;
   private db?: Database;
+  private conversationStore?: ConversationStore;
+  private agentThreads: Map<string, string> = new Map(); // agentId → conversationId
   /** If set, auto-kill agents after this many ms past the initial hung detection */
   private autoKillTimeoutMs: number | null;
   private hungTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
@@ -104,6 +107,7 @@ export class AgentManager extends TypedEmitter<AgentManagerEvents> {
     this.chatGroupRegistry = chatGroupRegistry;
     this.taskDAG = taskDAG;
     this.db = db;
+    if (db) this.conversationStore = new ConversationStore(db);
     this.maxConcurrent = config.maxConcurrentAgents;
     this.maxRestarts = maxRestarts;
     this.autoRestart = autoRestart;
@@ -219,9 +223,20 @@ export class AgentManager extends TypedEmitter<AgentManagerEvents> {
 
     this.agents.set(agent.id, agent);
 
+    // Create a conversation thread for this agent (for persistent message history)
+    if (this.conversationStore) {
+      const thread = this.conversationStore.createThread(agent.id, agent.task);
+      this.agentThreads.set(agent.id, thread.id);
+    }
+
     // Listen for data to detect sub-agent spawn requests and coordination commands
     agent.onData((data) => {
       this.emit('agent:text', { agentId: agent.id, text: data });
+      // Persist agent output to conversation history
+      const threadId = this.agentThreads.get(agent.id);
+      if (threadId && this.conversationStore) {
+        this.conversationStore.addMessage(threadId, 'agent', data);
+      }
       // Buffer ACP text and scan for complete command patterns
       this.dispatcher.appendToBuffer(agent.id, data);
       this.dispatcher.scanBuffer(agent);
@@ -588,6 +603,28 @@ export class AgentManager extends TypedEmitter<AgentManagerEvents> {
 
   getTaskDAG(): TaskDAG {
     return this.taskDAG;
+  }
+
+  /** Persist a human message to the agent's conversation history */
+  persistHumanMessage(agentId: string, text: string): void {
+    const threadId = this.agentThreads.get(agentId);
+    if (threadId && this.conversationStore) {
+      this.conversationStore.addMessage(threadId, 'user', text);
+    }
+  }
+
+  /** Persist a system message to the agent's conversation history */
+  persistSystemMessage(agentId: string, text: string): void {
+    const threadId = this.agentThreads.get(agentId);
+    if (threadId && this.conversationStore) {
+      this.conversationStore.addMessage(threadId, 'system', text);
+    }
+  }
+
+  /** Get recent messages from an agent's conversation history */
+  getMessageHistory(agentId: string, limit = 200): import('../db/ConversationStore.js').ThreadMessage[] {
+    if (!this.conversationStore) return [];
+    return this.conversationStore.getRecentMessages(agentId, limit).reverse(); // chronological order
   }
 
   /** Keep all lead agents' budget info in sync with current state */

@@ -100,6 +100,13 @@ export function apiRouter(
     res.status(404).json({ error: 'Agent not found' });
   });
 
+  // Get message history for an agent (persisted across refreshes)
+  router.get('/agents/:id/messages', (req, res) => {
+    const limit = Math.min(parseInt(String(req.query.limit) || '200', 10) || 200, 1000);
+    const messages = agentManager.getMessageHistory(req.params.id as string, limit);
+    res.json({ agentId: req.params.id, messages });
+  });
+
   router.post('/agents/:id/input', validateBody(agentInputSchema), (req, res) => {
     const { text } = req.body;
     const agent = agentManager.get(req.params.id);
@@ -323,6 +330,9 @@ export function apiRouter(
     agent.lastHumanMessageAt = new Date();
     agent.lastHumanMessageText = text.slice(0, 200);
     agent.humanMessageResponded = false;
+
+    // Persist human message to conversation history
+    agentManager.persistHumanMessage(agent.id, text);
 
     const formatted = `[USER MESSAGE — PRIORITY] The human user says:\n${text}\n\nPlease acknowledge and respond to this message. The user is waiting for your reply.`;
 
