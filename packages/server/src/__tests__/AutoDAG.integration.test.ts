@@ -1198,20 +1198,28 @@ describe('Auto-DAG integration', () => {
       expect(taskC).toBeDefined();
       expect(taskC.dagStatus).toBe('blocked'); // B is blocked
 
-      // Complete A → resolveReady now finds blocked tasks, but completeTask's
-      // UPDATE still filters dagStatus='pending' (line 326 in TaskDAG.ts).
-      // So B stays blocked despite resolveReady returning it.
-      // BUG: completeTask needs IN ('pending','blocked') like skipTask/cancelTask.
+      // Complete A → B should be promoted from blocked to ready
       (ctx.getAgent as any).mockImplementation((id: string) =>
         id === lead.id ? lead : id === childA.id ? childA : undefined,
       );
       dispatcher.notifyParentOfIdle(childA);
       expect(dag.getTask(lead.id, taskA.id)!.dagStatus).toBe('done');
-      expect(dag.getTask(lead.id, taskB.id)!.dagStatus).toBe('blocked');
+      expect(dag.getTask(lead.id, taskB.id)!.dagStatus).toBe('ready');
+      expect(dag.getTask(lead.id, taskC.id)!.dagStatus).toBe('blocked'); // still blocked on B
 
-      // Verify chain structure is correct even if promotion doesn't work yet
-      expect(taskB.dependsOn).toContain(taskA.id);
-      expect(taskC.dependsOn).toContain(taskB.id);
+      // Complete B → C should be promoted from blocked to ready
+      const childB = makeChild(lead.id, {
+        id: 'agent-childB',
+        role: makeRole({ id: 'code-reviewer', name: 'Code Reviewer' }),
+        status: 'idle',
+      });
+      dag.startTask(lead.id, taskB.id, childB.id);
+      (ctx.getAgent as any).mockImplementation((id: string) =>
+        id === lead.id ? lead : id === childB.id ? childB : undefined,
+      );
+      dispatcher.notifyParentOfIdle(childB);
+      expect(dag.getTask(lead.id, taskB.id)!.dagStatus).toBe('done');
+      expect(dag.getTask(lead.id, taskC.id)!.dagStatus).toBe('ready');
     });
   });
 
