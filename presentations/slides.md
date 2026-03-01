@@ -626,6 +626,55 @@ zero operational overhead.
 
 ---
 
+# Task DAG: Plan, track, auto-schedule
+
+<div class="grid grid-cols-2 gap-4 mt-2">
+<div>
+
+**Directed Acyclic Graph** of task dependencies
+
+```
+⟦ DECLARE_TASKS {
+  "tasks": [
+    {"id": "api",  "deps": []},
+    {"id": "ui",   "deps": ["api"]},
+    {"id": "test", "deps": ["api","ui"]}
+  ]
+} ⟧
+```
+
+When `api` completes → `ui` auto-starts
+When `api` + `ui` complete → `test` auto-starts
+
+</div>
+<div>
+
+**Auto-DAG** — no planning required
+
+When agents use `⟦ DELEGATE ⟧` without a plan, the system **auto-creates DAG nodes** from each delegation.
+
+- Near-duplicate detection prevents redundant tasks
+- Secretary agent infers dependencies between related work
+- Review tasks auto-link to their parent feature
+
+<div class="text-sm text-gray-400 mt-2">
+
+📊 **UI visualization**: task nodes with dependency arrows, color-coded by status (pending → running → done)
+
+</div>
+</div>
+</div>
+
+<!--
+The DAG is a core differentiator. Most multi-agent systems fire-and-forget
+delegations. AI Crew PLANS and TRACKS. DECLARE_TASKS creates explicit
+dependency graphs. Auto-DAG creates them implicitly from DELEGATE commands.
+Tasks auto-start when their dependencies resolve — no polling, no manual
+scheduling. The UI shows this as a live graph with nodes and arrows.
+-->
+
+---
+
 # Story 1: The Security Bug
 
 <div class="bg-gray-800 rounded-lg p-4 border border-red-500 mt-2">
