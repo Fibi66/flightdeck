@@ -94,7 +94,7 @@ not hypothetical. That's what happened.
 
 <div class="flex items-start gap-3">
 <div class="text-lg">👥</div>
-<div><strong class="text-blue-400">It hired a team</strong> — 7 developers, 1 architect, 2 code reviewers, 2 security reviewers, 1 secretary</div>
+<div><strong class="text-blue-400">It hired a team</strong> — 7 devs, 1 architect, 4 reviewers, 1 secretary</div>
 </div>
 
 <div class="flex items-start gap-3">
@@ -442,6 +442,18 @@ system enabling autonomous coordination.
 -->
 
 ---
+layout: center
+---
+
+<div class="text-center text-xl text-gray-400">
+
+That's how agents talk to the system.
+
+Now let's see how they talk to **each other**.
+
+</div>
+
+---
 
 # Three communication channels
 
@@ -631,6 +643,8 @@ When `api` + `ui` complete → `test` auto-starts
 </div>
 <div>
 
+<div class="bg-gray-800 rounded-lg p-3 border border-gray-700">
+
 **Auto-DAG** — no planning required
 
 When agents use `⟦ DELEGATE ⟧` without a plan, the system **auto-creates DAG nodes** from each delegation.
@@ -638,6 +652,8 @@ When agents use `⟦ DELEGATE ⟧` without a plan, the system **auto-creates DAG
 - Near-duplicate detection prevents redundant tasks
 - Secretary agent infers dependencies between related work
 - Review tasks auto-link to their parent feature
+
+</div>
 
 <div class="text-sm text-gray-400 mt-2">
 
