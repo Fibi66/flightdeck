@@ -625,10 +625,10 @@ export function inferReviewDependencies(
   // Exactly 8 hex chars to avoid matching commit SHAs, color codes, etc.
   for (const m of taskDesc.matchAll(/\b([0-9a-f]{8})\b/g)) {
     const refId = m[1];
-    const task = allTasks.find(t =>
-      t.assignedAgentId?.startsWith(refId) &&
-      ['running', 'done'].includes(t.dagStatus)
-    );
+    const task = allTasks.find(t => {
+      const bareId = t.assignedAgentId?.replace(/^agent-/, '') ?? '';
+      return bareId.startsWith(refId) && ['running', 'done'].includes(t.dagStatus);
+    });
     if (task && !deps.includes(task.id)) deps.push(task.id);
   }
 
