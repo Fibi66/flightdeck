@@ -58,7 +58,7 @@ layout: center
 - ✅ 10 features implemented
 - ✅ Every feature code-reviewed
 - ✅ Security vulnerability caught and fixed
-- ✅ 1,752 tests passing
+- ✅ All tests passing
 - ✅ Documentation updated
 
 </div>
@@ -1246,43 +1246,6 @@ important: these are the SAME problems human engineering teams face.
 The solutions look similar too — better structure, better tooling,
 clear ownership. This isn't a unique AI problem, it's an organizational
 design problem.
--->
----
-layout: center
----
-
-# The final tally
-
-<div class="grid grid-cols-2 gap-6 mt-4 max-w-2xl mx-auto">
-<div class="text-right space-y-3">
-<div class="text-3xl font-bold text-blue-400">13</div>
-<div class="text-3xl font-bold text-green-400">10</div>
-<div class="text-3xl font-bold text-yellow-400">52</div>
-<div class="text-3xl font-bold text-purple-400">6,155</div>
-<div class="text-3xl font-bold text-red-400">3</div>
-<div class="text-3xl font-bold text-orange-400">1</div>
-<div class="text-3xl font-bold text-blue-300">1,752</div>
-</div>
-<div class="text-left space-y-3">
-<div class="text-base text-gray-300 leading-10">AI agents working in parallel</div>
-<div class="text-base text-gray-300 leading-10">features shipped</div>
-<div class="text-base text-gray-300 leading-10">files changed</div>
-<div class="text-base text-gray-300 leading-10">lines of code</div>
-<div class="text-base text-gray-300 leading-10">bugs caught in code review</div>
-<div class="text-base text-gray-300 leading-10">security vulnerability fixed</div>
-<div class="text-base text-gray-300 leading-10">tests passing</div>
-</div>
-</div>
-
-<div class="text-center text-gray-500 mt-4">~30 minutes of wall clock time.</div>
-
-<!--
-Let this sink in. Read the numbers slowly. 13 agents. 10 features. Over
-6,000 lines. Three bugs caught in review. A security vulnerability
-discovered and patched. All in 30 minutes.
-[Pause.] And it didn't just write code — it caught bugs in its own
-infrastructure, improved its own processes, and debugged its own
-coordination system. That's the power of a team.
 -->
 
 ---
