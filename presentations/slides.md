@@ -885,12 +885,12 @@ layout: center
 </div>
 </div>
 
-<div class="text-center text-gray-500 mt-4">~30 minutes of wall clock time. One human. One command. ~$4 in API tokens.</div>
+<div class="text-center text-gray-500 mt-4">~30 minutes of wall clock time.</div>
 
 <!--
 Let this sink in. Read the numbers slowly. 13 agents. 10 features. Over
 6,000 lines. Three bugs caught in review. A security vulnerability
-discovered and patched. All in 30 minutes. One human typed one sentence.
+discovered and patched. All in 30 minutes.
 [Pause.] And it didn't just write code — it caught bugs in its own
 infrastructure, improved its own processes, and debugged its own
 coordination system. That's the power of a team.
