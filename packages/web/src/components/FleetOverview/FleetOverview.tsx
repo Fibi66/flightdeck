@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useAppStore } from '../../stores/appStore';
 import { useLeadStore } from '../../stores/leadStore';
+import { useTimelineData } from '../Timeline/useTimelineData';
 import { FleetStats } from './FleetStats';
 import { AgentActivityTable } from './AgentActivityTable';
 import { ActivityFeed } from './ActivityFeed';
@@ -96,7 +97,10 @@ export function FleetOverview({ api, ws }: Props) {
     : locks;
 
   // ── CommHeatmap data ─────────────────────────────────────────────────────
-  // Derive heatmap data from leadStore comms (covers all comm types).
+  // Prefer SSE-backed communications for real-time updates; fall back to
+  // leadStore comms (WebSocket) when SSE data is not available.
+  const selectedLeadId = useLeadStore((s) => s.selectedLeadId);
+  const { data: timelineData } = useTimelineData(selectedLeadId);
   const projects = useLeadStore((s) => s.projects);
 
   const heatmapAgents = useMemo(
@@ -110,8 +114,20 @@ export function FleetOverview({ api, ws }: Props) {
   );
 
   const heatmapMessages: HeatmapMessage[] = useMemo(() => {
+    // Use SSE timeline communications when available
+    if (timelineData?.communications?.length) {
+      return timelineData.communications
+        .filter(c => c.fromAgentId && (c.toAgentId || c.type === 'group_message'))
+        .map(c => ({
+          from: c.fromAgentId,
+          to:   c.toAgentId ?? '',
+          count: 1,
+          type: c.type as HeatmapMessage['type'],
+        }));
+    }
+
+    // Fallback: aggregate comms from leadStore (WebSocket-based)
     const result: HeatmapMessage[] = [];
-    // Aggregate comms from all projects
     for (const proj of Object.values(projects)) {
       for (const comm of proj.comms) {
         if (comm.fromId && comm.toId) {
@@ -125,7 +141,7 @@ export function FleetOverview({ api, ws }: Props) {
       }
     }
     return result;
-  }, [projects]);
+  }, [timelineData, projects]);
 
   return (
     <div className="flex-1 overflow-auto p-4 space-y-4">

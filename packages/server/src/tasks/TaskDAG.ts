@@ -1,5 +1,5 @@
 import { EventEmitter } from 'events';
-import { eq, and, desc, asc, sql, ne } from 'drizzle-orm';
+import { eq, and, desc, asc, sql, ne, inArray } from 'drizzle-orm';
 import type { Database } from '../db/database.js';
 import { dagTasks } from '../db/schema.js';
 
@@ -37,6 +37,7 @@ export interface DagTask {
   model?: string;
   assignedAgentId?: string;
   createdAt: string;
+  startedAt?: string;
   completedAt?: string;
 }
 
@@ -56,6 +57,60 @@ export interface FileConflict {
   tasks: string[];
 }
 
+/**
+ * Minimum Dice coefficient score to consider a description match meaningful.
+ * A single shared word between two 3-word phrases scores ~0.33;
+ * 0.2 catches partial matches while filtering noise from unrelated descriptions.
+ */
+const MIN_DESCRIPTION_MATCH_THRESHOLD = 0.2;
+
+/**
+ * Minimum gap between top-2 candidate scores to trust description-based matching.
+ * If the gap is smaller, the match is ambiguous and we fall back to priority order.
+ */
+const MIN_SCORE_GAP = 0.15;
+
+const STOP_WORDS = new Set([
+  'the', 'a', 'an', 'is', 'are', 'was', 'to', 'of', 'in', 'for', 'on',
+  'and', 'or', 'with', 'that', 'this', 'it', 'from', 'by', 'as', 'at',
+  'be', 'do', 'not', 'all', 'if', 'no', 'so', 'implement', 'fix', 'add',
+  'update', 'create', 'write', 'make', 'use', 'task', 'work',
+]);
+
+/** Extract meaningful words from text for similarity comparison */
+function extractWords(text: string): Set<string> {
+  // Preserve hyphenated tokens (e.g. "p2-7", "auto-link") as single words
+  const tokens = text.toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, ' ')   // keep hyphens
+    .split(/\s+/)
+    .flatMap(token => {
+      // Keep hyphenated tokens AND their parts for better matching
+      if (token.includes('-') && token.length > 2) {
+        const parts = token.split('-').filter(p => p.length > 0);
+        return [token, ...parts];
+      }
+      return [token];
+    })
+    .filter(w => w.length > 2 && !STOP_WORDS.has(w));
+  return new Set(tokens);
+}
+
+/**
+ * Compute similarity between a delegation task description and a DAG task's description/title.
+ * Returns a score between 0 and 1 (Dice coefficient of meaningful word overlap).
+ */
+export function descriptionSimilarity(delegationText: string, dagDescription: string, dagTitle?: string): number {
+  const delegationWords = extractWords(delegationText);
+  if (delegationWords.size === 0) return 0;
+
+  const dagText = dagTitle ? `${dagTitle} ${dagDescription}` : dagDescription;
+  const dagWords = extractWords(dagText);
+  if (dagWords.size === 0) return 0;
+
+  const shared = [...delegationWords].filter(w => dagWords.has(w)).length;
+  return (2 * shared) / (delegationWords.size + dagWords.size);
+}
+
 function rowToTask(row: typeof dagTasks.$inferSelect): DagTask {
   return {
     id: row.id,
@@ -70,6 +125,7 @@ function rowToTask(row: typeof dagTasks.$inferSelect): DagTask {
     model: row.model || undefined,
     assignedAgentId: row.assignedAgentId || undefined,
     createdAt: row.createdAt!,
+    startedAt: row.startedAt || undefined,
     completedAt: row.completedAt || undefined,
   };
 }
@@ -174,7 +230,7 @@ export class TaskDAG extends EventEmitter {
     const pendingTasks = this.db.drizzle
       .select()
       .from(dagTasks)
-      .where(and(eq(dagTasks.leadId, leadId), eq(dagTasks.dagStatus, 'pending')))
+      .where(and(eq(dagTasks.leadId, leadId), inArray(dagTasks.dagStatus, ['pending', 'blocked'])))
       .all()
       .map(rowToTask);
 
@@ -245,7 +301,7 @@ export class TaskDAG extends EventEmitter {
     if (error) return null;
     this.db.drizzle
       .update(dagTasks)
-      .set({ dagStatus: 'running', assignedAgentId: agentId })
+      .set({ dagStatus: 'running', assignedAgentId: agentId, startedAt: sql`datetime('now')` })
       .where(and(eq(dagTasks.id, taskId), eq(dagTasks.leadId, leadId)))
       .run();
     this.emit('dag:updated', { leadId });
@@ -262,12 +318,12 @@ export class TaskDAG extends EventEmitter {
       .where(and(eq(dagTasks.id, taskId), eq(dagTasks.leadId, leadId)))
       .run();
     const newlyReady = this.resolveReady(leadId);
-    // Auto-promote newly ready tasks from pending to ready
+    // Auto-promote newly ready tasks from pending/blocked to ready
     for (const task of newlyReady) {
       this.db.drizzle
         .update(dagTasks)
         .set({ dagStatus: 'ready' })
-        .where(and(eq(dagTasks.id, task.id), eq(dagTasks.leadId, leadId), eq(dagTasks.dagStatus, 'pending')))
+        .where(and(eq(dagTasks.id, task.id), eq(dagTasks.leadId, leadId), inArray(dagTasks.dagStatus, ['pending', 'blocked'])))
         .run();
     }
     this.emit('dag:updated', { leadId });
@@ -400,6 +456,45 @@ export class TaskDAG extends EventEmitter {
     return result.tasks[0];
   }
 
+  /** Add a dependency between two tasks. Returns false if task not found or would create a cycle. */
+  addDependency(leadId: string, taskId: string, dependsOnId: string): boolean {
+    const task = this.getTask(leadId, taskId);
+    const dep = this.getTask(leadId, dependsOnId);
+    if (!task || !dep) return false;
+    if (task.dependsOn.includes(dependsOnId)) return true; // already exists
+    if (this.wouldCreateCycle(leadId, taskId, dependsOnId)) return false;
+    const deps = [...task.dependsOn, dependsOnId];
+    this.db.drizzle.update(dagTasks)
+      .set({ dependsOn: JSON.stringify(deps) })
+      .where(and(eq(dagTasks.id, taskId), eq(dagTasks.leadId, leadId)))
+      .run();
+    // If the dependency isn't done/skipped yet, block this task
+    if (dep.dagStatus !== 'done' && dep.dagStatus !== 'skipped') {
+      this.db.drizzle.update(dagTasks)
+        .set({ dagStatus: 'blocked' })
+        .where(and(eq(dagTasks.id, taskId), eq(dagTasks.leadId, leadId)))
+        .run();
+    }
+    this.emit('dag:updated', { leadId });
+    return true;
+  }
+
+  /** Check if adding dependsOnId as a dependency of taskId would create a cycle */
+  wouldCreateCycle(leadId: string, taskId: string, dependsOnId: string): boolean {
+    // If dependsOnId transitively depends on taskId, adding this edge creates a cycle
+    const visited = new Set<string>();
+    const queue = [dependsOnId];
+    while (queue.length > 0) {
+      const current = queue.pop()!;
+      if (current === taskId) return true;
+      if (visited.has(current)) continue;
+      visited.add(current);
+      const t = this.getTask(leadId, current);
+      if (t) queue.push(...t.dependsOn);
+    }
+    return false;
+  }
+
   /** Get a single task */
   getTask(leadId: string, taskId: string): DagTask | null {
     const row = this.db.drizzle
@@ -508,7 +603,10 @@ export class TaskDAG extends EventEmitter {
     return ready ? rowToTask(ready) : null;
   }
 
-  /** Find a ready DAG task matching a role (for auto-linking DELEGATE to DAG) */
+  /**
+   * Find a ready DAG task matching a role (for auto-linking DELEGATE to DAG).
+   * @deprecated Use {@link findReadyTask} instead, which supports dagTaskId + description fuzzy matching.
+   */
   findReadyTaskByRole(leadId: string, role: string): DagTask | null {
     const row = this.db.drizzle
       .select()
@@ -521,6 +619,56 @@ export class TaskDAG extends EventEmitter {
       .orderBy(desc(dagTasks.priority), asc(dagTasks.createdAt))
       .get();
     return row ? rowToTask(row) : null;
+  }
+
+  /**
+   * Find a ready DAG task using smart matching.
+   * Priority: 1) explicit dagTaskId, 2) role + description fuzzy match, 3) role-only fallback.
+   */
+  findReadyTask(leadId: string, options: { dagTaskId?: string; role: string; taskDescription?: string }): DagTask | null {
+    // Primary: explicit dagTaskId lookup
+    if (options.dagTaskId) {
+      const task = this.getTask(leadId, options.dagTaskId);
+      if (task && task.dagStatus === 'ready') return task;
+      return null;
+    }
+
+    // Get all ready tasks for this role
+    const candidates = this.db.drizzle
+      .select()
+      .from(dagTasks)
+      .where(and(
+        eq(dagTasks.leadId, leadId),
+        eq(dagTasks.role, options.role),
+        eq(dagTasks.dagStatus, 'ready'),
+      ))
+      .orderBy(desc(dagTasks.priority), asc(dagTasks.createdAt))
+      .all()
+      .map(rowToTask);
+
+    if (candidates.length === 0) return null;
+    if (candidates.length === 1) return candidates[0];
+
+    // Multiple candidates with same role — use description to disambiguate
+    if (options.taskDescription) {
+      const scored = candidates.map(task => ({
+        task,
+        score: descriptionSimilarity(options.taskDescription!, task.description, task.title),
+      }));
+      scored.sort((a, b) => b.score - a.score);
+
+      if (scored[0].score > MIN_DESCRIPTION_MATCH_THRESHOLD) {
+        // Require clear winner — if top-2 scores are too close, fall back to priority
+        const gap = scored.length > 1 ? scored[0].score - scored[1].score : 1;
+        if (gap >= MIN_SCORE_GAP) {
+          return scored[0].task;
+        }
+      }
+    }
+
+    // Multiple candidates but no clear description match — return null to force explicit dagTaskId
+    // (returning candidates[0] was the bug: it silently linked to the wrong task)
+    return null;
   }
 
   /** Get a transition validation error (for use by CommandDispatcher error messages) */

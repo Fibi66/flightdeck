@@ -1,12 +1,12 @@
 import { v4 as uuid } from 'uuid';
-import { mkdirSync, existsSync } from 'fs';
-import { join } from 'path';
-import { AcpConnection } from '../acp/AcpConnection.js';
-import type { ToolCallInfo, PlanEntry } from '../acp/AcpConnection.js';
+import { createHash } from 'crypto';
+import type { AcpConnection, ToolCallInfo, PlanEntry } from '../acp/AcpConnection.js';
 import type { Role } from './RoleRegistry.js';
 import type { ServerConfig } from '../config.js';
 import { logger } from '../utils/logger.js';
-import { agentFlagForRole } from './agentFiles.js';
+import { AgentEventEmitter } from './AgentEvents.js';
+import type { UsageInfo, CompactionInfo } from './AgentEvents.js';
+import { startAcp as startAcpBridge, ensureSharedWorkspace } from './AgentAcpBridge.js';
 
 export type AgentStatus = 'creating' | 'running' | 'idle' | 'completed' | 'failed' | 'terminated';
 
@@ -23,6 +23,7 @@ export interface AgentContextInfo {
   lockedFiles: string[];
   model?: string;
   parentId?: string;
+  isSystemAgent?: boolean;
 }
 
 export interface AgentJSON {
@@ -31,6 +32,7 @@ export interface AgentJSON {
   status: AgentStatus;
   autopilot: boolean;
   task?: string;
+  dagTaskId?: string;
   parentId?: string;
   childIds: string[];
   createdAt: string;
@@ -49,6 +51,7 @@ export interface AgentJSON {
   pendingMessages: number;
   isSubLead: boolean;
   hierarchyLevel: number;
+  isSystemAgent?: boolean;
 }
 
 export class Agent {
@@ -79,6 +82,8 @@ export class Agent {
   public budget?: { maxConcurrent: number; runningCount: number };
   /** Hierarchy depth: 0 = root lead, 1 = sub-lead, 2 = sub-sub-lead, etc. */
   public hierarchyLevel: number = 0;
+  /** Whether this agent was auto-created by the system (e.g., auto-secretary) */
+  public isSystemAgent: boolean = false;
   /** Cumulative token usage from ACP PromptResponse */
   public inputTokens = 0;
   public outputTokens = 0;
@@ -86,31 +91,24 @@ export class Agent {
   public contextWindowSize = 0;
   public contextWindowUsed = 0;
   private terminated = false;
+  /** Hash of the last CREW_UPDATE sent — used to skip duplicate updates */
+  private lastUpdateHash: string = '';
   /** When true, message delivery is halted — messages stay queued */
   public systemPaused = false;
 
   private acpConnection: AcpConnection | null = null;
   private config: ServerConfig;
-  private dataListeners: Array<(data: string) => void> = [];
-  private contentListeners: Array<(content: any) => void> = [];
-  private thinkingListeners: Array<(text: string) => void> = [];
-  private exitListeners: Array<(code: number) => void> = [];
-  private hungListeners: Array<(elapsedMs: number) => void> = [];
-  private statusListeners: Array<(status: AgentStatus) => void> = [];
-  private _idleDebounceTimer: ReturnType<typeof setTimeout> | null = null;
-  private static readonly IDLE_DEBOUNCE_MS = 500;
   private pendingMessages: string[] = [];
-  private toolCallListeners: Array<(info: ToolCallInfo) => void> = [];
-  private planListeners: Array<(entries: PlanEntry[]) => void> = [];
-  private permissionRequestListeners: Array<(request: any) => void> = [];
-  private sessionReadyListeners: Array<(sessionId: string) => void> = [];
-  private contextCompactedListeners: Array<(info: { previousUsed: number; currentUsed: number; percentDrop: number }) => void> = [];
-  private static readonly MAX_MESSAGES = 500;
-  private static readonly MAX_TOOL_CALLS = 200;
   private peers: AgentContextInfo[];
+  private readonly events = new AgentEventEmitter();
 
   /** Resume a previous session by its Copilot session ID */
   public resumeSessionId?: string;
+
+  // ── Internal constants exposed for AgentAcpBridge ───────────────────────
+  /** @internal */ readonly _maxMessages = 500;
+  /** @internal */ readonly _maxToolCalls = 200;
+  /** @internal */ get _isTerminated(): boolean { return this.terminated; }
 
   constructor(role: Role, config: ServerConfig, task?: string, parentId?: string, peers: AgentContextInfo[] = [], autopilot?: boolean, id?: string) {
     this.id = id || uuid();
@@ -124,179 +122,38 @@ export class Agent {
   }
 
   start(): void {
-    this.ensureSharedWorkspace();
+    ensureSharedWorkspace(this);
     const isResume = !!this.resumeSessionId;
 
     if (isResume) {
-      this.startAcp(undefined);
+      startAcpBridge(this, this.config, undefined);
     } else {
       const contextManifest = this.buildContextManifest(this.peers, this.budget);
       const taskAssignment = `You are acting as the "${this.role.name}" role. ${this.task ? `Your assigned task is: ${this.task}` : 'Awaiting task assignment.'}`;
       const initialPrompt = `${this.role.systemPrompt}\n\n${contextManifest}\n\n${taskAssignment}`;
-      this.startAcp(initialPrompt);
+      startAcpBridge(this, this.config, initialPrompt);
     }
   }
 
-  private ensureSharedWorkspace(): void {
-    const sharedDir = join(this.cwd || process.cwd(), '.ai-crew', 'shared');
-    if (!existsSync(sharedDir)) {
-      try { mkdirSync(sharedDir, { recursive: true }); } catch (err) { logger.debug('agent', 'Shared dir already exists or cannot be created'); }
+  // ── Internal methods used by AgentAcpBridge ─────────────────────────────
+  /** @internal */ _setAcpConnection(conn: AcpConnection): void { this.acpConnection = conn; }
+  /** @internal */ _notifyData(data: string): void { this.events.notifyData(data); }
+  /** @internal */ _notifyContent(content: any): void { this.events.notifyContent(content); }
+  /** @internal */ _notifyThinking(text: string): void { this.events.notifyThinking(text); }
+  /** @internal */ _notifyExit(code: number): void { this.events.notifyExit(code); }
+  /** @internal */ _notifyHung(elapsedMs: number): void { this.events.notifyHung(elapsedMs); }
+  /** @internal */ _notifyStatusChange(status: AgentStatus): void { this.events.notifyStatus(status); }
+  /** @internal */ _notifyToolCall(info: ToolCallInfo): void { this.events.notifyToolCall(info); }
+  /** @internal */ _notifyPlan(entries: PlanEntry[]): void { this.events.notifyPlan(entries); }
+  /** @internal */ _notifyPermissionRequest(request: any): void { this.events.notifyPermissionRequest(request); }
+  /** @internal */ _notifySessionReady(sessionId: string): void { this.events.notifySessionReady(sessionId); }
+  /** @internal */ _notifyContextCompacted(info: CompactionInfo): void { this.events.notifyContextCompacted(info); }
+  /** @internal */ _notifyUsage(info: UsageInfo): void { this.events.notifyUsage(info); }
+  /** @internal */ _drainOneMessage(): void {
+    if (this.pendingMessages.length > 0) {
+      const next = this.pendingMessages.shift()!;
+      this.write(next);
     }
-  }
-
-  private startAcp(initialPrompt?: string): void {
-    this.acpConnection = new AcpConnection({ autopilot: this.autopilot });
-    this.status = 'running';
-    this.wireAcpEvents();
-
-    const cliArgs = [
-      ...this.config.cliArgs,
-      `--agent=${agentFlagForRole(this.role.id)}`,
-      ...(this.model || this.role.model ? ['--model', this.model || this.role.model!] : []),
-      ...(this.resumeSessionId ? ['--resume', this.resumeSessionId] : []),
-    ];
-
-    this.acpConnection.start({
-      cliCommand: this.config.cliCommand,
-      cliArgs,
-      cwd: this.cwd || process.cwd(),
-    }).then((sessionId) => {
-      this.sessionId = sessionId;
-      for (const listener of this.sessionReadyListeners) listener(sessionId);
-      // Only send initial prompt for new sessions; resumed sessions already have context
-      if (initialPrompt) {
-        return this.acpConnection!.prompt(initialPrompt);
-      }
-    }).catch((err) => {
-      this.status = 'failed';
-      for (const listener of this.exitListeners) {
-        listener(1);
-      }
-    });
-  }
-
-
-  private wireAcpEvents(): void {
-    const conn = this.acpConnection!;
-
-    conn.on('text', (text: string) => {
-      if (this.terminated) return;
-      this.messages.push(text);
-      if (this.messages.length > Agent.MAX_MESSAGES) {
-        this.messages = this.messages.slice(-Agent.MAX_MESSAGES);
-      }
-      for (const listener of this.dataListeners) {
-        listener(text);
-      }
-    });
-
-    conn.on('content', (content: any) => {
-      for (const listener of this.contentListeners) {
-        listener(content);
-      }
-    });
-
-    conn.on('thinking', (text: string) => {
-      for (const listener of this.thinkingListeners) {
-        listener(text);
-      }
-    });
-
-    conn.on('tool_call', (info: ToolCallInfo) => {
-      if (this.terminated) return;
-      const idx = this.toolCalls.findIndex((t) => t.toolCallId === info.toolCallId);
-      if (idx >= 0) {
-        this.toolCalls[idx] = info;
-      } else {
-        this.toolCalls.push(info);
-        if (this.toolCalls.length > Agent.MAX_TOOL_CALLS) {
-          this.toolCalls = this.toolCalls.slice(-Agent.MAX_TOOL_CALLS);
-        }
-      }
-      for (const listener of this.toolCallListeners) {
-        listener(info);
-      }
-    });
-
-    conn.on('tool_call_update', (update: Partial<ToolCallInfo> & { toolCallId: string }) => {
-      const idx = this.toolCalls.findIndex((t) => t.toolCallId === update.toolCallId);
-      if (idx >= 0) {
-        this.toolCalls[idx] = { ...this.toolCalls[idx], ...update };
-      }
-      for (const listener of this.toolCallListeners) {
-        listener(this.toolCalls[idx] ?? update as ToolCallInfo);
-      }
-    });
-
-    conn.on('plan', (entries: PlanEntry[]) => {
-      this.plan = entries;
-      for (const listener of this.planListeners) {
-        listener(entries);
-      }
-    });
-
-    conn.on('permission_request', (request: any) => {
-      for (const listener of this.permissionRequestListeners) {
-        listener(request);
-      }
-    });
-
-    // Accumulate token usage from each prompt turn
-    conn.on('usage', (usage: { inputTokens: number; outputTokens: number }) => {
-      this.inputTokens = usage.inputTokens;
-      this.outputTokens = usage.outputTokens;
-    });
-
-    // Track context window from usage_update events and detect compaction
-    conn.on('usage_update', (info: { size: number; used: number }) => {
-      const previousUsed = this.contextWindowUsed;
-      this.contextWindowSize = info.size;
-      this.contextWindowUsed = info.used;
-
-      // Detect compaction: significant drop (>30%) in context usage
-      if (previousUsed > 0 && info.used < previousUsed * 0.7 && previousUsed > 10000) {
-        const percentDrop = Math.round(((previousUsed - info.used) / previousUsed) * 100);
-        for (const listener of this.contextCompactedListeners) {
-          listener({ previousUsed, currentUsed: info.used, percentDrop });
-        }
-      }
-    });
-
-    conn.on('exit', (code: number) => {
-      if (!this.terminated) {
-        this.status = code === 0 ? 'completed' : 'failed';
-      }
-      for (const listener of this.exitListeners) {
-        listener(code);
-      }
-    });
-
-    // When a prompt finishes, mark delegated agents as idle (task done, awaiting next)
-    conn.on('prompt_complete', (_stopReason: string) => {
-      if (this.terminated) return;
-      if (this.status === 'running' && !this.acpConnection?.isPrompting) {
-        // Drain queued messages before going idle (unless system is paused)
-        if (!this.systemPaused && this.pendingMessages.length > 0) {
-          const next = this.pendingMessages.shift()!;
-          this.write(next);
-          return;
-        }
-        this.status = 'idle';
-        this.notifyStatus(this.status);
-        for (const listener of this.hungListeners) {
-          listener(0);
-        }
-      }
-    });
-
-    // When a prompt starts (including queued/drained prompts), ensure status is 'running'
-    conn.on('prompting', (active: boolean) => {
-      if (this.terminated) return;
-      if (active && this.status !== 'running') {
-        this.status = 'running';
-        this.notifyStatus(this.status);
-      }
-    });
   }
 
   buildContextManifest(peers: AgentContextInfo[], budget?: { maxConcurrent: number; runningCount: number }): string {
@@ -312,7 +169,8 @@ export class Agent {
       .map((p) => {
         const pShort = p.id.slice(0, 8);
         const modelStr = p.model ? ` [${p.model}]` : '';
-        return `- ${pShort} — ${p.roleName}${modelStr} — ${p.status}${p.task ? `, task: ${p.task.slice(0, 80)}` : ''}`;
+        const systemStr = p.isSystemAgent ? ' (system)' : '';
+        return `- ${pShort} — ${p.roleName}${systemStr}${modelStr} — ${p.status}${p.task ? `, task: ${p.task.slice(0, 80)}` : ''}`;
       })
       .join('\n');
 
@@ -320,7 +178,8 @@ export class Agent {
       .map((p) => {
         const pShort = p.id.slice(0, 8);
         const files = p.lockedFiles.length > 0 ? p.lockedFiles.join(', ') : 'none';
-        return `- Agent ${pShort} (${p.roleName}) — Status: ${p.status}, Working on: ${p.task || 'idle'}, Files locked: ${files}`;
+        const systemStr = p.isSystemAgent ? ' (system)' : '';
+        return `- Agent ${pShort} (${p.roleName}${systemStr}) — Status: ${p.status}, Working on: ${p.task || 'idle'}, Files locked: ${files}`;
       })
       .join('\n');
 
@@ -360,23 +219,23 @@ All team members have access to this directory. Create your subdirectory before 
 == COORDINATION RULES ==
 1. DO NOT modify files that another agent has locked (listed above).
 2. ALWAYS acquire a file lock BEFORE editing any file:
-\`[[[ LOCK_FILE {"filePath": "path/to/file", "reason": "why"} ]]]\`
+\`⟦ LOCK_FILE {"filePath": "path/to/file", "reason": "why"} ⟧\`
 3. When you finish editing a file, release the lock:
-\`[[[ UNLOCK_FILE {"filePath": "path/to/file"} ]]]\`
+\`⟦ UNLOCK_FILE {"filePath": "path/to/file"} ⟧\`
 4. To communicate with another agent, use:
-\`[[[ AGENT_MESSAGE {"to": "agent-id", "content": "message"} ]]]\`
+\`⟦ AGENT_MESSAGE {"to": "agent-id", "content": "message"} ⟧\`
 5. To broadcast a message to ALL team members, use:
-\`[[[ BROADCAST {"content": "message"} ]]]\`
+\`⟦ BROADCAST {"content": "message"} ⟧\`
 6. To send a message to a group you belong to:
-\`[[[ GROUP_MESSAGE {"group": "group-name", "content": "message"} ]]]\`
+\`⟦ GROUP_MESSAGE {"group": "group-name", "content": "message"} ⟧\`
 7. To create a chat group with other agents for coordination:
-\`[[[ CREATE_GROUP {"name": "group-name", "members": ["agent-id-1", "agent-id-2"]} ]]]\`
-8. To list your groups: \`[[[ LIST_GROUPS ]]]\`
+\`⟦ CREATE_GROUP {"name": "group-name", "members": ["agent-id-1", "agent-id-2"]} ⟧\`
+8. To list your groups: \`⟦ LIST_GROUPS ⟧\`
 9. To get an updated roster of all agents and their IDs, use:
-\`[[[ QUERY_CREW ]]]\`
+\`⟦ QUERY_CREW ⟧\`
 10. Stay within your role's scope. Defer to the appropriate specialist for work outside your expertise.
 11. Log important decisions by outputting:
-\`[[[ ACTIVITY {"action": "decision_made", "summary": "what you decided"} ]]]\`
+\`⟦ ACTIVITY {"action": "decision_made", "summary": "what you decided"} ⟧\`
 
 == SKILLS (reusable knowledge for future work) ==
 Skills are reusable instructions that Copilot CLI loads automatically when relevant. Use them to capture REUSABLE KNOWLEDGE — patterns, techniques, and approaches that will benefit future work sessions.
@@ -441,7 +300,7 @@ When you discover something important about the codebase, a pattern, a gotcha, o
 [/CREW CONTEXT]`;
   }
 
-  injectContextUpdate(peers: AgentContextInfo[], recentActivity: string[], healthHeader?: string): void {
+  injectContextUpdate(peers: AgentContextInfo[], recentActivity: string[], healthHeader?: string): boolean {
     const isLead = this.role.id === 'lead';
     const myChildren = isLead ? peers.filter((p) => p.parentId === this.id) : [];
     const otherPeers = isLead ? peers.filter((p) => p.parentId !== this.id && p.id !== this.id) : peers;
@@ -450,7 +309,8 @@ When you discover something important about the codebase, a pattern, a gotcha, o
       .map((p) => {
         const pShort = p.id.slice(0, 8);
         const modelStr = p.model ? ` [${p.model}]` : '';
-        return `- ${pShort} — ${p.roleName}${modelStr} — ${p.status}${p.task ? `, task: ${p.task.slice(0, 80)}` : ''}`;
+        const systemStr = p.isSystemAgent ? ' (system)' : '';
+        return `- ${pShort} — ${p.roleName}${systemStr}${modelStr} — ${p.status}${p.task ? `, task: ${p.task.slice(0, 80)}` : ''}`;
       })
       .join('\n');
 
@@ -458,7 +318,8 @@ When you discover something important about the codebase, a pattern, a gotcha, o
       .map((p) => {
         const pShort = p.id.slice(0, 8);
         const files = p.lockedFiles.length > 0 ? p.lockedFiles.join(', ') : 'none';
-        return `- Agent ${pShort} (${p.roleName}) — Status: ${p.status}, Working on: ${p.task || 'idle'}, Files locked: ${files}`;
+        const systemStr = p.isSystemAgent ? ' (system)' : '';
+        return `- Agent ${pShort} (${p.roleName}${systemStr}) — Status: ${p.status}, Working on: ${p.task || 'idle'}, Files locked: ${files}`;
       })
       .join('\n');
 
@@ -474,30 +335,39 @@ When you discover something important about the codebase, a pattern, a gotcha, o
       ? `\n== AGENT BUDGET ==\nRunning: ${this.budget.runningCount} / ${this.budget.maxConcurrent} | Available slots: ${Math.max(0, this.budget.maxConcurrent - this.budget.runningCount)}${this.budget.runningCount >= this.budget.maxConcurrent ? ' | ⚠ AT CAPACITY' : ''}`
       : '';
 
-    const update = `[[[ CREW_UPDATE
+    const update = `⟦ CREW_UPDATE
 ${healthHeader ? healthHeader + '\n' : ''}${crewStatus}${budgetLine}
 == RECENT ACTIVITY ==
 ${activityLines}
-CREW_UPDATE ]]]`;
+CREW_UPDATE ⟧`;
+
+    // Hash only stable parts (crew status, budget, health) — not activity timestamps
+    const stableContent = `${healthHeader || ''}${crewStatus}${budgetLine}`;
+    const hash = createHash('md5').update(stableContent).digest('hex');
+    if (hash === this.lastUpdateHash) {
+      return false;
+    }
+    this.lastUpdateHash = hash;
 
     if (this.acpConnection?.isConnected) {
       this.acpConnection.prompt(update).catch((err) => {
         logger.warn('agent', `Context update failed for ${this.role.name} (${this.id.slice(0, 8)}): ${err?.message}`);
       });
     }
+    return true;
   }
 
   write(data: string): void {
     if (this.terminated) return;
     if (this.acpConnection?.isConnected) {
       this.status = 'running';
-      this.notifyStatus(this.status);
+      this.events.notifyStatus(this.status);
       this.acpConnection.prompt(data).catch((err) => {
         logger.error('agent', `Prompt failed for ${this.role.name} (${this.id.slice(0, 8)}): ${err?.message || err}`);
         // Reset status so agent doesn't get stuck as 'running'
         if (this.status === 'running') {
           this.status = 'idle';
-          this.notifyStatus(this.status);
+          this.events.notifyStatus(this.status);
         }
       });
     }
@@ -603,7 +473,7 @@ CREW_UPDATE ]]]`;
     if (this.terminated) return;
     this.terminated = true;
     this.status = 'terminated';
-    this.notifyStatus(this.status);
+    this.events.notifyStatus(this.status);
     if (this.acpConnection) {
       this.acpConnection.terminate();
       this.acpConnection = null;
@@ -611,93 +481,27 @@ CREW_UPDATE ]]]`;
   }
 
   dispose(): void {
-    this.dataListeners.length = 0;
-    this.contentListeners.length = 0;
-    this.exitListeners.length = 0;
-    this.hungListeners.length = 0;
-    this.statusListeners.length = 0;
-    if (this._idleDebounceTimer) {
-      clearTimeout(this._idleDebounceTimer);
-      this._idleDebounceTimer = null;
-    }
-    this.sessionReadyListeners.length = 0;
-    this.toolCallListeners.length = 0;
-    this.planListeners.length = 0;
-    this.permissionRequestListeners.length = 0;
-    this.contextCompactedListeners.length = 0;
-    this.thinkingListeners.length = 0;
+    this.events.dispose();
     this.pendingMessages.length = 0;
     this.messages.length = 0;
     this.toolCalls.length = 0;
+    this.lastUpdateHash = '';
   }
 
-  onData(listener: (data: string) => void): void {
-    this.dataListeners.push(listener);
-  }
-
-  onContent(listener: (content: any) => void): void {
-    this.contentListeners.push(listener);
-  }
-
-  onExit(listener: (code: number) => void): void {
-    this.exitListeners.push(listener);
-  }
-
-  onHung(listener: (elapsedMs: number) => void): void {
-    this.hungListeners.push(listener);
-  }
-
-  onStatus(listener: (status: AgentStatus) => void): void {
-    this.statusListeners.push(listener);
-  }
-
-  /**
-   * Debounced status notification. Idle transitions are delayed by IDLE_DEBOUNCE_MS
-   * to avoid rapid running→idle→running churn in the activity log.
-   * Non-idle transitions fire immediately and cancel any pending idle.
-   */
-  private notifyStatus(status: AgentStatus): void {
-    if (this._idleDebounceTimer) {
-      clearTimeout(this._idleDebounceTimer);
-      this._idleDebounceTimer = null;
-    }
-    if (status === 'idle') {
-      this._idleDebounceTimer = setTimeout(() => {
-        this._idleDebounceTimer = null;
-        for (const listener of this.statusListeners) {
-          listener(status);
-        }
-      }, Agent.IDLE_DEBOUNCE_MS);
-    } else {
-      for (const listener of this.statusListeners) {
-        listener(status);
-      }
-    }
-  }
-
-  onToolCall(listener: (info: ToolCallInfo) => void): void {
-    this.toolCallListeners.push(listener);
-  }
-
-  onPlan(listener: (entries: PlanEntry[]) => void): void {
-    this.planListeners.push(listener);
-  }
-
-  onPermissionRequest(listener: (request: any) => void): void {
-    this.permissionRequestListeners.push(listener);
-  }
-
-  onSessionReady(listener: (sessionId: string) => void): void {
-    this.sessionReadyListeners.push(listener);
-  }
-
-  onContextCompacted(listener: (info: { previousUsed: number; currentUsed: number; percentDrop: number }) => void): void {
-    this.contextCompactedListeners.push(listener);
-  }
-
-  onThinking(listener: (text: string) => void): void {
-    this.thinkingListeners.push(listener);
-  }
+  // ── Event registration (delegated to AgentEventEmitter) ─────────────────
+  onData(listener: (data: string) => void): void { this.events.onData(listener); }
+  onContent(listener: (content: any) => void): void { this.events.onContent(listener); }
+  onExit(listener: (code: number) => void): void { this.events.onExit(listener); }
+  onHung(listener: (elapsedMs: number) => void): void { this.events.onHung(listener); }
+  onStatus(listener: (status: AgentStatus) => void): void { this.events.onStatus(listener); }
+  onToolCall(listener: (info: ToolCallInfo) => void): void { this.events.onToolCall(listener); }
+  onPlan(listener: (entries: PlanEntry[]) => void): void { this.events.onPlan(listener); }
+  onPermissionRequest(listener: (request: any) => void): void { this.events.onPermissionRequest(listener); }
+  onSessionReady(listener: (sessionId: string) => void): void { this.events.onSessionReady(listener); }
+  onContextCompacted(listener: (info: { previousUsed: number; currentUsed: number; percentDrop: number }) => void): void { this.events.onContextCompacted(listener); }
+  /** Register a listener for token usage updates (for cost tracking). */
+  onUsage(listener: (info: { agentId: string; inputTokens: number; outputTokens: number; dagTaskId?: string }) => void): void { this.events.onUsage(listener); }
+  onThinking(listener: (text: string) => void): void { this.events.onThinking(listener); }
 
   getBufferedOutput(): string {
     return this.messages.join('');
@@ -719,6 +523,7 @@ CREW_UPDATE ]]]`;
       status: this.status,
       autopilot: this.autopilot,
       task: this.task,
+      dagTaskId: this.dagTaskId,
       parentId: this.parentId,
       childIds: this.childIds,
       createdAt: this.createdAt.toISOString(),
@@ -737,6 +542,7 @@ CREW_UPDATE ]]]`;
       pendingMessages: this.pendingMessageCount,
       isSubLead: this.role.id === 'lead' && !!this.parentId,
       hierarchyLevel: this.hierarchyLevel,
+      isSystemAgent: this.isSystemAgent || undefined,
     };
   }
 }

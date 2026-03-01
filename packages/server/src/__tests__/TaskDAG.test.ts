@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { Database } from '../db/database.js';
-import { TaskDAG, VALID_TRANSITIONS } from '../tasks/TaskDAG.js';
+import { TaskDAG, VALID_TRANSITIONS, descriptionSimilarity } from '../tasks/TaskDAG.js';
 import type { DagTaskInput, DagTask } from '../tasks/TaskDAG.js';
 
 const TEST_DB = ':memory:';
@@ -538,6 +538,15 @@ describe('TaskDAG', () => {
       expect(task!.dagStatus).toBe('running');
       expect(task!.assignedAgentId).toBe('agent-1');
     });
+
+    it('records startedAt timestamp', () => {
+      dag.declareTaskBatch('lead-1', [{ id: 'a', role: 'Dev' }]);
+      const task = dag.startTask('lead-1', 'a', 'agent-1');
+      expect(task).not.toBeNull();
+      expect(task!.startedAt).toBeDefined();
+      // SQLite datetime('now') returns 'YYYY-MM-DD HH:MM:SS'
+      expect(task!.startedAt).toMatch(/^\d{4}-\d{2}-\d{2}/);
+    });
   });
 
   describe('getStatus', () => {
@@ -649,6 +658,269 @@ describe('TaskDAG', () => {
     it('returns null for non-existent role', () => {
       dag.declareTaskBatch('lead-1', [{ id: 'a', role: 'developer' }]);
       expect(dag.findReadyTaskByRole('lead-1', 'designer')).toBeNull();
+    });
+  });
+
+  describe('descriptionSimilarity', () => {
+    it('returns high score for identical descriptions', () => {
+      const score = descriptionSimilarity('Build the API endpoints', 'Build the API endpoints');
+      expect(score).toBeGreaterThan(0.8);
+    });
+
+    it('returns high score for similar descriptions', () => {
+      const score = descriptionSimilarity(
+        'Fix the authentication bug in login flow',
+        'Fix authentication bug in the login flow',
+      );
+      expect(score).toBeGreaterThan(0.6);
+    });
+
+    it('returns low score for unrelated descriptions', () => {
+      const score = descriptionSimilarity(
+        'Build the API endpoints for users',
+        'Design the CSS layout for dashboard',
+      );
+      expect(score).toBeLessThan(0.2);
+    });
+
+    it('returns 0 for empty strings', () => {
+      expect(descriptionSimilarity('', 'something')).toBe(0);
+      expect(descriptionSimilarity('something', '')).toBe(0);
+    });
+
+    it('filters stop words and short words', () => {
+      const score = descriptionSimilarity('the a is to', 'of in for on');
+      expect(score).toBe(0);
+    });
+
+    it('includes title in matching', () => {
+      const score = descriptionSimilarity(
+        'Fix the heatmap rendering',
+        'rendering component is broken',
+        'heatmap display fix',
+      );
+      expect(score).toBeGreaterThan(0.4);
+    });
+
+    it('preserves hyphenated identifiers like P2-7 for matching', () => {
+      // "P2-7" should match "p2-7" in the DAG task
+      const score = descriptionSimilarity(
+        'Implement P2-7: Comm Heatmap Real-time',
+        'P2-7 heatmap real-time SSE updates',
+      );
+      expect(score).toBeGreaterThan(0.4);
+    });
+
+    it('distinguishes P2-7 from P2-8 via hyphenated IDs', () => {
+      const scoreCorrect = descriptionSimilarity(
+        'Implement P2-7 heatmap',
+        'P2-7 heatmap updates',
+      );
+      const scoreWrong = descriptionSimilarity(
+        'Implement P2-7 heatmap',
+        'P2-8 DAG visualization',
+      );
+      expect(scoreCorrect).toBeGreaterThan(scoreWrong);
+      expect(scoreCorrect).toBeGreaterThan(0.3);
+    });
+  });
+
+  describe('findReadyTask', () => {
+    it('matches by explicit dagTaskId when provided', () => {
+      dag.declareTaskBatch('lead-1', [
+        { id: 'task-api', role: 'developer', description: 'Build API' },
+        { id: 'task-ui', role: 'developer', description: 'Build UI' },
+      ]);
+      const task = dag.findReadyTask('lead-1', {
+        dagTaskId: 'task-ui',
+        role: 'developer',
+        taskDescription: 'Build API',
+      });
+      expect(task).not.toBeNull();
+      expect(task!.id).toBe('task-ui');
+    });
+
+    it('returns null when dagTaskId is not found', () => {
+      dag.declareTaskBatch('lead-1', [
+        { id: 'task-api', role: 'developer', description: 'Build API' },
+      ]);
+      const task = dag.findReadyTask('lead-1', {
+        dagTaskId: 'nonexistent',
+        role: 'developer',
+      });
+      expect(task).toBeNull();
+    });
+
+    it('returns null when dagTaskId exists but is not ready', () => {
+      dag.declareTaskBatch('lead-1', [
+        { id: 'task-api', role: 'developer', description: 'Build API' },
+      ]);
+      dag.startTask('lead-1', 'task-api', 'agent-1');
+      const task = dag.findReadyTask('lead-1', {
+        dagTaskId: 'task-api',
+        role: 'developer',
+      });
+      expect(task).toBeNull();
+    });
+
+    it('disambiguates multiple same-role tasks using description', () => {
+      dag.declareTaskBatch('lead-1', [
+        { id: 'task-api', role: 'developer', description: 'Build the REST API endpoints' },
+        { id: 'task-ui', role: 'developer', description: 'Build the React dashboard UI' },
+        { id: 'task-tests', role: 'developer', description: 'Write integration tests for API' },
+      ]);
+
+      const apiTask = dag.findReadyTask('lead-1', {
+        role: 'developer',
+        taskDescription: 'Build the REST API endpoints for the user service',
+      });
+      expect(apiTask).not.toBeNull();
+      expect(apiTask!.id).toBe('task-api');
+
+      const uiTask = dag.findReadyTask('lead-1', {
+        role: 'developer',
+        taskDescription: 'Build the React dashboard UI components',
+      });
+      expect(uiTask).not.toBeNull();
+      expect(uiTask!.id).toBe('task-ui');
+    });
+
+    it('returns null when description has no meaningful match and multiple candidates', () => {
+      dag.declareTaskBatch('lead-1', [
+        { id: 'low', role: 'developer', description: 'Task A', priority: 1 },
+        { id: 'high', role: 'developer', description: 'Task B', priority: 10 },
+      ]);
+      const task = dag.findReadyTask('lead-1', {
+        role: 'developer',
+        taskDescription: 'something completely unrelated xyz',
+      });
+      // Should NOT guess — return null to force explicit dagTaskId
+      expect(task).toBeNull();
+    });
+
+    it('returns null when no description provided and multiple candidates', () => {
+      dag.declareTaskBatch('lead-1', [
+        { id: 'low', role: 'developer', priority: 1 },
+        { id: 'high', role: 'developer', priority: 10 },
+      ]);
+      const task = dag.findReadyTask('lead-1', {
+        role: 'developer',
+      });
+      expect(task).toBeNull();
+    });
+
+    it('returns single candidate without needing description match', () => {
+      dag.declareTaskBatch('lead-1', [
+        { id: 'only-one', role: 'developer', description: 'Build API' },
+        { id: 'other', role: 'designer', description: 'Design UI' },
+      ]);
+      const task = dag.findReadyTask('lead-1', {
+        role: 'developer',
+        taskDescription: 'totally unrelated description',
+      });
+      expect(task).not.toBeNull();
+      expect(task!.id).toBe('only-one');
+    });
+
+    it('returns null when no ready tasks for role', () => {
+      dag.declareTaskBatch('lead-1', [
+        { id: 'task-1', role: 'designer', description: 'Design mockups' },
+      ]);
+      const task = dag.findReadyTask('lead-1', {
+        role: 'developer',
+        taskDescription: 'Build API',
+      });
+      expect(task).toBeNull();
+    });
+
+    it('ignores non-ready tasks even with matching dagTaskId', () => {
+      dag.declareTaskBatch('lead-1', [
+        { id: 'dep', role: 'developer', description: 'Dependency' },
+        { id: 'blocked', role: 'developer', description: 'Blocked task', depends_on: ['dep'] },
+      ]);
+      const task = dag.findReadyTask('lead-1', {
+        dagTaskId: 'blocked',
+        role: 'developer',
+      });
+      expect(task).toBeNull();
+    });
+
+    it('dagTaskId takes priority over role and description', () => {
+      dag.declareTaskBatch('lead-1', [
+        { id: 'task-api', role: 'developer', description: 'Build REST API' },
+        { id: 'task-review', role: 'reviewer', description: 'Review code changes' },
+      ]);
+      const task = dag.findReadyTask('lead-1', {
+        dagTaskId: 'task-review',
+        role: 'developer',
+        taskDescription: 'Build REST API',
+      });
+      expect(task).not.toBeNull();
+      expect(task!.id).toBe('task-review');
+    });
+
+    it('uses title for matching when available', () => {
+      dag.declareTaskBatch('lead-1', [
+        { id: 'task-auth', role: 'developer', title: 'Authentication System', description: 'Build login and signup flows' },
+        { id: 'task-payments', role: 'developer', title: 'Payment Integration', description: 'Integrate Stripe payment processing' },
+      ]);
+      const task = dag.findReadyTask('lead-1', {
+        role: 'developer',
+        taskDescription: 'Set up the authentication system for the app',
+      });
+      expect(task).not.toBeNull();
+      expect(task!.id).toBe('task-auth');
+    });
+
+    it('returns null when descriptions score equally (ambiguous)', () => {
+      dag.declareTaskBatch('lead-1', [
+        { id: 'low-pri', role: 'developer', description: 'Build feature XYZ', priority: 1 },
+        { id: 'high-pri', role: 'developer', description: 'Build feature XYZ', priority: 10 },
+      ]);
+      const task = dag.findReadyTask('lead-1', {
+        role: 'developer',
+        taskDescription: 'Build feature XYZ for the platform',
+      });
+      // Identical descriptions = zero gap = ambiguous, returns null
+      expect(task).toBeNull();
+    });
+
+    it('returns null when top scores are ambiguously close (no false positive)', () => {
+      dag.declareTaskBatch('lead-1', [
+        { id: 'task-a', role: 'developer', description: 'Implement authentication system', priority: 1 },
+        { id: 'task-b', role: 'developer', description: 'Implement authorization system', priority: 10 },
+      ]);
+      // Both descriptions share "system" with the query (implement is stop word),
+      // scores are close together — should return null, not guess
+      const task = dag.findReadyTask('lead-1', {
+        role: 'developer',
+        taskDescription: 'Implement notification system',
+      });
+      expect(task).toBeNull();
+    });
+
+    it('returns null when multiple candidates and no description provided', () => {
+      dag.declareTaskBatch('lead-1', [
+        { id: 'task-x', role: 'developer', description: 'Build API endpoints', priority: 1 },
+        { id: 'task-y', role: 'developer', description: 'Build UI components', priority: 10 },
+      ]);
+      const task = dag.findReadyTask('lead-1', {
+        role: 'developer',
+      });
+      expect(task).toBeNull();
+    });
+
+    it('returns null when description matching falls below threshold', () => {
+      dag.declareTaskBatch('lead-1', [
+        { id: 'p0-2', role: 'developer', description: 'Fix fragile role-based task auto-linking' },
+        { id: 'p0-3', role: 'developer', description: 'Allow agents to signal task completion' },
+      ]);
+      // Re-delegation text doesn't match either task well
+      const task = dag.findReadyTask('lead-1', {
+        role: 'developer',
+        taskDescription: 'Fix security issue in COMPLETE_TASK handler',
+      });
+      expect(task).toBeNull();
     });
   });
 
@@ -891,6 +1163,89 @@ describe('TaskDAG', () => {
       dag.resetDAG('lead-1');
       const result = dag.declareTaskBatch('lead-1', [{ id: 'a', role: 'Dev' }]);
       expect(result.tasks).toHaveLength(1);
+    });
+  });
+
+  describe('addDependency', () => {
+    it('adds a dependency between two tasks', () => {
+      dag.declareTaskBatch('lead-1', [
+        { id: 'a', role: 'Dev' },
+        { id: 'b', role: 'Dev' },
+      ]);
+      const result = dag.addDependency('lead-1', 'b', 'a');
+      expect(result).toBe(true);
+      const task = dag.getTask('lead-1', 'b');
+      expect(task!.dependsOn).toContain('a');
+    });
+
+    it('blocks task when dependency is not done', () => {
+      dag.declareTaskBatch('lead-1', [
+        { id: 'a', role: 'Dev' },
+        { id: 'b', role: 'Dev' },
+      ]);
+      dag.startTask('lead-1', 'a', 'agent-1');
+      dag.addDependency('lead-1', 'b', 'a');
+      const task = dag.getTask('lead-1', 'b');
+      expect(task!.dagStatus).toBe('blocked');
+    });
+
+    it('does not block task when dependency is already done', () => {
+      dag.declareTaskBatch('lead-1', [
+        { id: 'a', role: 'Dev' },
+        { id: 'b', role: 'Dev' },
+      ]);
+      dag.completeTask('lead-1', 'a');
+      dag.addDependency('lead-1', 'b', 'a');
+      const task = dag.getTask('lead-1', 'b');
+      expect(task!.dagStatus).toBe('ready');
+      expect(task!.dependsOn).toContain('a');
+    });
+
+    it('returns true for duplicate dependency (idempotent)', () => {
+      dag.declareTaskBatch('lead-1', [
+        { id: 'a', role: 'Dev' },
+        { id: 'b', role: 'Dev', depends_on: ['a'] },
+      ]);
+      const result = dag.addDependency('lead-1', 'b', 'a');
+      expect(result).toBe(true);
+    });
+
+    it('returns false when task does not exist', () => {
+      dag.declareTaskBatch('lead-1', [{ id: 'a', role: 'Dev' }]);
+      expect(dag.addDependency('lead-1', 'nonexistent', 'a')).toBe(false);
+      expect(dag.addDependency('lead-1', 'a', 'nonexistent')).toBe(false);
+    });
+
+    it('prevents cycle: A→B→A', () => {
+      dag.declareTaskBatch('lead-1', [
+        { id: 'a', role: 'Dev' },
+        { id: 'b', role: 'Dev', depends_on: ['a'] },
+      ]);
+      // b depends on a, so adding a depends on b would create a cycle
+      const result = dag.addDependency('lead-1', 'a', 'b');
+      expect(result).toBe(false);
+    });
+
+    it('prevents transitive cycle: A→B→C→A', () => {
+      dag.declareTaskBatch('lead-1', [
+        { id: 'a', role: 'Dev' },
+        { id: 'b', role: 'Dev', depends_on: ['a'] },
+        { id: 'c', role: 'Dev', depends_on: ['b'] },
+      ]);
+      // c→b→a, so adding a→c would create A→B→C→A cycle
+      const result = dag.addDependency('lead-1', 'a', 'c');
+      expect(result).toBe(false);
+    });
+
+    it('emits dag:updated event', () => {
+      dag.declareTaskBatch('lead-1', [
+        { id: 'a', role: 'Dev' },
+        { id: 'b', role: 'Dev' },
+      ]);
+      let emitted = false;
+      dag.on('dag:updated', () => { emitted = true; });
+      dag.addDependency('lead-1', 'b', 'a');
+      expect(emitted).toBe(true);
     });
   });
 });

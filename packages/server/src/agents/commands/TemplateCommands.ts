@@ -11,12 +11,17 @@ import type { Agent } from '../Agent.js';
 import type { CommandEntry, CommandHandlerContext } from './types.js';
 import type { TaskTemplateRegistry } from '../../tasks/TaskTemplates.js';
 import type { TaskDecomposer } from '../../tasks/TaskDecomposer.js';
+import {
+  parseCommandPayload,
+  applyTemplateSchema,
+  decomposeTaskSchema,
+} from './commandSchemas.js';
 
 // ── Regex patterns ────────────────────────────────────────────────────
 
-const LIST_TEMPLATES_REGEX    = /\[\[\[\s*LIST_TEMPLATES\s*\]\]\]/s;
-const APPLY_TEMPLATE_REGEX    = /\[\[\[\s*APPLY_TEMPLATE\s*(\{.*?\})\s*\]\]\]/s;
-const DECOMPOSE_TASK_REGEX    = /\[\[\[\s*DECOMPOSE_TASK\s*(\{.*?\})\s*\]\]\]/s;
+const LIST_TEMPLATES_REGEX    = /⟦\s*LIST_TEMPLATES\s*⟧/s;
+const APPLY_TEMPLATE_REGEX    = /⟦\s*APPLY_TEMPLATE\s*(\{.*?\})\s*⟧/s;
+const DECOMPOSE_TASK_REGEX    = /⟦\s*DECOMPOSE_TASK\s*(\{.*?\})\s*⟧/s;
 
 // ── Handlers ──────────────────────────────────────────────────────────
 
@@ -52,11 +57,8 @@ function handleApplyTemplate(
   if (!match) return;
 
   try {
-    const req = JSON.parse(match[1]) as { template: string; overrides?: Record<string, { title?: string; role?: string }> };
-    if (!req.template) {
-      agent.sendMessage('[System] APPLY_TEMPLATE requires a "template" field.');
-      return;
-    }
+    const req = parseCommandPayload(agent, match[1], applyTemplateSchema, 'APPLY_TEMPLATE');
+    if (!req) return;
 
     const template = registry.get(req.template);
     if (!template) {
@@ -94,11 +96,8 @@ function handleDecomposeTask(
   if (!match) return;
 
   try {
-    const req = JSON.parse(match[1]) as { task: string };
-    if (!req.task) {
-      agent.sendMessage('[System] DECOMPOSE_TASK requires a "task" field.');
-      return;
-    }
+    const req = parseCommandPayload(agent, match[1], decomposeTaskSchema, 'DECOMPOSE_TASK');
+    if (!req) return;
 
     const result = decomposer.decompose(req.task);
     const confidence = Math.round(result.confidence * 100);

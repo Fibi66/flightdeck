@@ -48,7 +48,7 @@ A real-time web UI that orchestrates teams of [Copilot CLI](https://docs.github.
 - **File Locking** — Pessimistic locks with TTL and glob support prevent concurrent edits
 - **Scoped COMMIT** — The `COMMIT` command executes `git add` only on files the agent has locked, then commits and runs post-commit verification (`git diff --name-only HEAD~1`) to confirm the expected files actually landed. Prevents `git add -A` from leaking other agents' uncommitted work.
 - **Merge Scope Validation** — When merging agent branches, `WorktreeManager.merge()` validates that only locked files were modified — defense-in-depth against accidental cross-contamination
-- **Worktree Isolation** — ⚠️ _In development, not yet enabled._ Per-agent git worktrees are implemented in the backend (`WorktreeManager`) but not yet active in production. Agents currently share the repository working directory. See [docs/coordination.md](docs/coordination.md) for details.
+- **Worktree Isolation** — ⚠️ _In development, not yet enabled._ Per-agent git worktrees are implemented in the backend (`WorktreeManager`) but not yet active in production. Agents currently share the repository working directory. See the [Coordination guide](packages/docs/guide/coordination.md) for details.
 - **Event Pipeline** — Reactive event handlers auto-trigger actions (e.g., run tests after commits, log summaries on task completion)
 - **Agent Controls** — Interrupt, terminate, restart agents; change models on the fly
 - **Security** — Auto-generated auth tokens, CORS lockdown, rate limiting, path traversal validation
@@ -146,7 +146,7 @@ React UI ←→ WebSocket ←→ Node.js Server ←→ ACP ←→ Copilot CLI ×
 | **ReportGenerator** | Session report generation in HTML and Markdown |
 | **KnowledgeTransfer** | Cross-project knowledge sharing and context reuse |
 
-> See [docs/architecture-decisions.md](docs/architecture-decisions.md) for the rationale behind key design choices.
+> See the [Architecture Decisions](packages/docs/reference/architecture-decisions.md) page for the rationale behind key design choices.
 
 ## Agent Roles
 
@@ -186,12 +186,14 @@ Agents communicate via structured triple-bracket commands detected in their outp
 | Command | Description |
 |---------|-------------|
 | `AGENT_MESSAGE {"to": "agent-id", "content": "..."}` | Send a direct message to another agent by ID. |
+| `DIRECT_MESSAGE {"to": "agent-id-prefix", "content": "..."}` | Queue a message to another agent without interrupting their current work. Matches by ID prefix. |
 | `BROADCAST {"content": "..."}` | Send a message to all active agents. |
 | `CREATE_GROUP {"name": "...", "members": ["id1"], "roles": ["developer"]}` | Create a named chat group. Specify members by ID, by role, or both. Lead is auto-included. |
 | `GROUP_MESSAGE {"group": "...", "content": "..."}` | Send a message to all members of a group. Sender must be a member. |
 | `ADD_TO_GROUP {"group": "...", "members": ["id"]}` | Add agents to an existing group. New members receive recent message history. |
 | `REMOVE_FROM_GROUP {"group": "...", "members": ["id"]}` | Remove agents from a group. The lead cannot be removed. |
 | `QUERY_GROUPS` | List all groups the agent belongs to, with member counts and last message preview. |
+| `QUERY_PEERS` | Discover other active agents for direct messaging. |
 
 ### Task & Progress (Lead-only unless noted)
 
@@ -199,7 +201,7 @@ Agents communicate via structured triple-bracket commands detected in their outp
 |---------|-------------|
 | `DECLARE_TASKS {"tasks": [...]}` | Declare a task DAG with dependencies. Tasks have `id`, `title`, `depends_on`. |
 | `PROGRESS {"summary": "..."}` | Report progress. Auto-reads DAG state when a DAG exists — no need to query separately. |
-| `COMPLETE_TASK {"summary": "..."}` | Signal that the agent has finished its assigned task. Lead: completes a DAG task. Non-lead: signals done to parent. *(Any agent)* |
+| `COMPLETE_TASK {"id": "task-id", "summary": "...", "output": "..."}` | Mark a DAG task as done. Non-lead agents relay to parent's DAG with auth validation. Supports `id`, `summary`, `status`, `output` fields. *(Any agent)* |
 | `TASK_STATUS` | Query current task DAG status. |
 | `PAUSE_TASK {"taskId": "..."}` | Pause a pending/ready task in the DAG. *(Lead-only)* |
 | `RETRY_TASK {"taskId": "..."}` | Retry a failed task. *(Lead-only)* |
@@ -222,6 +224,17 @@ Agents communicate via structured triple-bracket commands detected in their outp
 | `DEFER_ISSUE {"description": "...", "severity": "P2"}` | Flag a quality issue for later resolution. Tracked per-project with severity levels. |
 | `QUERY_DEFERRED {"status": "open"}` | List deferred issues. Optional status filter (open/resolved/dismissed). |
 | `RESOLVE_DEFERRED {"id": 42}` | Mark a deferred issue as resolved. Use `"dismiss": true` to dismiss instead. |
+
+### Capabilities & Timers (All agents)
+
+| Command | Description |
+|---------|-------------|
+| `ACQUIRE_CAPABILITY {"capability": "code-review", "reason": "..."}` | Temporarily gain capabilities beyond the agent's role (code-review, architecture, delegation, testing, devops). |
+| `RELEASE_CAPABILITY {"capability": "code-review"}` | Release a previously acquired capability. |
+| `LIST_CAPABILITIES` | List currently held capabilities. |
+| `SET_TIMER {"label": "name", "delay": 300, "message": "...", "repeat": false}` | Set a reminder that fires after a delay (in seconds). Optionally repeats. |
+| `CANCEL_TIMER {"name": "name"}` | Cancel an active timer. |
+| `LIST_TIMERS` | List all active timers. |
 
 ### UI Views
 
@@ -252,12 +265,12 @@ Agents communicate via structured triple-bracket commands detected in their outp
 
 | Document | Description |
 |----------|-------------|
-| [docs/api-reference.md](docs/api-reference.md) | Full REST API reference for all endpoints |
-| [docs/architecture-decisions.md](docs/architecture-decisions.md) | Key architecture decision records (ADRs) |
-| [docs/agent-communication.md](docs/agent-communication.md) | ACP agent communication protocol details |
-| [docs/coordination.md](docs/coordination.md) | File locking, delegation, and coordination primitives |
-| [docs/database-design.md](docs/database-design.md) | SQLite schema and Drizzle ORM setup |
-| [docs/ui-design.md](docs/ui-design.md) | Frontend component architecture and design tokens |
+| [REST API Reference](packages/docs/reference/api.md) | Full REST API reference for all endpoints |
+| [Architecture Decisions](packages/docs/reference/architecture-decisions.md) | Key architecture decision records (ADRs) |
+| [Agent Communication](packages/docs/guide/agent-communication.md) | ACP agent communication protocol details |
+| [Coordination](packages/docs/guide/coordination.md) | File locking, delegation, and coordination primitives |
+| [Database Schema](packages/docs/reference/database.md) | SQLite schema and Drizzle ORM setup |
+| [UI Design](packages/docs/guide/ui-design.md) | Frontend component architecture and design tokens |
 
 ## Screenshots
 

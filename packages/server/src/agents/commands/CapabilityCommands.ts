@@ -7,12 +7,13 @@
  */
 import type { Agent } from '../Agent.js';
 import type { CommandHandlerContext, CommandEntry } from './types.js';
+import { parseCommandPayload, acquireCapabilitySchema } from './commandSchemas.js';
 
 // ── Regex patterns ────────────────────────────────────────────────────
 
-const ACQUIRE_REGEX = /\[\[\[\s*ACQUIRE_CAPABILITY\s*(\{.*?\})\s*\]\]\]/s;
-const LIST_REGEX = /\[\[\[\s*LIST_CAPABILITIES\s*\]\]\]/s;
-const RELEASE_REGEX = /\[\[\[\s*RELEASE_CAPABILITY\s*(\{.*?\})\s*\]\]\]/s;
+const ACQUIRE_REGEX = /⟦\s*ACQUIRE_CAPABILITY\s*(\{.*?\})\s*⟧/s;
+const LIST_REGEX = /⟦\s*LIST_CAPABILITIES\s*⟧/s;
+const RELEASE_REGEX = /⟦\s*RELEASE_CAPABILITY\s*(\{.*?\})\s*⟧/s;
 
 // ── Handlers ──────────────────────────────────────────────────────────
 
@@ -23,8 +24,9 @@ function handleAcquire(ctx: CommandHandlerContext, agent: Agent, data: string): 
   }
   const match = data.match(ACQUIRE_REGEX);
   if (!match) return;
+  const parsed = parseCommandPayload(agent, match[1], acquireCapabilitySchema, 'ACQUIRE_CAPABILITY');
+  if (!parsed) return;
   try {
-    const parsed = JSON.parse(match[1]);
     const { ok, message } = ctx.capabilityInjector.acquire(
       agent,
       parsed.capability,

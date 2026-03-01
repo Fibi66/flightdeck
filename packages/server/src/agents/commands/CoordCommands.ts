@@ -8,17 +8,25 @@ import type { CommandHandlerContext, CommandEntry } from './types.js';
 import { logger } from '../../utils/logger.js';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import {
+  parseCommandPayload,
+  lockFileSchema,
+  unlockFileSchema,
+  activitySchema,
+  decisionSchema,
+  commitSchema,
+} from './commandSchemas.js';
 
 const execAsync = promisify(exec);
 
 // ── Regex patterns ────────────────────────────────────────────────────
 
-const LOCK_REQUEST_REGEX = /\[\[\[\s*LOCK_FILE\s*(\{.*?\})\s*\]\]\]/s;
-const LOCK_RELEASE_REGEX = /\[\[\[\s*UNLOCK_FILE\s*(\{.*?\})\s*\]\]\]/s;
-const ACTIVITY_REGEX = /\[\[\[\s*ACTIVITY\s*(\{.*?\})\s*\]\]\]/s;
-const DECISION_REGEX = /\[\[\[\s*DECISION\s*(\{.*?\})\s*\]\]\]/s;
-const PROGRESS_REGEX = /\[\[\[\s*PROGRESS\s*(\{.*?\})\s*\]\]\]/s;
-const COMMIT_REGEX = /\[\[\[\s*COMMIT\s*(\{.*?\})\s*\]\]\]/s;
+const LOCK_REQUEST_REGEX = /⟦\s*LOCK_FILE\s*(\{.*?\})\s*⟧/s;
+const LOCK_RELEASE_REGEX = /⟦\s*UNLOCK_FILE\s*(\{.*?\})\s*⟧/s;
+const ACTIVITY_REGEX = /⟦\s*ACTIVITY\s*(\{.*?\})\s*⟧/s;
+const DECISION_REGEX = /⟦\s*DECISION\s*(\{.*?\})\s*⟧/s;
+const PROGRESS_REGEX = /⟦\s*PROGRESS\s*(\{.*?\})\s*⟧/s;
+const COMMIT_REGEX = /⟦\s*COMMIT\s*(\{.*?\})\s*⟧/s;
 
 // ── Handlers ──────────────────────────────────────────────────────────
 
@@ -27,7 +35,8 @@ function handleLockRequest(ctx: CommandHandlerContext, agent: Agent, data: strin
   if (!match) return;
 
   try {
-    const request = JSON.parse(match[1]);
+    const request = parseCommandPayload(agent, match[1], lockFileSchema, 'LOCK_FILE');
+    if (!request) return;
     const agentRole = agent.role?.id ?? 'unknown';
     const result = ctx.lockRegistry.acquire(agent.id, agentRole, request.filePath, request.reason);
     if (result.ok) {
@@ -35,7 +44,7 @@ function handleLockRequest(ctx: CommandHandlerContext, agent: Agent, data: strin
         filePath: request.filePath,
         reason: request.reason,
       });
-      agent.sendMessage(`[System] Lock acquired on \`${request.filePath}\`. You may proceed with edits. Remember to release it when done with [[[ UNLOCK_FILE {"filePath": "${request.filePath}"} ]]]`);
+      agent.sendMessage(`[System] Lock acquired on \`${request.filePath}\`. You may proceed with edits. Remember to release it when done with ⟦ UNLOCK_FILE {"filePath": "${request.filePath}"} ⟧`);
     } else {
       const holderShort = result.holder?.slice(0, 8) ?? 'unknown';
       agent.sendMessage(`[System] Lock DENIED on \`${request.filePath}\` — currently held by agent ${holderShort}. Wait for them to release it, or coordinate via AGENT_MESSAGE.`);
@@ -54,17 +63,35 @@ function handleLockRelease(ctx: CommandHandlerContext, agent: Agent, data: strin
   if (!match) return;
 
   try {
-    const request = JSON.parse(match[1]);
-    const released = ctx.lockRegistry.release(agent.id, request.filePath);
-    if (released) {
-      const agentRole = agent.role?.id ?? 'unknown';
-      ctx.activityLedger.log(agent.id, agentRole, 'lock_released', `Released ${request.filePath}`, {
-        filePath: request.filePath,
+    const request = parseCommandPayload(agent, match[1], unlockFileSchema, 'UNLOCK_FILE');
+    if (!request) return;
+
+    // Pre-release lock audit — if file is dirty, warn and block release
+    const cwd = agent.cwd || process.cwd();
+    execAsync(`git diff --name-only -- '${request.filePath.replace(/'/g, "'\\''")}'`, { cwd, timeout: 10_000 })
+      .then(({ stdout }) => {
+        const dirtyFiles = stdout.trim().split('\n').filter(Boolean);
+        if (dirtyFiles.length > 0) {
+          agent.sendMessage(`[System] ⚠ Warning: \`${request.filePath}\` has uncommitted changes. COMMIT first, then retry UNLOCK_FILE.`);
+          return; // Don't release — agent must commit first
+        }
+        releaseLock(ctx, agent, request.filePath);
+      })
+      .catch(() => {
+        // Git check failed — release anyway (best-effort)
+        releaseLock(ctx, agent, request.filePath);
       });
-      agent.sendMessage(`[System] Lock released on \`${request.filePath}\`.`);
-    }
   } catch (err) {
     logger.debug('command', 'Failed to parse UNLOCK_FILE command', { error: (err as Error).message });
+  }
+}
+
+function releaseLock(ctx: CommandHandlerContext, agent: Agent, filePath: string): void {
+  const released = ctx.lockRegistry.release(agent.id, filePath);
+  if (released) {
+    const agentRole = agent.role?.id ?? 'unknown';
+    ctx.activityLedger.log(agent.id, agentRole, 'lock_released', `Released ${filePath}`, { filePath });
+    agent.sendMessage(`[System] Lock released on \`${filePath}\`.`);
   }
 }
 
@@ -73,12 +100,13 @@ function handleActivity(ctx: CommandHandlerContext, agent: Agent, data: string):
   if (!match) return;
 
   try {
-    const entry = JSON.parse(match[1]);
+    const entry = parseCommandPayload(agent, match[1], activitySchema, 'ACTIVITY');
+    if (!entry) return;
     const agentRole = agent.role?.id ?? 'unknown';
     ctx.activityLedger.log(
       agent.id,
       agentRole,
-      entry.actionType ?? 'message_sent',
+      entry.actionType ?? 'message_sent' as any,
       entry.summary ?? '',
       entry.details ?? {},
     );
@@ -92,8 +120,8 @@ function handleDecision(ctx: CommandHandlerContext, agent: Agent, data: string):
   if (!match) return;
 
   try {
-    const decision = JSON.parse(match[1]);
-    if (!decision.title) return;
+    const decision = parseCommandPayload(agent, match[1], decisionSchema, 'DECISION');
+    if (!decision) return;
 
     const needsConfirmation = decision.needsConfirmation === true;
     const leadId = agent.parentId || agent.id;
@@ -120,10 +148,16 @@ function handleProgress(ctx: CommandHandlerContext, agent: Agent, data: string):
   if (!match) return;
 
   try {
-    const manual = JSON.parse(match[1]);
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(match[1]);
+    } catch {
+      agent.sendMessage('[System] PROGRESS error: invalid JSON payload.');
+      return;
+    }
     const leadId = agent.role.id === 'lead' ? agent.id : agent.parentId;
 
-    let progress: Record<string, unknown> = { ...manual };
+    let progress: Record<string, unknown> = { ...parsed };
     if (leadId) {
       const dagStatus = ctx.taskDAG.getStatus(leadId);
       if (dagStatus.tasks.length > 0) {
@@ -160,14 +194,27 @@ function handleCommit(ctx: CommandHandlerContext, agent: Agent, data: string): v
   const match = data.match(COMMIT_REGEX);
   if (!match) return;
   try {
-    const req = JSON.parse(match[1]);
+    const req = parseCommandPayload(agent, match[1], commitSchema, 'COMMIT');
+    if (!req) return;
     const message = req.message || `Changes by ${agent.role.name} (${agent.id.slice(0, 8)})`;
 
+    // Fix 2: Merge locked files with explicitly specified files
     const currentLocks = ctx.lockRegistry.getByAgent(agent.id);
-    const files = currentLocks.map(l => l.filePath);
+    const lockedPaths = new Set(currentLocks.map(l => l.filePath));
+    const explicitFiles = req.files ?? [];
+
+    // Warn about explicitly specified files the agent doesn't hold locks for
+    const unlockedExplicit = explicitFiles.filter(f => !lockedPaths.has(f));
+    if (unlockedExplicit.length > 0) {
+      agent.sendMessage(`[System] ⚠ Warning: You specified files you don't hold locks for: ${unlockedExplicit.join(', ')}. Proceeding anyway — but consider using LOCK_FILE first.`);
+    }
+
+    // Merge: locked files + any explicitly specified files (deduplicated)
+    const allPaths = new Set([...lockedPaths, ...explicitFiles]);
+    const files = Array.from(allPaths);
 
     if (files.length === 0) {
-      agent.sendMessage('[System] COMMIT: No file locks held. Lock files before committing, or specify files manually with {"message": "...", "files": ["path1", "path2"]}.');
+      agent.sendMessage('[System] COMMIT: No file locks held and no files specified. Lock files before committing, or specify files manually with {"message": "...", "files": ["path1", "path2"]}.');
       return;
     }
 
@@ -178,23 +225,30 @@ function handleCommit(ctx: CommandHandlerContext, agent: Agent, data: string): v
     const trailer = 'Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>';
     const commitMsg = `${escapedMsg}\n\n${trailer}`;
 
-    // Execute scoped git add + commit directly (enforced, not suggested)
-    execAsync(`git add ${quotedFiles} && git commit -m '${commitMsg}'`, { cwd, timeout: 30_000 })
+    // Atomic commit: pass files directly to git commit to avoid index race condition
+    execAsync(`git add ${quotedFiles} && git commit -m '${commitMsg}' -- ${quotedFiles}`, { cwd, timeout: 30_000 })
       .then(async ({ stdout }) => {
         agent.sendMessage(`[System] COMMIT succeeded: ${stdout.trim().split('\n')[0]}`);
 
-        // A6: Post-commit verification — confirm files actually landed on HEAD
+        // Post-commit dirty-tree warning — scoped to agent's files only
         try {
-          const { stdout: diffOut } = await execAsync('git diff --name-only HEAD~1', { cwd, timeout: 10_000 });
-          const committedFiles = diffOut.trim().split('\n').filter(Boolean);
-          const missing = files.filter(f => !committedFiles.includes(f));
-          if (missing.length > 0) {
-            // Locked-but-unmodified files are expected; only log at debug level
-            logger.debug('commit', `Post-commit verification: ${missing.length} locked file(s) not in commit for ${agent.id.slice(0, 8)}: ${missing.join(', ')}`);
+          const [{ stdout: modifiedOut }, { stdout: untrackedOut }] = await Promise.all([
+            execAsync(`git diff --name-only -- ${quotedFiles}`, { cwd, timeout: 10_000 }),
+            execAsync('git ls-files --others --exclude-standard', { cwd, timeout: 10_000 }),
+          ]);
+          const modified = modifiedOut.trim().split('\n').filter(Boolean);
+          // Filter untracked to only agent's files
+          const fileSet = new Set(files);
+          const untracked = untrackedOut.trim().split('\n').filter(f => f && fileSet.has(f));
+          const dirtyFiles = [...modified, ...untracked];
+          if (dirtyFiles.length > 0) {
+            const listed = dirtyFiles.slice(0, 10).join(', ');
+            const more = dirtyFiles.length > 10 ? ` (and ${dirtyFiles.length - 10} more)` : '';
+            agent.sendMessage(`[System] ⚠ Post-commit warning: Working tree still has uncommitted files: ${listed}${more}. Run \`git status\` to review.`);
           }
         } catch {
-          // Verification is best-effort — don't fail the commit if diff fails
-          logger.debug('commit', `Post-commit verification skipped for ${agent.id.slice(0, 8)} (git diff failed)`);
+          // Best-effort — don't fail the commit report if dirty-tree check fails
+          logger.debug('commit', `Post-commit dirty-tree check skipped for ${agent.id.slice(0, 8)} (git command failed)`);
         }
 
         // Log to ActivityLedger only after verified commit

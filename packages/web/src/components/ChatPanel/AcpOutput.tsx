@@ -3,6 +3,8 @@ import { useAppStore } from '../../stores/appStore';
 import { useLeadStore, type ActivityEvent } from '../../stores/leadStore';
 import type { AcpToolCall, AcpPlanEntry, AcpTextChunk } from '../../types';
 import { ChevronDown, ChevronUp, ChevronRight, FolderOpen, Clock, Loader2, X } from 'lucide-react';
+import { classifyHighlight } from '../../utils/isUserDirectedMessage';
+import { useAutoScroll } from '../../hooks/useAutoScroll';
 
 interface Props {
   agentId: string;
@@ -141,14 +143,7 @@ export function AcpOutput({ agentId }: Props) {
     return tA - tB;
   });
 
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 150;
-    if (isNearBottom) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [messages]);
+  useAutoScroll(containerRef, messagesEndRef, [messages], { resetKey: agentId });
 
   // Promote queued messages when agent responds (new agent message after queued user messages)
   useEffect(() => {
@@ -307,14 +302,22 @@ export function AcpOutput({ agentId }: Props) {
             }
 
             // Rich content (image, audio, resource)
-            // Agent messages — check if reply to user for blue highlight
+            // Agent messages — use shared highlight detection
             const prevItem = i > 0 ? timeline[i - 1] : null;
-            const isReplyToUser = prevItem?.kind === 'message' && (prevItem.msg.sender ?? 'agent') === 'user';
-            const replyClass = isReplyToUser ? 'bg-blue-500/[0.06] border-l-2 border-l-blue-400/30 pl-2 rounded-md' : '';
+            const prevSenderIsUser = prevItem?.kind === 'message' && (prevItem.msg.sender ?? 'agent') === 'user';
+            const highlight = classifyHighlight(
+              typeof msg.text === 'string' ? msg.text : '',
+              { prevSenderIsUser },
+            );
+            const highlightClass = highlight === 'user-directed'
+              ? 'bg-accent/[0.08] border-l-2 border-l-accent/40 pl-2 rounded-md'
+              : highlight === 'reply-to-user'
+                ? 'bg-blue-500/[0.06] border-l-2 border-l-blue-400/30 pl-2 rounded-md'
+                : '';
 
             if (msg.contentType && msg.contentType !== 'text') {
               return (
-                <div key={`msg-${item.index}`} className={`py-1 ${replyClass}`}>
+                <div key={`msg-${item.index}`} className={`py-1 ${highlightClass}`}>
                   <div className="flex items-start gap-2">
                     <div className="flex-1 min-w-0">
                       {msg.contentType === 'image' && msg.data && (
@@ -350,12 +353,12 @@ export function AcpOutput({ agentId }: Props) {
 
             // Agent messages — flowing text, no bubble
             const text = typeof msg.text === 'string' ? msg.text : JSON.stringify(msg.text, null, 2);
-            const isUserDirected = /(?:^|\n)@user\s*\n/m.test(text);
+            const isUserDir = highlight === 'user-directed';
             return (
-              <div key={`msg-${item.index}`} className={`py-1 ${replyClass}`}>
+              <div key={`msg-${item.index}`} className={`py-1 ${highlightClass}`}>
                 <div className="flex items-start gap-2">
                   <div className={`flex-1 font-mono text-sm whitespace-pre-wrap min-w-0 ${
-                    isUserDirected
+                    isUserDir
                       ? 'text-th-text bg-accent/[0.08] border-l-2 border-l-accent/40 pl-2 rounded-md py-1'
                       : 'text-th-text-alt'
                   }`}>
@@ -409,10 +412,10 @@ export function AcpOutput({ agentId }: Props) {
   );
 }
 
-/** Collapsed-by-default [[[ command ]]] block with click to expand */
+/** Collapsed-by-default ⟦ command ⟧ block with click to expand */
 function CollapsibleCommandBlockSimple({ text }: { text: string }) {
   const [expanded, setExpanded] = useState(false);
-  const nameMatch = text.match(/\[\[\[\s*(\w+)/);
+  const nameMatch = text.match(/⟦\s*(\w+)/);
   const label = nameMatch ? nameMatch[1] : 'command';
   const jsonMatch = text.match(/\{[\s\S]*\}/);
   let preview = '';
@@ -443,26 +446,39 @@ function CollapsibleCommandBlockSimple({ text }: { text: string }) {
   );
 }
 
-/** Render agent text with [[[ ]]] blocks separated and inline markdown + tables */
+/** Check if a ⟦ ... ⟧ block looks like a real command (ALL_CAPS name after ⟦) */
+function isRealCommandBlock(text: string): boolean {
+  return /^⟦\s*[A-Z][A-Z_]{2,}/.test(text);
+}
+
+/** Render agent text with ⟦ ⟧ blocks separated and inline markdown + tables */
 function AgentTextBlockSimple({ text }: { text: string }) {
-  const segments = text.split(/(\[\[\[[\s\S]*?\]\]\])/g);
+  const segments = text.split(/(⟦[\s\S]*?⟧)/g);
   return (
     <>
       {segments.map((seg, i) => {
-        if (seg.startsWith('[[[') && seg.endsWith(']]]')) {
-          return <CollapsibleCommandBlockSimple key={i} text={seg} />;
+        if (seg.startsWith('⟦') && seg.endsWith('⟧')) {
+          if (isRealCommandBlock(seg)) {
+            return <CollapsibleCommandBlockSimple key={i} text={seg} />;
+          }
+          // Not a real command — render as plain text
+          return <InlineMarkdownSimple key={i} text={seg} />;
         }
-        // Unclosed [[[ block
-        if (seg.includes('[[[') && !seg.includes(']]]')) {
-          const idx = seg.indexOf('[[[');
+        // Unclosed ⟦ block
+        if (seg.includes('⟦') && !seg.includes('⟧')) {
+          const idx = seg.indexOf('⟦');
           const before = seg.slice(0, idx);
           const cmdBlock = seg.slice(idx);
-          return (
-            <span key={i}>
-              {before.trim() ? <InlineMarkdownSimple text={before} /> : null}
-              <CollapsibleCommandBlockSimple text={cmdBlock} />
-            </span>
-          );
+          if (isRealCommandBlock(cmdBlock)) {
+            return (
+              <span key={i}>
+                {before.trim() ? <InlineMarkdownSimple text={before} /> : null}
+                <CollapsibleCommandBlockSimple text={cmdBlock} />
+              </span>
+            );
+          }
+          // Not a real command — render entire segment as text
+          return seg.trim() ? <InlineMarkdownSimple key={i} text={seg} /> : null;
         }
         if (!seg.trim()) return null;
         // Check for tables

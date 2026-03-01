@@ -63,6 +63,13 @@ export function useApi() {
     return apiFetch(`/agents/${id}/restart`, { method: 'POST' });
   }, []);
 
+  const resumeAgent = useCallback(async (id: string, sessionId: string) => {
+    return apiFetch(`/sessions/${encodeURIComponent(sessionId)}/resume`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  }, []);
+
   const updateConfig = useCallback(
     async (patch: Partial<ServerConfig>) => {
       const config = await apiFetch<ServerConfig>('/config', {
@@ -133,6 +140,7 @@ export function useApi() {
     terminateAgent,
     interruptAgent,
     restartAgent,
+    resumeAgent,
     updateAgent,
     updateConfig,
     createRole,

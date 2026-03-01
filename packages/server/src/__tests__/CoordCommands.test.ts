@@ -41,11 +41,14 @@ function getCommitHandler(ctx: CommandHandlerContext) {
   return commit;
 }
 
-// Helper: make mockExec resolve successfully (both commit and verification)
-function mockExecSuccess(stdout = 'abc1234 feat: stuff\n 1 file changed', verifyFiles?: string[]) {
+// Helper: make mockExec resolve successfully (commit + post-commit dirty-tree check)
+function mockExecSuccess(stdout = 'abc1234 feat: stuff\n 1 file changed', dirtyFiles?: string[]) {
   mockExec.mockImplementation((cmd: string, _opts: any, cb: Function) => {
     if (cmd.startsWith('git diff --name-only')) {
-      cb(null, { stdout: (verifyFiles ?? []).join('\n') + '\n', stderr: '' });
+      // Post-commit dirty-tree check (scoped to agent's files)
+      cb(null, { stdout: (dirtyFiles ?? []).join('\n') + '\n', stderr: '' });
+    } else if (cmd.startsWith('git ls-files --others')) {
+      cb(null, { stdout: '\n', stderr: '' });
     } else {
       cb(null, { stdout, stderr: '' });
     }
@@ -59,11 +62,11 @@ function mockExecFailure(message = 'nothing to commit') {
   });
 }
 
-// Helper: commit succeeds but verification diff fails
+// Helper: commit succeeds but dirty-tree check fails
 function mockExecCommitOkVerifyFail(stdout = 'abc1234 feat: stuff\n 1 file changed') {
   mockExec.mockImplementation((cmd: string, _opts: any, cb: Function) => {
-    if (cmd.startsWith('git diff --name-only')) {
-      cb(new Error('fatal: bad object HEAD~1'), { stdout: '', stderr: '' });
+    if (cmd === 'git diff --name-only' || cmd.startsWith('git ls-files')) {
+      cb(new Error('fatal: not a git repository'), { stdout: '', stderr: '' });
     } else {
       cb(null, { stdout, stderr: '' });
     }
@@ -96,7 +99,7 @@ describe('CoordCommands — COMMIT handler', () => {
     const agent = makeAgent();
     const commit = getCommitHandler(ctx);
 
-    commit.handler(agent, '[[[ COMMIT {"message": "Add auth module"} ]]]');
+    commit.handler(agent, '⟦ COMMIT {"message": "Add auth module"} ⟧');
 
     expect(ctx.lockRegistry.getByAgent).toHaveBeenCalledWith('agent-dev-abc123');
     // Wait for async exec
@@ -120,7 +123,7 @@ describe('CoordCommands — COMMIT handler', () => {
     const agent = makeAgent();
     const commit = getCommitHandler(ctx);
 
-    commit.handler(agent, '[[[ COMMIT {"message": "Update docs"} ]]]');
+    commit.handler(agent, '⟦ COMMIT {"message": "Update docs"} ⟧');
 
     await vi.waitFor(() => expect(mockExec).toHaveBeenCalled());
     const cmd = mockExec.mock.calls[0][0] as string;
@@ -134,7 +137,7 @@ describe('CoordCommands — COMMIT handler', () => {
     const agent = makeAgent();
     const commit = getCommitHandler(ctx);
 
-    commit.handler(agent, '[[[ COMMIT {"message": "test"} ]]]');
+    commit.handler(agent, '⟦ COMMIT {"message": "test"} ⟧');
 
     expect(agent.sendMessage).toHaveBeenCalledWith(
       expect.stringContaining('No file locks held'),
@@ -153,7 +156,7 @@ describe('CoordCommands — COMMIT handler', () => {
     const agent = makeAgent();
     const commit = getCommitHandler(ctx);
 
-    commit.handler(agent, '[[[ COMMIT {"message": "feat: stuff"} ]]]');
+    commit.handler(agent, '⟦ COMMIT {"message": "feat: stuff"} ⟧');
 
     await vi.waitFor(() => expect(mockExec).toHaveBeenCalled());
     const cmd = mockExec.mock.calls[0][0] as string;
@@ -170,7 +173,7 @@ describe('CoordCommands — COMMIT handler', () => {
     const agent = makeAgent();
     const commit = getCommitHandler(ctx);
 
-    commit.handler(agent, '[[[ COMMIT {} ]]]');
+    commit.handler(agent, '⟦ COMMIT {} ⟧');
 
     await vi.waitFor(() => expect(mockExec).toHaveBeenCalled());
     const cmd = mockExec.mock.calls[0][0] as string;
@@ -190,7 +193,7 @@ describe('CoordCommands — COMMIT handler', () => {
     const agent = makeAgent();
     const commit = getCommitHandler(ctx);
 
-    commit.handler(agent, '[[[ COMMIT {"message": "ship it"} ]]]');
+    commit.handler(agent, '⟦ COMMIT {"message": "ship it"} ⟧');
 
     // Activity ledger log now happens after async commit + verification
     await vi.waitFor(() => expect(ctx.activityLedger.log).toHaveBeenCalledWith(
@@ -216,7 +219,7 @@ describe('CoordCommands — COMMIT handler', () => {
     const agent = makeAgent();
     const commit = getCommitHandler(ctx);
 
-    commit.handler(agent, '[[[ COMMIT {"message": "ship it"} ]]]');
+    commit.handler(agent, '⟦ COMMIT {"message": "ship it"} ⟧');
 
     await vi.waitFor(() => expect(agent.sendMessage).toHaveBeenCalledWith(
       expect.stringContaining('COMMIT succeeded'),
@@ -233,7 +236,7 @@ describe('CoordCommands — COMMIT handler', () => {
     const agent = makeAgent();
     const commit = getCommitHandler(ctx);
 
-    commit.handler(agent, '[[[ COMMIT {"message": "test"} ]]]');
+    commit.handler(agent, '⟦ COMMIT {"message": "test"} ⟧');
 
     await vi.waitFor(() => expect(agent.sendMessage).toHaveBeenCalledWith(
       expect.stringContaining('COMMIT failed'),
@@ -250,7 +253,7 @@ describe('CoordCommands — COMMIT handler', () => {
     const agent = makeAgent({ cwd: '/my/worktree/path' });
     const commit = getCommitHandler(ctx);
 
-    commit.handler(agent, '[[[ COMMIT {"message": "test"} ]]]');
+    commit.handler(agent, '⟦ COMMIT {"message": "test"} ⟧');
 
     await vi.waitFor(() => expect(mockExec).toHaveBeenCalled());
     const opts = mockExec.mock.calls[0][1];
@@ -262,7 +265,7 @@ describe('CoordCommands — COMMIT handler', () => {
     const agent = makeAgent();
     const commit = getCommitHandler(ctx);
 
-    commit.handler(agent, '[[[ COMMIT {not valid json} ]]]');
+    commit.handler(agent, '⟦ COMMIT {not valid json} ⟧');
 
     expect(agent.sendMessage).toHaveBeenCalledWith(
       expect.stringContaining('COMMIT error'),
@@ -281,8 +284,8 @@ describe('CoordCommands — COMMIT handler', () => {
 
   // ── A6: Post-commit verification tests ──────────────────────────────
 
-  it('does not warn when all committed files match expected', async () => {
-    mockExecSuccess(undefined, ['src/auth.ts', 'src/utils.ts']);
+  it('does not warn when working tree is clean after commit', async () => {
+    mockExecSuccess(undefined, []);
     const ctx = makeCtx({
       lockRegistry: {
         getByAgent: vi.fn().mockReturnValue([
@@ -294,21 +297,20 @@ describe('CoordCommands — COMMIT handler', () => {
     const agent = makeAgent();
     const commit = getCommitHandler(ctx);
 
-    commit.handler(agent, '[[[ COMMIT {"message": "verified commit"} ]]]');
+    commit.handler(agent, '⟦ COMMIT {"message": "verified commit"} ⟧');
 
     await vi.waitFor(() => expect(agent.sendMessage).toHaveBeenCalledWith(
       expect.stringContaining('COMMIT succeeded'),
     ));
-    // Should NOT have a warning about missing files
+    // Should NOT have a warning about dirty files
     const warnings = agent.sendMessage.mock.calls.filter(
-      (c: any[]) => (c[0] as string).includes('Warning'),
+      (c: any[]) => (c[0] as string).includes('Post-commit warning'),
     );
     expect(warnings).toHaveLength(0);
   });
 
-  it('does not warn agent when locked files are not in commit (expected behavior)', async () => {
-    // Verification diff only returns 1 of 2 locked files — the other wasn't modified
-    mockExecSuccess(undefined, ['src/auth.ts']);
+  it('does not warn when dirty-tree check returns no files', async () => {
+    mockExecSuccess(undefined, []);
     const ctx = makeCtx({
       lockRegistry: {
         getByAgent: vi.fn().mockReturnValue([
@@ -320,18 +322,18 @@ describe('CoordCommands — COMMIT handler', () => {
     const agent = makeAgent();
     const commit = getCommitHandler(ctx);
 
-    commit.handler(agent, '[[[ COMMIT {"message": "partial commit"} ]]]');
+    commit.handler(agent, '⟦ COMMIT {"message": "partial commit"} ⟧');
 
-    // Should get success message but NOT a warning about missing files
+    // Should get success message but NOT a warning
     await vi.waitFor(() => expect(agent.sendMessage).toHaveBeenCalledWith(
       expect.stringContaining('COMMIT succeeded'),
     ));
     expect(agent.sendMessage).not.toHaveBeenCalledWith(
-      expect.stringContaining('Warning'),
+      expect.stringContaining('Post-commit warning'),
     );
   });
 
-  it('does not warn agent when no locked files appear in commit diff', async () => {
+  it('does not warn when no dirty files remain', async () => {
     mockExecSuccess(undefined, []);
     const ctx = makeCtx({
       lockRegistry: {
@@ -345,17 +347,17 @@ describe('CoordCommands — COMMIT handler', () => {
     const agent = makeAgent();
     const commit = getCommitHandler(ctx);
 
-    commit.handler(agent, '[[[ COMMIT {"message": "empty commit"} ]]]');
+    commit.handler(agent, '⟦ COMMIT {"message": "empty commit"} ⟧');
 
     await vi.waitFor(() => expect(agent.sendMessage).toHaveBeenCalledWith(
       expect.stringContaining('COMMIT succeeded'),
     ));
     expect(agent.sendMessage).not.toHaveBeenCalledWith(
-      expect.stringContaining('Warning'),
+      expect.stringContaining('Post-commit warning'),
     );
   });
 
-  it('gracefully handles verification diff failure (best-effort)', async () => {
+  it('gracefully handles dirty-tree check failure (best-effort)', async () => {
     mockExecCommitOkVerifyFail();
     const ctx = makeCtx({
       lockRegistry: {
@@ -365,18 +367,18 @@ describe('CoordCommands — COMMIT handler', () => {
     const agent = makeAgent();
     const commit = getCommitHandler(ctx);
 
-    commit.handler(agent, '[[[ COMMIT {"message": "test"} ]]]');
+    commit.handler(agent, '⟦ COMMIT {"message": "test"} ⟧');
 
     // Commit success message should still arrive
     await vi.waitFor(() => expect(agent.sendMessage).toHaveBeenCalledWith(
       expect.stringContaining('COMMIT succeeded'),
     ));
-    // No crash — verification failure is swallowed
+    // No crash — dirty-tree check failure is swallowed
     const warnings = agent.sendMessage.mock.calls.filter(
-      (c: any[]) => (c[0] as string).includes('Warning'),
+      (c: any[]) => (c[0] as string).includes('Post-commit warning'),
     );
     expect(warnings).toHaveLength(0);
-    // Activity ledger still logs (verification is best-effort)
+    // Activity ledger still logs (dirty-tree check is best-effort)
     await vi.waitFor(() => expect(ctx.activityLedger.log).toHaveBeenCalled());
   });
 
@@ -390,12 +392,363 @@ describe('CoordCommands — COMMIT handler', () => {
     const agent = makeAgent();
     const commit = getCommitHandler(ctx);
 
-    commit.handler(agent, '[[[ COMMIT {"message": "test"} ]]]');
+    commit.handler(agent, '⟦ COMMIT {"message": "test"} ⟧');
 
     await vi.waitFor(() => expect(agent.sendMessage).toHaveBeenCalledWith(
       expect.stringContaining('COMMIT failed'),
     ));
     // Activity ledger should NOT be called on failure
     expect(ctx.activityLedger.log).not.toHaveBeenCalled();
+  });
+
+  // ── COMMIT safety invariants ──────────────────────────────────────────
+
+  describe('safety: only locked files are staged', () => {
+    it('git add command contains EXACTLY the locked files and no others', async () => {
+      mockExecSuccess(undefined, ['src/TaskDAG.ts', 'src/__tests__/TaskDAG.test.ts']);
+      const ctx = makeCtx({
+        lockRegistry: {
+          getByAgent: vi.fn().mockReturnValue([
+            { filePath: 'src/TaskDAG.ts' },
+            { filePath: 'src/__tests__/TaskDAG.test.ts' },
+          ]),
+        },
+      });
+      const agent = makeAgent();
+      const commit = getCommitHandler(ctx);
+
+      commit.handler(agent, '⟦ COMMIT {"message": "scoped commit"} ⟧');
+
+      await vi.waitFor(() => expect(mockExec).toHaveBeenCalled());
+      const cmd = mockExec.mock.calls[0][0] as string;
+      // Must contain exactly these two files
+      expect(cmd).toContain("'src/TaskDAG.ts'");
+      expect(cmd).toContain("'src/__tests__/TaskDAG.test.ts'");
+      // Must NOT use git add -A or git add .
+      expect(cmd).not.toContain('git add -A');
+      expect(cmd).not.toContain('git add .');
+      // The add command should start with git add followed by quoted paths
+      expect(cmd).toMatch(/^git add '.*' && git commit/);
+    });
+
+    it('single locked file produces single-file git add', async () => {
+      mockExecSuccess(undefined, ['README.md']);
+      const ctx = makeCtx({
+        lockRegistry: {
+          getByAgent: vi.fn().mockReturnValue([
+            { filePath: 'README.md' },
+          ]),
+        },
+      });
+      const agent = makeAgent();
+      const commit = getCommitHandler(ctx);
+
+      commit.handler(agent, '⟦ COMMIT {"message": "single file"} ⟧');
+
+      await vi.waitFor(() => expect(mockExec).toHaveBeenCalled());
+      const cmd = mockExec.mock.calls[0][0] as string;
+      expect(cmd).toContain("git add 'README.md'");
+      // Should only have one quoted path
+      const quotedPaths = cmd.match(/'[^']*'/g) ?? [];
+      // 1 file path + 1 commit message = 2 quoted strings minimum
+      expect(quotedPaths[0]).toBe("'README.md'");
+    });
+  });
+
+  describe('safety: cross-agent isolation', () => {
+    it('queries lockRegistry with the committing agent ID only', async () => {
+      mockExecSuccess(undefined, ['agent-a-file.ts']);
+      const getByAgent = vi.fn().mockReturnValue([
+        { filePath: 'agent-a-file.ts' },
+      ]);
+      const ctx = makeCtx({
+        lockRegistry: { getByAgent },
+      });
+      const agentA = makeAgent({ id: 'agent-aaa-111' });
+      const commit = getCommitHandler(ctx);
+
+      commit.handler(agentA, '⟦ COMMIT {"message": "agent A commit"} ⟧');
+
+      // Must query locks ONLY for the committing agent
+      expect(getByAgent).toHaveBeenCalledWith('agent-aaa-111');
+      expect(getByAgent).toHaveBeenCalledTimes(1);
+    });
+
+    it('agent B locks are invisible to agent A commit', async () => {
+      // Simulate: Agent A has 1 lock, Agent B has 2 locks
+      const getByAgent = vi.fn().mockImplementation((agentId: string) => {
+        if (agentId === 'agent-aaa') return [{ filePath: 'a-file.ts' }];
+        if (agentId === 'agent-bbb') return [{ filePath: 'b-file1.ts' }, { filePath: 'b-file2.ts' }];
+        return [];
+      });
+      mockExecSuccess(undefined, ['a-file.ts']);
+      const ctx = makeCtx({
+        lockRegistry: { getByAgent },
+      });
+      const agentA = makeAgent({ id: 'agent-aaa' });
+      const commit = getCommitHandler(ctx);
+
+      commit.handler(agentA, '⟦ COMMIT {"message": "A only"} ⟧');
+
+      await vi.waitFor(() => expect(mockExec).toHaveBeenCalled());
+      const cmd = mockExec.mock.calls[0][0] as string;
+      // Agent A's file is staged
+      expect(cmd).toContain("'a-file.ts'");
+      // Agent B's files are NOT staged
+      expect(cmd).not.toContain('b-file1.ts');
+      expect(cmd).not.toContain('b-file2.ts');
+    });
+
+    it('two agents committing simultaneously get their own scoped files', async () => {
+      const getByAgent = vi.fn().mockImplementation((agentId: string) => {
+        if (agentId === 'agent-x') return [{ filePath: 'x.ts' }];
+        if (agentId === 'agent-y') return [{ filePath: 'y.ts' }];
+        return [];
+      });
+      mockExecSuccess(undefined, ['x.ts']);
+      const ctx = makeCtx({
+        lockRegistry: { getByAgent },
+      });
+      const agentX = makeAgent({ id: 'agent-x' });
+      const agentY = makeAgent({ id: 'agent-y' });
+      const commit = getCommitHandler(ctx);
+
+      commit.handler(agentX, '⟦ COMMIT {"message": "X work"} ⟧');
+      commit.handler(agentY, '⟦ COMMIT {"message": "Y work"} ⟧');
+
+      await vi.waitFor(() => expect(mockExec).toHaveBeenCalledTimes(2));
+      const cmdX = mockExec.mock.calls[0][0] as string;
+      const cmdY = mockExec.mock.calls[1][0] as string;
+      expect(cmdX).toContain("'x.ts'");
+      expect(cmdX).not.toContain("'y.ts'");
+      expect(cmdY).toContain("'y.ts'");
+      expect(cmdY).not.toContain("'x.ts'");
+    });
+  });
+
+  describe('safety: all locked files are staged', () => {
+    it('every locked file appears in the git add command', async () => {
+      const lockedFiles = [
+        { filePath: 'src/a.ts' },
+        { filePath: 'src/b.ts' },
+        { filePath: 'src/c.ts' },
+        { filePath: 'tests/a.test.ts' },
+      ];
+      mockExecSuccess(undefined, lockedFiles.map(l => l.filePath));
+      const ctx = makeCtx({
+        lockRegistry: {
+          getByAgent: vi.fn().mockReturnValue(lockedFiles),
+        },
+      });
+      const agent = makeAgent();
+      const commit = getCommitHandler(ctx);
+
+      commit.handler(agent, '⟦ COMMIT {"message": "all files"} ⟧');
+
+      await vi.waitFor(() => expect(mockExec).toHaveBeenCalled());
+      const cmd = mockExec.mock.calls[0][0] as string;
+      for (const lock of lockedFiles) {
+        expect(cmd).toContain(`'${lock.filePath}'`);
+      }
+    });
+  });
+
+  describe('safety: no locks means no commit', () => {
+    it('refuses to commit and does not invoke git at all', () => {
+      const ctx = makeCtx({
+        lockRegistry: {
+          getByAgent: vi.fn().mockReturnValue([]),
+        },
+      });
+      const agent = makeAgent();
+      const commit = getCommitHandler(ctx);
+
+      commit.handler(agent, '⟦ COMMIT {"message": "no locks"} ⟧');
+
+      expect(mockExec).not.toHaveBeenCalled();
+      expect(agent.sendMessage).toHaveBeenCalledWith(
+        expect.stringContaining('No file locks held'),
+      );
+      expect(ctx.activityLedger.log).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('safety: post-commit verification', () => {
+    it('runs dirty-tree check after commit succeeds', async () => {
+      mockExecSuccess(undefined, []);
+      const ctx = makeCtx({
+        lockRegistry: {
+          getByAgent: vi.fn().mockReturnValue([{ filePath: 'src/file.ts' }]),
+        },
+      });
+      const agent = makeAgent();
+      const commit = getCommitHandler(ctx);
+
+      commit.handler(agent, '⟦ COMMIT {"message": "verify me"} ⟧');
+
+      await vi.waitFor(() => expect(mockExec).toHaveBeenCalledTimes(3));
+      // First call: git add + commit -- files
+      expect(mockExec.mock.calls[0][0]).toContain('git add');
+      expect(mockExec.mock.calls[0][0]).toContain("-- 'src/file.ts'");
+      // Second + third calls: scoped git diff and git ls-files (dirty-tree check)
+      const postCommitCmds = [mockExec.mock.calls[1][0], mockExec.mock.calls[2][0]];
+      expect(postCommitCmds.some((c: string) => c.includes('git diff --name-only --'))).toBe(true);
+      expect(postCommitCmds.some((c: string) => c.includes('git ls-files --others'))).toBe(true);
+    });
+
+    it('warns when dirty files remain after commit', async () => {
+      // Post-commit check finds dirty files still in the working tree
+      mockExecSuccess(undefined, ['src/leftover.ts']);
+      const ctx = makeCtx({
+        lockRegistry: {
+          getByAgent: vi.fn().mockReturnValue([
+            { filePath: 'src/modified.ts' },
+          ]),
+        },
+      });
+      const agent = makeAgent();
+      const commit = getCommitHandler(ctx);
+
+      commit.handler(agent, '⟦ COMMIT {"message": "partial modify"} ⟧');
+
+      await vi.waitFor(() => expect(agent.sendMessage).toHaveBeenCalledWith(
+        expect.stringContaining('COMMIT succeeded'),
+      ));
+      await vi.waitFor(() => expect(agent.sendMessage).toHaveBeenCalledWith(
+        expect.stringContaining('Post-commit warning'),
+      ));
+    });
+  });
+
+  // ── Fix 2: Honor req.files parameter ──────────────────────────────────
+
+  describe('fix 2: honor req.files parameter', () => {
+    it('merges req.files with locked files', async () => {
+      mockExecSuccess(undefined, []);
+      const ctx = makeCtx({
+        lockRegistry: {
+          getByAgent: vi.fn().mockReturnValue([{ filePath: 'src/locked.ts' }]),
+        },
+      });
+      const agent = makeAgent();
+      const commit = getCommitHandler(ctx);
+
+      commit.handler(agent, '⟦ COMMIT {"message": "merge test", "files": ["src/extra.ts"]} ⟧');
+
+      await vi.waitFor(() => expect(mockExec).toHaveBeenCalled());
+      const cmd = mockExec.mock.calls[0][0] as string;
+      expect(cmd).toContain("'src/locked.ts'");
+      expect(cmd).toContain("'src/extra.ts'");
+    });
+
+    it('warns about unlocked explicitly specified files', async () => {
+      mockExecSuccess(undefined, []);
+      const ctx = makeCtx({
+        lockRegistry: {
+          getByAgent: vi.fn().mockReturnValue([{ filePath: 'src/locked.ts' }]),
+        },
+      });
+      const agent = makeAgent();
+      const commit = getCommitHandler(ctx);
+
+      commit.handler(agent, '⟦ COMMIT {"message": "test", "files": ["src/unlocked.ts"]} ⟧');
+
+      expect(agent.sendMessage).toHaveBeenCalledWith(
+        expect.stringContaining("don't hold locks for"),
+      );
+    });
+
+    it('allows commit with only req.files when no locks held', async () => {
+      mockExecSuccess(undefined, []);
+      const ctx = makeCtx({
+        lockRegistry: {
+          getByAgent: vi.fn().mockReturnValue([]),
+        },
+      });
+      const agent = makeAgent();
+      const commit = getCommitHandler(ctx);
+
+      commit.handler(agent, '⟦ COMMIT {"message": "manual files", "files": ["src/a.ts"]} ⟧');
+
+      await vi.waitFor(() => expect(mockExec).toHaveBeenCalled());
+      const cmd = mockExec.mock.calls[0][0] as string;
+      expect(cmd).toContain("'src/a.ts'");
+    });
+
+    it('deduplicates when req.files overlaps with locks', async () => {
+      mockExecSuccess(undefined, []);
+      const ctx = makeCtx({
+        lockRegistry: {
+          getByAgent: vi.fn().mockReturnValue([{ filePath: 'src/shared.ts' }]),
+        },
+      });
+      const agent = makeAgent();
+      const commit = getCommitHandler(ctx);
+
+      commit.handler(agent, '⟦ COMMIT {"message": "dedup", "files": ["src/shared.ts"]} ⟧');
+
+      await vi.waitFor(() => expect(mockExec).toHaveBeenCalled());
+      const cmd = mockExec.mock.calls[0][0] as string;
+      // git add has the file once, and git commit -- has it once (2 total in cmd)
+      const addPart = cmd.split('&&')[0];
+      const addCount = (addPart.match(/src\/shared\.ts/g) ?? []).length;
+      expect(addCount).toBe(1);
+    });
+  });
+
+  // ── Fix 3: Pre-release lock audit ─────────────────────────────────────
+
+  describe('fix 3: pre-release lock audit', () => {
+    it('blocks release when file has uncommitted changes', async () => {
+      const ctx = makeCtx({
+        lockRegistry: {
+          release: vi.fn().mockReturnValue(true),
+        },
+      });
+      const agent = makeAgent();
+
+      // Mock exec to return dirty file
+      mockExec.mockImplementation((cmd: string, _opts: any, cb: Function) => {
+        if (cmd.includes('git diff --name-only')) {
+          cb(null, { stdout: 'src/dirty.ts\n', stderr: '' });
+        } else {
+          cb(null, { stdout: '', stderr: '' });
+        }
+      });
+
+      const cmds = getCoordCommands(ctx);
+      const unlock = cmds.find((c) => c.name === 'UNLOCK');
+      unlock!.handler(agent, '⟦ UNLOCK_FILE {"filePath": "src/dirty.ts"} ⟧');
+
+      await vi.waitFor(() => expect(agent.sendMessage).toHaveBeenCalledWith(
+        expect.stringContaining('uncommitted changes'),
+      ));
+      // Lock should NOT be released — agent must commit first
+      expect(ctx.lockRegistry.release).not.toHaveBeenCalled();
+    });
+
+    it('does not warn when releasing lock on clean file', async () => {
+      const ctx = makeCtx({
+        lockRegistry: {
+          release: vi.fn().mockReturnValue(true),
+        },
+      });
+      const agent = makeAgent();
+
+      mockExec.mockImplementation((cmd: string, _opts: any, cb: Function) => {
+        cb(null, { stdout: '\n', stderr: '' });
+      });
+
+      const cmds = getCoordCommands(ctx);
+      const unlock = cmds.find((c) => c.name === 'UNLOCK');
+      unlock!.handler(agent, '⟦ UNLOCK_FILE {"filePath": "src/clean.ts"} ⟧');
+
+      await vi.waitFor(() => expect(ctx.lockRegistry.release).toHaveBeenCalled());
+      // No warning about uncommitted changes
+      const warnings = agent.sendMessage.mock.calls.filter(
+        (c: any[]) => (c[0] as string).includes('uncommitted changes'),
+      );
+      expect(warnings).toHaveLength(0);
+    });
   });
 });

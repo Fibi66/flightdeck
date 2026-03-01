@@ -156,6 +156,7 @@ export const dagTasks = sqliteTable('dag_tasks', {
   model: text('model'),
   assignedAgentId: text('assigned_agent_id'),
   createdAt: text('created_at').default(sql`(datetime('now'))`),
+  startedAt: text('started_at'),
   completedAt: text('completed_at'),
 }, (table) => [
   primaryKey({ columns: [table.id, table.leadId] }),
@@ -209,6 +210,7 @@ export const projectSessions = sqliteTable('project_sessions', {
   projectId: text('project_id').notNull().references(() => projects.id),
   leadId: text('lead_id').notNull(),
   sessionId: text('session_id'),
+  role: text('role').default('lead'),               // role id used for this session
   task: text('task'),
   status: text('status').default('active'),        // active | completed | crashed
   startedAt: text('started_at').default(sql`(datetime('now'))`),
@@ -249,6 +251,22 @@ export const collectiveMemory = sqliteTable('collective_memory', {
   index('idx_collective_memory_category').on(table.category),
   index('idx_collective_memory_key').on(table.key),
   uniqueIndex('idx_collective_memory_cat_key').on(table.category, table.key),
+]);
+
+// ── Task Cost Records (per-agent per-task token usage) ──────────────
+
+export const taskCostRecords = sqliteTable('task_cost_records', {
+  agentId: text('agent_id').notNull(),
+  dagTaskId: text('dag_task_id').notNull(),
+  leadId: text('lead_id').notNull(),
+  inputTokens: integer('input_tokens').default(0),
+  outputTokens: integer('output_tokens').default(0),
+  createdAt: text('created_at').default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').default(sql`(datetime('now'))`),
+}, (table) => [
+  primaryKey({ columns: [table.agentId, table.dagTaskId, table.leadId] }),
+  index('idx_task_cost_agent').on(table.agentId),
+  index('idx_task_cost_task').on(table.dagTaskId, table.leadId),
 ]);
 
 // ── Session Retrospectives ──────────────────────────────────────────

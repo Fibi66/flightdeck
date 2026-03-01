@@ -7,8 +7,11 @@ import type { AcpTextChunk, ChatGroup, GroupMessage, DagStatus, Project } from '
 import { useAppStore } from '../../stores/appStore';
 import { MentionText, MarkdownContent } from '../../utils/markdown';
 import { classifyMessage, tierPassesFilter, TIER_CONFIG, type TierFilter, type FeedItem } from '../../utils/messageTiers';
+import { classifyHighlight } from '../../utils/isUserDirectedMessage';
 import { TaskDagPanelContent } from './TaskDagPanel';
 import { TokenEconomics } from '../TokenEconomics/TokenEconomics';
+import { CostBreakdown } from '../TokenEconomics/CostBreakdown';
+import { TimerDisplay } from '../TimerDisplay/TimerDisplay';
 import { FolderPicker } from '../FolderPicker/FolderPicker';
 
 interface RoleInfo { id: string; name: string; icon: string; description: string; model: string; }
@@ -1410,17 +1413,14 @@ export function LeadDashboard({ api, ws }: Props) {
                 const isFirstInRun = !prevMsg || prevMsg.sender !== 'agent' || prevMsg.queued;
                 const agentTs = isFirstInRun ? ts : '';
 
-                // Highlight agent messages that are responses to user input
-                const isReplyToUser = (prevMsg?.sender === 'user' && isFirstInRun)
-                  || msg.text.includes('[USER MESSAGE');
+                // Highlight detection using shared utility
+                const prevSenderIsUser = (prevMsg?.sender === 'user' && isFirstInRun);
+                const highlight = classifyHighlight(msg.text, { prevSenderIsUser });
+                const isUserDir = highlight === 'user-directed';
 
-                // Detect @user-directed messages (lead addressing the human)
-                const isUserDirected = /(?:^|\n)@user\s*\n/m.test(msg.text);
-
-                // @user highlight takes priority over reply highlight
-                const msgHighlight = isUserDirected
+                const msgHighlight = highlight === 'user-directed'
                   ? 'bg-accent/[0.08] border-l-2 border-l-accent/40 pl-2 rounded-md'
-                  : isReplyToUser
+                  : highlight === 'reply-to-user'
                     ? 'bg-blue-500/[0.06] border-l-2 border-l-blue-400/30 pl-2 rounded-md'
                     : '';
 
@@ -1439,7 +1439,7 @@ export function LeadDashboard({ api, ws }: Props) {
                 return (
                   <div key={i} className={`py-0.5 ${msgHighlight}`}>
                     <div className="flex items-start gap-2">
-                      <div className={`flex-1 font-mono text-sm whitespace-pre-wrap min-w-0 ${isUserDirected ? 'text-th-text' : 'text-th-text-alt'}`}>
+                      <div className={`flex-1 font-mono text-sm whitespace-pre-wrap min-w-0 ${isUserDir ? 'text-th-text' : 'text-th-text-alt'}`}>
                         <AgentTextBlock text={msg.text} />
                       </div>
                       {agentTs && <span className="text-[10px] text-th-text-muted mt-0.5 shrink-0">{agentTs}</span>}
@@ -1641,6 +1641,8 @@ export function LeadDashboard({ api, ws }: Props) {
                         groups: { icon: <Users className="w-3 h-3" />, label: 'Groups', badge: groups.length },
                         dag: { icon: <Network className="w-3 h-3" />, label: 'DAG', badge: dagStatus?.tasks.length },
                         tokens: { icon: <BarChart3 className="w-3 h-3" />, label: 'Tokens' },
+                        costs: { icon: <BarChart3 className="w-3 h-3" />, label: 'Costs' },
+                        timers: { icon: <Clock className="w-3 h-3" />, label: 'Timers' },
                       };
                       const orderedIds = tabOrder.filter((id) => id in allTabs);
                       // Append any missing tabs (safety net)
@@ -1683,6 +1685,8 @@ export function LeadDashboard({ api, ws }: Props) {
                     {sidebarTab === 'groups' && <GroupsPanelContent groups={groups} groupMessages={groupMessages} leadId={selectedLeadId} />}
                     {sidebarTab === 'dag' && <TaskDagPanelContent dagStatus={dagStatus} />}
                     {sidebarTab === 'tokens' && <TokenEconomics />}
+                    {sidebarTab === 'costs' && <CostBreakdown />}
+                    {sidebarTab === 'timers' && <TimerDisplay />}
                   </div>
                   {/* Resize handle for tabbed section */}
                   <div
@@ -1917,9 +1921,9 @@ function parseAgentReport(content: string): { header: string; task: string; outp
   const sessionMatch = content.match(/\nSession ID:\s*(.*?)(?:\n|$)/);
   const outputMatch = content.match(/\nOutput summary:\s*([\s\S]*)$/);
 
-  // Clean output: strip [[[ ... ]]] fragments and normalize whitespace
+  // Clean output: strip ⟦ ... ⟧ fragments and normalize whitespace
   let output = outputMatch ? outputMatch[1].trim() : '';
-  output = output.replace(/\[\[\[[\s\S]*?\]\]\]/g, '').replace(/\[\[\[[\s\S]*$/g, '').replace(/^[\s\S]*?\]\]\]/g, '').trim();
+  output = output.replace(/⟦[\s\S]*?⟧/g, '').replace(/⟦[\s\S]*$/g, '').replace(/^[\s\S]*?⟧/g, '').trim();
   output = output.replace(/\n\s(?=\S)/g, ' ');
 
   return {
@@ -3031,7 +3035,7 @@ function InlineMarkdown({ text }: { text: string }) {
   );
 }
 
-/** Renders agent text, separating [[[ command ]]] blocks from normal markdown */
+/** Renders agent text, separating ⟦ command ⟧ blocks from normal markdown */
 function RichContentBlock({ msg }: { msg: AcpTextChunk }) {
   if (msg.contentType === 'image' && msg.data) {
     return (
@@ -3104,10 +3108,10 @@ function CollapsibleReasoningBlock({ text, timestamp }: { text: string; timestam
   );
 }
 
-/** Collapsed-by-default [[[ command ]]] block with click to expand */
+/** Collapsed-by-default ⟦ command ⟧ block with click to expand */
 function CollapsibleCommandBlock({ text }: { text: string }) {
   const [expanded, setExpanded] = useState(false);
-  const nameMatch = text.match(/\[\[\[\s*(\w+)/);
+  const nameMatch = text.match(/⟦\s*(\w+)/);
   const label = nameMatch ? nameMatch[1] : 'command';
   // Extract a preview from the JSON payload
   const jsonMatch = text.match(/\{[\s\S]*\}/);
@@ -3139,31 +3143,42 @@ function CollapsibleCommandBlock({ text }: { text: string }) {
   );
 }
 
+/** Check if a ⟦ ... ⟧ block looks like a real command (ALL_CAPS name after ⟦) */
+function isRealCommandBlock(text: string): boolean {
+  return /^⟦\s*[A-Z][A-Z_]{2,}/.test(text);
+}
+
 function AgentTextBlock({ text }: { text: string }) {
-  // Split on [[[ ... ]]] blocks (complete) and also detect unclosed [[[ blocks
-  const segments = text.split(/(\[\[\[[\s\S]*?\]\]\])/g);
+  // Split on ⟦ ... ⟧ blocks (complete) and also detect unclosed ⟦ blocks
+  const segments = text.split(/(⟦[\s\S]*?⟧)/g);
   return (
     <>
       {segments.map((seg, i) => {
-        // Complete [[[ ]]] block
-        if (seg.startsWith('[[[') && seg.endsWith(']]]')) {
-          return <CollapsibleCommandBlock key={i} text={seg} />;
+        // Complete ⟦ ⟧ block — only collapse if it looks like a real command
+        if (seg.startsWith('⟦') && seg.endsWith('⟧')) {
+          if (isRealCommandBlock(seg)) {
+            return <CollapsibleCommandBlock key={i} text={seg} />;
+          }
+          return <MarkdownWithTables key={i} text={seg} />;
         }
-        // Unclosed [[[ block (still streaming or split across messages)
-        if (seg.includes('[[[') && !seg.includes(']]]')) {
-          const idx = seg.indexOf('[[[');
+        // Unclosed ⟦ block (still streaming or split across messages)
+        if (seg.includes('⟦') && !seg.includes('⟧')) {
+          const idx = seg.indexOf('⟦');
           const before = seg.slice(0, idx);
           const cmdBlock = seg.slice(idx);
-          return (
-            <span key={i}>
-              {before.trim() ? <MarkdownWithTables text={before} /> : null}
-              <CollapsibleCommandBlock text={cmdBlock} />
-            </span>
-          );
+          if (isRealCommandBlock(cmdBlock)) {
+            return (
+              <span key={i}>
+                {before.trim() ? <MarkdownWithTables text={before} /> : null}
+                <CollapsibleCommandBlock text={cmdBlock} />
+              </span>
+            );
+          }
+          return <MarkdownWithTables key={i} text={seg} />;
         }
-        // Dangling ]]] from a block that started in a previous message
-        if (seg.includes(']]]') && !seg.includes('[[[')) {
-          const idx = seg.indexOf(']]]') + 3;
+        // Dangling ⟧ from a block that started in a previous message
+        if (seg.includes('⟧') && !seg.includes('⟦')) {
+          const idx = seg.indexOf('⟧') + 1;
           const cmdBlock = seg.slice(0, idx);
           const after = seg.slice(idx);
           return (

@@ -2,17 +2,28 @@ import { isTerminalStatus } from '../Agent.js';
 import type { Agent } from '../Agent.js';
 import type { CommandHandlerContext, CommandEntry, Delegation } from './types.js';
 import { logger } from '../../utils/logger.js';
+import {
+  parseCommandPayload,
+  agentMessageSchema,
+  interruptSchema,
+  broadcastSchema,
+  createGroupSchema,
+  addToGroupSchema,
+  removeFromGroupSchema,
+  groupMessageSchema,
+} from './commandSchemas.js';
 
 // ── Regex patterns ──────────────────────────────────────────────────
 
-const AGENT_MESSAGE_REGEX = /\[\[\[\s*AGENT_MESSAGE\s*(\{.*?\})\s*\]\]\]/s;
-const BROADCAST_REGEX = /\[\[\[\s*BROADCAST\s*(\{.*?\})\s*\]\]\]/s;
-const CREATE_GROUP_REGEX = /\[\[\[\s*CREATE_GROUP\s*(\{.*?\})\s*\]\]\]/s;
-const ADD_TO_GROUP_REGEX = /\[\[\[\s*ADD_TO_GROUP\s*(\{.*?\})\s*\]\]\]/s;
-const REMOVE_FROM_GROUP_REGEX = /\[\[\[\s*REMOVE_FROM_GROUP\s*(\{.*?\})\s*\]\]\]/s;
-const GROUP_MESSAGE_REGEX = /\[\[\[\s*GROUP_MESSAGE\s*(\{.*?\})\s*\]\]\]/s;
-const LIST_GROUPS_REGEX = /\[\[\[\s*LIST_GROUPS\s*\]\]\]/s;
-const QUERY_GROUPS_REGEX = /\[\[\[\s*QUERY_GROUPS\s*\]\]\]/s;
+const AGENT_MESSAGE_REGEX = /⟦\s*AGENT_MESSAGE\s*(\{.*?\})\s*⟧/s;
+const BROADCAST_REGEX = /⟦\s*BROADCAST\s*(\{.*?\})\s*⟧/s;
+const CREATE_GROUP_REGEX = /⟦\s*CREATE_GROUP\s*(\{.*?\})\s*⟧/s;
+const ADD_TO_GROUP_REGEX = /⟦\s*ADD_TO_GROUP\s*(\{.*?\})\s*⟧/s;
+const REMOVE_FROM_GROUP_REGEX = /⟦\s*REMOVE_FROM_GROUP\s*(\{.*?\})\s*⟧/s;
+const GROUP_MESSAGE_REGEX = /⟦\s*GROUP_MESSAGE\s*(\{.*?\})\s*⟧/s;
+const LIST_GROUPS_REGEX = /⟦\s*LIST_GROUPS\s*⟧/s;
+const QUERY_GROUPS_REGEX = /⟦\s*QUERY_GROUPS\s*⟧/s;
+const INTERRUPT_REGEX = /⟦\s*INTERRUPT\s*(\{.*?\})\s*⟧/s;
 
 // ── Exported: command entry list ─────────────────────────────────────
 
@@ -26,6 +37,7 @@ export function getCommCommands(ctx: CommandHandlerContext): CommandEntry[] {
     { regex: GROUP_MESSAGE_REGEX, name: 'GROUP_MSG', handler: (a, d) => handleGroupMessage(ctx, a, d) },
     { regex: LIST_GROUPS_REGEX, name: 'LIST_GROUPS', handler: (a, _d) => handleListGroups(ctx, a) },
     { regex: QUERY_GROUPS_REGEX, name: 'QUERY_GROUPS', handler: (a, _d) => handleListGroups(ctx, a) },
+    { regex: INTERRUPT_REGEX, name: 'INTERRUPT', handler: (a, d) => handleInterrupt(ctx, a, d) },
   ];
 }
 
@@ -90,8 +102,8 @@ function handleAgentMessage(ctx: CommandHandlerContext, agent: Agent, data: stri
   if (!match) return;
 
   try {
-    const msg = JSON.parse(match[1]);
-    if (!msg.to || !msg.content) return;
+    const msg = parseCommandPayload(agent, match[1], agentMessageSchema, 'AGENT_MESSAGE');
+    if (!msg) return;
 
     // Resolve "to" — could be full UUID, short ID prefix, role ID, or role name
     let targetId = msg.to;
@@ -157,8 +169,8 @@ function handleBroadcast(ctx: CommandHandlerContext, agent: Agent, data: string)
   if (!match) return;
 
   try {
-    const msg = JSON.parse(match[1]);
-    if (!msg.content) return;
+    const msg = parseCommandPayload(agent, match[1], broadcastSchema, 'BROADCAST');
+    if (!msg) return;
 
     const leadId = agent.role.id === 'lead' ? agent.id : agent.parentId;
     if (!leadId) {
@@ -202,11 +214,8 @@ function handleCreateGroup(ctx: CommandHandlerContext, agent: Agent, data: strin
   const match = data.match(CREATE_GROUP_REGEX);
   if (!match) return;
   try {
-    const req = JSON.parse(match[1]);
-    if (!req.name || (!req.members && !req.roles) || (req.members && !Array.isArray(req.members))) {
-      agent.sendMessage('[System] CREATE_GROUP requires "name" and either "members" (array of agent IDs) or "roles" (array of role names like ["developer", "designer"]).');
-      return;
-    }
+    const req = parseCommandPayload(agent, match[1], createGroupSchema, 'CREATE_GROUP');
+    if (!req) return;
     const leadId = agent.role.id === 'lead' ? agent.id : agent.parentId;
     if (!leadId) {
       agent.sendMessage('[System] Cannot create group — no lead context found.');
@@ -247,7 +256,7 @@ function handleCreateGroup(ctx: CommandHandlerContext, agent: Agent, data: strin
       if (memberId === agent.id) continue;
       const member = ctx.getAgent(memberId);
       if (member && (member.status === 'running' || member.status === 'idle')) {
-        member.sendMessage(`[System] You've been added to group "${req.name}". Members: ${memberNames}.\nSend messages: [[[ GROUP_MESSAGE {"group": "${req.name}", "content": "your message"} ]]]`);
+        member.sendMessage(`[System] You've been added to group "${req.name}". Members: ${memberNames}.\nSend messages: ⟦ GROUP_MESSAGE {"group": "${req.name}", "content": "your message"} ⟧`);
       }
     }
 
@@ -260,8 +269,8 @@ function handleAddToGroup(ctx: CommandHandlerContext, agent: Agent, data: string
   const match = data.match(ADD_TO_GROUP_REGEX);
   if (!match) return;
   try {
-    const req = JSON.parse(match[1]);
-    if (!req.group || !req.members) return;
+    const req = parseCommandPayload(agent, match[1], addToGroupSchema, 'ADD_TO_GROUP');
+    if (!req) return;
 
     const existingGroup = ctx.chatGroupRegistry.findGroupForAgent(req.group, agent.id);
     let leadId: string | undefined;
@@ -297,7 +306,7 @@ function handleAddToGroup(ctx: CommandHandlerContext, agent: Agent, data: string
           if (history.length > 0) {
             historyText = '\nRecent messages:\n' + history.map((m) => `  [${m.fromRole} (${m.fromAgentId.slice(0, 8)})]: ${m.content}`).join('\n');
           }
-          member.sendMessage(`[System] You've been added to group "${req.group}". Members: ${memberNames}.${historyText}\nSend messages: [[[ GROUP_MESSAGE {"group": "${req.group}", "content": "..."} ]]]`);
+          member.sendMessage(`[System] You've been added to group "${req.group}". Members: ${memberNames}.${historyText}\nSend messages: ⟦ GROUP_MESSAGE {"group": "${req.group}", "content": "..."} ⟧`);
         }
       }
       const names = added.map((id) => ctx.getAgent(id)?.role.name || id.slice(0, 8)).join(', ');
@@ -312,10 +321,10 @@ function handleRemoveFromGroup(ctx: CommandHandlerContext, agent: Agent, data: s
   const match = data.match(REMOVE_FROM_GROUP_REGEX);
   if (!match) return;
   try {
-    const req = JSON.parse(match[1]);
+    const req = parseCommandPayload(agent, match[1], removeFromGroupSchema, 'REMOVE_FROM_GROUP');
+    if (!req) return;
     const leadId = agent.role.id === 'lead' ? agent.id : agent.parentId;
     if (!leadId) { agent.sendMessage('[System] Cannot manage groups — no lead context found.'); return; }
-    if (!req.group || !req.members) return;
     const resolvedIds = req.members.map((m: string) => {
       const found = ctx.getAllAgents().find((a) => a.id === m || a.id.startsWith(m));
       return found?.id;
@@ -333,8 +342,8 @@ function handleGroupMessage(ctx: CommandHandlerContext, agent: Agent, data: stri
   const match = data.match(GROUP_MESSAGE_REGEX);
   if (!match) return;
   try {
-    const req = JSON.parse(match[1]);
-    if (!req.group || !req.content) return;
+    const req = parseCommandPayload(agent, match[1], groupMessageSchema, 'GROUP_MESSAGE');
+    if (!req) return;
 
     const leadId = agent.role.id === 'lead' ? agent.id : agent.parentId;
     if (!leadId) {
@@ -385,5 +394,77 @@ function handleListGroups(ctx: CommandHandlerContext, agent: Agent): void {
       : 'no messages yet';
     return `- "${g.name}" — ${g.memberIds.length} members: ${memberNames}\n  ${msgInfo}`;
   });
-  agent.sendMessage(`[System] Your groups (${groups.length}):\n${lines.join('\n')}\nSend messages: [[[ GROUP_MESSAGE {"group": "name", "content": "..."} ]]]`);
+  agent.sendMessage(`[System] Your groups (${groups.length}):\n${lines.join('\n')}\nSend messages: ⟦ GROUP_MESSAGE {"group": "name", "content": "..."} ⟧`);
+}
+
+// ── INTERRUPT handler ───────────────────────────────────────────────
+
+async function handleInterrupt(ctx: CommandHandlerContext, agent: Agent, data: string): Promise<void> {
+  const match = data.match(INTERRUPT_REGEX);
+  if (!match) return;
+
+  try {
+    const req = parseCommandPayload(agent, match[1], interruptSchema, 'INTERRUPT');
+    if (!req) return;
+
+    // Resolve target agent (same resolution as AGENT_MESSAGE)
+    let targetId = req.to;
+    const allAgents = ctx.getAllAgents();
+    if (!ctx.getAgent(targetId)) {
+      const byPrefix = allAgents.find((a) => a.id.startsWith(req.to) && (a.status === 'running' || a.status === 'idle'));
+      if (byPrefix) {
+        targetId = byPrefix.id;
+      } else {
+        const byRoleId = allAgents.find((a) => a.role.id === req.to && (a.status === 'running' || a.status === 'idle'));
+        if (byRoleId) {
+          targetId = byRoleId.id;
+        } else {
+          const lower = req.to.toLowerCase();
+          const byRoleName = allAgents.find((a) =>
+            a.role.name.toLowerCase() === lower && (a.status === 'running' || a.status === 'idle')
+          );
+          if (byRoleName) {
+            targetId = byRoleName.id;
+          }
+        }
+      }
+    }
+
+    const target = ctx.getAgent(targetId);
+    if (!target) {
+      agent.sendMessage(`[System] Cannot resolve agent "${req.to}" for interrupt.`);
+      return;
+    }
+
+    // Cannot interrupt yourself
+    if (target.id === agent.id) {
+      agent.sendMessage('[System] Cannot interrupt yourself.');
+      return;
+    }
+
+    // Only parent agents can interrupt their children
+    if (target.parentId !== agent.id) {
+      agent.sendMessage(`[System] Cannot interrupt ${target.role.name} (${target.id.slice(0, 8)}) — you are not their parent agent.`);
+      return;
+    }
+
+    // Cannot interrupt a terminated agent
+    if (isTerminalStatus(target.status)) {
+      agent.sendMessage(`[System] Cannot interrupt ${target.role.name} (${target.id.slice(0, 8)}) — agent is ${target.status}.`);
+      return;
+    }
+
+    const formatted = `[PRIORITY — Interrupt from ${agent.role.name} (${agent.id.slice(0, 8)})]\n${req.content}\n\nThis message interrupted your current work. Address it immediately.`;
+    await target.interruptWithMessage(formatted);
+
+    agent.sendMessage(`[System] Interrupted ${target.role.name} (${target.id.slice(0, 8)}). New instructions delivered.`);
+
+    ctx.activityLedger.log(agent.id, agent.role.id, 'agent_interrupted',
+      `Interrupted ${target.role.name} (${target.id.slice(0, 8)}): ${req.content.slice(0, 120)}`,
+      { toAgentId: target.id, toRole: target.role.id });
+
+    ctx.emit('agent:interrupted', { from: agent.id, to: target.id, content: req.content });
+  } catch (err) {
+    logger.debug('command', 'Failed to parse INTERRUPT command', { error: (err as Error).message });
+  }
 }

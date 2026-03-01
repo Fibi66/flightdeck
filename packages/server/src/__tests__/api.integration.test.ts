@@ -122,6 +122,7 @@ const mockAgentManager = {
   markHumanInterrupt: vi.fn(),
   persistHumanMessage: vi.fn(),
   consumePendingSystemAction: vi.fn().mockReturnValue(undefined),
+  autoSpawnSecretary: vi.fn().mockReturnValue(null),
 };
 
 const mockRole = { id: 'developer', name: 'Developer', description: '', systemPrompt: '', color: '#888', icon: '🤖', model: 'claude-sonnet-4.5' };
@@ -215,6 +216,7 @@ beforeEach(() => {
   mockAgentManager.getChatGroupRegistry.mockReturnValue(mockChatGroupRegistry);
   mockAgentManager.getDelegations.mockReturnValue([]);
   mockAgentManager.getTaskDAG.mockReturnValue(mockTaskDAG);
+  mockAgentManager.autoSpawnSecretary.mockReturnValue(null);
 
   mockRoleRegistry.get.mockReturnValue(mockRole);
   mockRoleRegistry.getAll.mockReturnValue([mockRole]);
@@ -307,6 +309,7 @@ describe('Agents', () => {
     expect(mockAgentManager.spawn).toHaveBeenCalledWith(
       mockRole,
       'build feature',
+      undefined,
       undefined,
       undefined,
       undefined,
@@ -683,5 +686,49 @@ describe('GET /api/browse — security', () => {
       expect(body.parent).not.toBe('/etc');
       expect(body.parent).not.toBe('/proc');
     }
+  });
+
+  // ── POST /lead/start — Auto-Secretary Spawn ─────────────────────────
+
+  describe('POST /lead/start', () => {
+    it('auto-spawns a Secretary agent alongside the Lead', async () => {
+      const leadAgent = createLeadAgent({ projectName: 'Test Project' });
+      const secretaryAgent = createMockAgent({
+        id: 'secretary-001',
+        role: { id: 'secretary', name: 'Secretary', model: 'gpt-4.1' },
+        parentId: 'lead-001',
+        isSystemAgent: true,
+      });
+
+      mockAgentManager.spawn.mockReturnValue(leadAgent);
+      mockAgentManager.autoSpawnSecretary.mockReturnValue(secretaryAgent);
+
+      const leadRole = { id: 'lead', name: 'Project Lead', model: 'claude-sonnet-4.5' };
+      mockRoleRegistry.get.mockImplementation((id: string) => {
+        if (id === 'lead') return leadRole;
+        return mockRole;
+      });
+
+      const res = await post('/api/lead/start', { task: 'Build something' });
+      expect(res.status).toBe(201);
+
+      // Should call autoSpawnSecretary with the lead agent
+      expect(mockAgentManager.autoSpawnSecretary).toHaveBeenCalledWith(leadAgent);
+    });
+
+    it('succeeds even if autoSpawnSecretary returns null', async () => {
+      const leadAgent = createLeadAgent({ projectName: 'Test Project' });
+      mockAgentManager.spawn.mockReturnValue(leadAgent);
+      mockAgentManager.autoSpawnSecretary.mockReturnValue(null);
+
+      const leadRole = { id: 'lead', name: 'Project Lead', model: 'claude-sonnet-4.5' };
+      mockRoleRegistry.get.mockImplementation((id: string) => {
+        if (id === 'lead') return leadRole;
+        return mockRole;
+      });
+
+      const res = await post('/api/lead/start', { task: 'Build something' });
+      expect(res.status).toBe(201);
+    });
   });
 });

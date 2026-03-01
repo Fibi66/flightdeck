@@ -23,6 +23,7 @@ export type ActionType =
   | 'limit_change_requested'
   | 'deferred_issue'
   | 'group_message'
+  | 'agent_interrupted'
   | 'error';
 
 export interface ActivityEntry {

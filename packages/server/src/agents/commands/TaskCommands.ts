@@ -7,19 +7,28 @@
 import type { Agent } from '../Agent.js';
 import type { DagTaskInput } from '../../tasks/TaskDAG.js';
 import type { CommandEntry, CommandHandlerContext } from './types.js';
+import {
+  parseCommandPayload,
+  declareTasksSchema,
+  addTaskSchema,
+  taskIdSchema,
+  completeTaskSchema,
+  addDependencySchema,
+} from './commandSchemas.js';
 
 // ── Regex patterns ────────────────────────────────────────────────────
 
-const DECLARE_TASKS_REGEX = /\[\[\[\s*DECLARE_TASKS\s*(\{.*?\})\s*\]\]\]/s;
-const TASK_STATUS_REGEX = /\[\[\[\s*TASK_STATUS\s*\]\]\]/s;
-const QUERY_TASKS_REGEX = /\[\[\[\s*QUERY_TASKS\s*\]\]\]/s;
-const PAUSE_TASK_REGEX = /\[\[\[\s*PAUSE_TASK\s*(\{.*?\})\s*\]\]\]/s;
-const RETRY_TASK_REGEX = /\[\[\[\s*RETRY_TASK\s*(\{.*?\})\s*\]\]\]/s;
-const SKIP_TASK_REGEX = /\[\[\[\s*SKIP_TASK\s*(\{.*?\})\s*\]\]\]/s;
-const ADD_TASK_REGEX = /\[\[\[\s*ADD_TASK\s*(\{.*?\})\s*\]\]\]/s;
-const CANCEL_TASK_REGEX = /\[\[\[\s*CANCEL_TASK\s*(\{.*?\})\s*\]\]\]/s;
-const COMPLETE_TASK_REGEX = /\[\[\[\s*COMPLETE_TASK\s*(\{.*?\})\s*\]\]\]/s;
-const RESET_DAG_REGEX = /\[\[\[\s*RESET_DAG\s*\]\]\]/s;
+const DECLARE_TASKS_REGEX = /⟦\s*DECLARE_TASKS\s*(\{.*?\})\s*⟧/s;
+const TASK_STATUS_REGEX = /⟦\s*TASK_STATUS\s*⟧/s;
+const QUERY_TASKS_REGEX = /⟦\s*QUERY_TASKS\s*⟧/s;
+const PAUSE_TASK_REGEX = /⟦\s*PAUSE_TASK\s*(\{.*?\})\s*⟧/s;
+const RETRY_TASK_REGEX = /⟦\s*RETRY_TASK\s*(\{.*?\})\s*⟧/s;
+const SKIP_TASK_REGEX = /⟦\s*SKIP_TASK\s*(\{.*?\})\s*⟧/s;
+const ADD_TASK_REGEX = /⟦\s*ADD_TASK\s*(\{.*?\})\s*⟧/s;
+const CANCEL_TASK_REGEX = /⟦\s*CANCEL_TASK\s*(\{.*?\})\s*⟧/s;
+const COMPLETE_TASK_REGEX = /⟦\s*COMPLETE_TASK\s*(\{.*?\})\s*⟧/s;
+const RESET_DAG_REGEX = /⟦\s*RESET_DAG\s*⟧/s;
+const ADD_DEPENDENCY_REGEX = /⟦\s*ADD_DEPENDENCY\s*(\{.*?\})\s*⟧/s;
 
 // ── Handlers ──────────────────────────────────────────────────────────
 
@@ -31,28 +40,8 @@ function handleDeclareTasks(ctx: CommandHandlerContext, agent: Agent, data: stri
   const match = data.match(DECLARE_TASKS_REGEX);
   if (!match) return;
   try {
-    const req = JSON.parse(match[1]);
-    if (!req.tasks || !Array.isArray(req.tasks)) {
-      agent.sendMessage('[System] DECLARE_TASKS requires a "tasks" array.');
-      return;
-    }
-    // Validate each task before passing to DAG (match ADD_TASK validation)
-    for (let i = 0; i < req.tasks.length; i++) {
-      const t = req.tasks[i];
-      const id = typeof t.id === 'string' ? t.id.trim() : '';
-      if (!id) {
-        agent.sendMessage(`[System] DECLARE_TASKS error: Task at index ${i} is missing required field "id".`);
-        return;
-      }
-      if (id.length > 100) {
-        agent.sendMessage(`[System] DECLARE_TASKS error: Task "${id.slice(0, 20)}..." has invalid id (too long, max 100 chars).`);
-        return;
-      }
-      if (!t.role || (typeof t.role === 'string' && !t.role.trim())) {
-        agent.sendMessage(`[System] DECLARE_TASKS error: Task at index ${i} is missing required field "role".`);
-        return;
-      }
-    }
+    const req = parseCommandPayload(agent, match[1], declareTasksSchema, 'DECLARE_TASKS');
+    if (!req) return;
     const { tasks, conflicts } = ctx.taskDAG.declareTaskBatch(agent.id, req.tasks as DagTaskInput[]);
     let msg = `[System] Task DAG declared: ${tasks.length} tasks added.`;
     const readyCount = tasks.filter(t => t.dagStatus === 'ready').length;
@@ -117,7 +106,8 @@ function handlePauseTask(ctx: CommandHandlerContext, agent: Agent, data: string)
   const match = data.match(PAUSE_TASK_REGEX);
   if (!match) return;
   try {
-    const req = JSON.parse(match[1]);
+    const req = parseCommandPayload(agent, match[1], taskIdSchema, 'PAUSE_TASK');
+    if (!req) return;
     const ok = ctx.taskDAG.pauseTask(agent.id, req.id);
     agent.sendMessage(ok ? `[System] Task "${req.id}" paused.` : `[System] Cannot pause task "${req.id}" (must be pending or ready).`);
   } catch { agent.sendMessage('[System] PAUSE_TASK error: invalid payload.'); }
@@ -128,7 +118,8 @@ function handleRetryTask(ctx: CommandHandlerContext, agent: Agent, data: string)
   const match = data.match(RETRY_TASK_REGEX);
   if (!match) return;
   try {
-    const req = JSON.parse(match[1]);
+    const req = parseCommandPayload(agent, match[1], taskIdSchema, 'RETRY_TASK');
+    if (!req) return;
     const ok = ctx.taskDAG.retryTask(agent.id, req.id);
     if (ok) {
       agent.sendMessage(`[System] Task "${req.id}" reset to ready. Dependents unblocked. Use DELEGATE or CREATE_AGENT to assign it.`);
@@ -143,7 +134,8 @@ function handleSkipTask(ctx: CommandHandlerContext, agent: Agent, data: string):
   const match = data.match(SKIP_TASK_REGEX);
   if (!match) return;
   try {
-    const req = JSON.parse(match[1]);
+    const req = parseCommandPayload(agent, match[1], taskIdSchema, 'SKIP_TASK');
+    if (!req) return;
     const ok = ctx.taskDAG.skipTask(agent.id, req.id);
     if (ok) {
       agent.sendMessage(`[System] Task "${req.id}" skipped. Dependents may now be ready. Use TASK_STATUS to check.`);
@@ -158,8 +150,8 @@ function handleAddTask(ctx: CommandHandlerContext, agent: Agent, data: string): 
   const match = data.match(ADD_TASK_REGEX);
   if (!match) return;
   try {
-    const req = JSON.parse(match[1]) as DagTaskInput;
-    if (!req.id || !req.role) { agent.sendMessage('[System] ADD_TASK requires "id" and "role".'); return; }
+    const req = parseCommandPayload(agent, match[1], addTaskSchema, 'ADD_TASK');
+    if (!req) return;
     const task = ctx.taskDAG.addTask(agent.id, req);
     let msg = `[System] Task "${task.id}" added (${task.dagStatus}).`;
     if (task.dagStatus === 'ready') {
@@ -174,7 +166,8 @@ function handleCancelTask(ctx: CommandHandlerContext, agent: Agent, data: string
   const match = data.match(CANCEL_TASK_REGEX);
   if (!match) return;
   try {
-    const req = JSON.parse(match[1]);
+    const req = parseCommandPayload(agent, match[1], taskIdSchema, 'CANCEL_TASK');
+    if (!req) return;
     const ok = ctx.taskDAG.cancelTask(agent.id, req.id);
     agent.sendMessage(ok ? `[System] Task "${req.id}" cancelled.` : `[System] Cannot cancel task "${req.id}" (may be running or done).`);
   } catch { agent.sendMessage('[System] CANCEL_TASK error: invalid payload.'); }
@@ -195,23 +188,76 @@ function handleCompleteTask(ctx: CommandHandlerContext, agent: Agent, data: stri
   if (!match) return;
 
   try {
-    const req = JSON.parse(match[1]);
+    const req = parseCommandPayload(agent, match[1], completeTaskSchema, 'COMPLETE_TASK');
+    if (!req) return;
 
-    // Non-lead agents: signal delegation completion to parent
+    // Non-lead agents: relay completion to parent lead's DAG
     if (agent.role.id !== 'lead') {
-      if (agent.parentId) {
-        const parent = ctx.getAgent(agent.parentId);
+      const MAX_FIELD_LENGTH = 10_000;
+      const summary = (req.summary || req.output || '(no summary)').slice(0, MAX_FIELD_LENGTH);
+      const status = (req.status || 'done').slice(0, 200);
+
+      if (!agent.parentId) {
+        agent.sendMessage('[System] COMPLETE_TASK failed: no parent agent found.');
+        return;
+      }
+
+      const parent = ctx.getAgent(agent.parentId);
+
+      // Determine the DAG task ID: explicit from payload, or from agent's assignment
+      const taskId = req.id || agent.dagTaskId;
+
+      // Relay to parent's DAG if we have a task ID
+      if (taskId) {
+        // Security: verify calling agent is assigned to this task (or it's their dagTaskId)
+        if (req.id && req.id !== agent.dagTaskId) {
+          const task = ctx.taskDAG.getTask(agent.parentId, taskId);
+          if (task && task.assignedAgentId && task.assignedAgentId !== agent.id) {
+            agent.sendMessage(`[System] COMPLETE_TASK denied: task "${taskId}" is assigned to another agent.`);
+            return;
+          }
+        }
+
+        const error = ctx.taskDAG.getTransitionError(agent.parentId, taskId, 'complete');
+        if (error) {
+          // Task not completable — still notify parent via message
+          if (parent) {
+            parent.sendMessage(`[Agent Report] ${agent.role.name} (${agent.id.slice(0, 8)}) completed task "${taskId}".\nStatus: ${status}\nSummary: ${summary}`);
+          }
+          agent.sendMessage(`[System] Task "${taskId}" could not be marked done in DAG (status: ${error.currentStatus}). Parent notified.`);
+          return;
+        }
+
+        const newlyReady = ctx.taskDAG.completeTask(agent.parentId, taskId);
+
+        // Notify parent with completion details and newly ready tasks
+        let parentMsg = `[Agent Report] ${agent.role.name} (${agent.id.slice(0, 8)}) completed DAG task "${taskId}".\nStatus: ${status}\nSummary: ${summary}`;
+        if (newlyReady && newlyReady.length > 0) {
+          const readyNames = newlyReady.map(d => d.id).join(', ');
+          parentMsg += `\nNewly ready tasks: ${readyNames}. Use DELEGATE or CREATE_AGENT to assign them.`;
+        }
         if (parent) {
-          const summary = req.summary || '(no summary)';
-          parent.sendMessage(`[Agent Report] ${agent.role.name} (${agent.id.slice(0, 8)}) completed task.\nSummary: ${summary}`);
+          parent.sendMessage(parentMsg);
+          ctx.emit('agent:message_sent', {
+            from: agent.id, fromRole: agent.role.name,
+            to: parent.id, toRole: parent.role.name,
+            content: `COMPLETE_TASK [${taskId}]: ${summary}`,
+          });
+        }
+        ctx.emit('dag:updated', { leadId: agent.parentId });
+        agent.sendMessage(`[System] Task "${taskId}" marked as done in DAG.${newlyReady && newlyReady.length > 0 ? ` ${newlyReady.length} task(s) now ready.` : ''}`);
+      } else {
+        // No DAG task ID — fallback to message-only notification
+        if (parent) {
+          parent.sendMessage(`[Agent Report] ${agent.role.name} (${agent.id.slice(0, 8)}) completed task.\nStatus: ${status}\nSummary: ${summary}`);
           ctx.emit('agent:message_sent', {
             from: agent.id, fromRole: agent.role.name,
             to: parent.id, toRole: parent.role.name,
             content: `COMPLETE_TASK: ${summary}`,
           });
         }
+        agent.sendMessage(`[System] Task completion signaled to parent. (No DAG task ID — use dagTaskId for DAG integration.)`);
       }
-      agent.sendMessage(`[System] Task completion signaled to parent.`);
       return;
     }
 
@@ -220,6 +266,7 @@ function handleCompleteTask(ctx: CommandHandlerContext, agent: Agent, data: stri
       agent.sendMessage('[System] COMPLETE_TASK requires an "id" field (the DAG task ID).');
       return;
     }
+    const summary = (req.summary || req.output || '').slice(0, 10_000) || undefined;
     const error = ctx.taskDAG.getTransitionError(agent.id, req.id, 'complete');
     if (error) {
       agent.sendMessage(`[System] Cannot complete task "${req.id}": ${error.currentStatus === 'not_found' ? 'task not found.' : `current status is "${error.currentStatus}". Must be running or ready.`}`);
@@ -227,6 +274,7 @@ function handleCompleteTask(ctx: CommandHandlerContext, agent: Agent, data: stri
     }
     const newlyReady = ctx.taskDAG.completeTask(agent.id, req.id);
     let msg = `[System] Task "${req.id}" marked as done.`;
+    if (summary) msg += ` Summary: ${summary}`;
     if (newlyReady && newlyReady.length > 0) {
       const readyNames = newlyReady.map(d => d.id).join(', ');
       msg += ` Newly ready tasks: ${readyNames}. Use DELEGATE or CREATE_AGENT to assign them.`;
@@ -234,6 +282,38 @@ function handleCompleteTask(ctx: CommandHandlerContext, agent: Agent, data: stri
     agent.sendMessage(msg);
   } catch (err: any) {
     agent.sendMessage(`[System] COMPLETE_TASK error: ${err.message}`);
+  }
+}
+
+function handleAddDependency(ctx: CommandHandlerContext, agent: Agent, data: string): void {
+  const match = data.match(ADD_DEPENDENCY_REGEX);
+  if (!match) return;
+  try {
+    const req = parseCommandPayload(agent, match[1], addDependencySchema, 'ADD_DEPENDENCY');
+    if (!req) return;
+
+    // Determine the lead that owns the DAG.
+    // If the agent is a lead, use their own ID; otherwise use their parent's ID.
+    const leadId = agent.role.id === 'lead' ? agent.id : agent.parentId;
+    if (!leadId) {
+      agent.sendMessage('[System] ADD_DEPENDENCY error: cannot determine lead. Only agents with a parent lead can add dependencies.');
+      return;
+    }
+
+    const results: string[] = [];
+    for (const depId of req.depends_on) {
+      const added = ctx.taskDAG.addDependency(leadId, req.taskId, depId);
+      if (added) {
+        results.push(`✓ "${req.taskId}" → depends on "${depId}"`);
+      } else {
+        results.push(`⚠️ "${req.taskId}" → "${depId}" (skipped — duplicate or would create cycle)`);
+      }
+    }
+
+    agent.sendMessage(`[System] ADD_DEPENDENCY results:\n${results.join('\n')}`);
+    ctx.emit('dag:updated', { leadId });
+  } catch (err: any) {
+    agent.sendMessage(`[System] ADD_DEPENDENCY error: ${err.message}`);
   }
 }
 
@@ -251,5 +331,6 @@ export function getTaskCommands(ctx: CommandHandlerContext): CommandEntry[] {
     { regex: ADD_TASK_REGEX, name: 'ADD_TASK', handler: (a, d) => handleAddTask(ctx, a, d) },
     { regex: CANCEL_TASK_REGEX, name: 'CANCEL_TASK', handler: (a, d) => handleCancelTask(ctx, a, d) },
     { regex: RESET_DAG_REGEX, name: 'RESET_DAG', handler: (a, _d) => handleResetDAG(ctx, a, _d) },
+    { regex: ADD_DEPENDENCY_REGEX, name: 'ADD_DEPENDENCY', handler: (a, d) => handleAddDependency(ctx, a, d) },
   ];
 }

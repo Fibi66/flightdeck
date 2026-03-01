@@ -11,6 +11,7 @@ export interface DagTask {
   model?: string;
   assignedAgentId?: string;
   createdAt: string;
+  startedAt?: string;
   completedAt?: string;
 }
 
@@ -129,6 +130,7 @@ export interface AgentInfo {
   role: Role;
   status: AgentStatus;
   task?: string;
+  dagTaskId?: string;
   parentId?: string;
   childIds: string[];
   createdAt: string;
@@ -224,4 +226,35 @@ export interface LeadProgress {
     contextWindowUsed?: number;
   }>;
   delegations: Delegation[];
+}
+
+// ── Cost Tracking ─────────────────────────────────────────────────
+
+export interface TimerInfo {
+  id: string;
+  agentId: string;
+  label: string;
+  message: string;
+  fireAt: number;
+  createdAt: string;
+  fired: boolean;
+  repeat: boolean;
+  intervalSeconds: number;
+  remainingMs: number;
+}
+
+export interface AgentCostSummary {
+  agentId: string;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  taskCount: number;
+}
+
+export interface TaskCostSummary {
+  dagTaskId: string;
+  leadId: string;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  agentCount: number;
+  agents: Array<{ agentId: string; inputTokens: number; outputTokens: number }>;
 }

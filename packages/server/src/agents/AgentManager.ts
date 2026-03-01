@@ -18,6 +18,7 @@ import type { CapabilityInjector } from './capabilities/CapabilityInjector.js';
 import type { TaskTemplateRegistry } from '../tasks/TaskTemplates.js';
 import type { TaskDecomposer } from '../tasks/TaskDecomposer.js';
 import type { WorktreeManager } from '../coordination/WorktreeManager.js';
+import type { CostTracker } from './CostTracker.js';
 import { logger } from '../utils/logger.js';
 import { writeAgentFiles } from './agentFiles.js';
 import { CommandDispatcher } from './CommandDispatcher.js';
@@ -99,6 +100,7 @@ export class AgentManager extends TypedEmitter<AgentManagerEvents> {
   private heartbeat: HeartbeatMonitor;
   private projectRegistry?: import('../projects/ProjectRegistry.js').ProjectRegistry;
   private worktreeManager?: WorktreeManager;
+  private costTracker?: CostTracker;
   private _systemPaused = false;
   private _shuttingDown = false;
 
@@ -112,7 +114,7 @@ export class AgentManager extends TypedEmitter<AgentManagerEvents> {
     agentMemory: AgentMemory,
     chatGroupRegistry: ChatGroupRegistry,
     taskDAG: TaskDAG,
-    { maxRestarts = 3, autoRestart = true, db, deferredIssueRegistry, timerRegistry, capabilityInjector, taskTemplateRegistry, taskDecomposer, worktreeManager }: { maxRestarts?: number; autoRestart?: boolean; db?: Database; deferredIssueRegistry?: DeferredIssueRegistry; timerRegistry?: TimerRegistry; capabilityInjector?: CapabilityInjector; taskTemplateRegistry?: TaskTemplateRegistry; taskDecomposer?: TaskDecomposer; worktreeManager?: WorktreeManager } = {},
+    { maxRestarts = 3, autoRestart = true, db, deferredIssueRegistry, timerRegistry, capabilityInjector, taskTemplateRegistry, taskDecomposer, worktreeManager, costTracker }: { maxRestarts?: number; autoRestart?: boolean; db?: Database; deferredIssueRegistry?: DeferredIssueRegistry; timerRegistry?: TimerRegistry; capabilityInjector?: CapabilityInjector; taskTemplateRegistry?: TaskTemplateRegistry; taskDecomposer?: TaskDecomposer; worktreeManager?: WorktreeManager; costTracker?: CostTracker } = {},
   ) {
     super();
     this.config = config;
@@ -128,6 +130,7 @@ export class AgentManager extends TypedEmitter<AgentManagerEvents> {
     this.timerRegistry = timerRegistry ?? (null as any);
     this.capabilityInjector = capabilityInjector;
     this.worktreeManager = worktreeManager;
+    this.costTracker = costTracker;
     this.db = db;
     if (db) this.conversationStore = new ConversationStore(db);
     this.maxConcurrent = config.maxConcurrentAgents;
@@ -237,6 +240,7 @@ export class AgentManager extends TypedEmitter<AgentManagerEvents> {
       lockedFiles: [],
       model: a.model,
       parentId: a.parentId,
+      isSystemAgent: a.isSystemAgent || undefined,
     }));
 
     // For lead agents, inject dynamic role list (including custom roles) before creating
@@ -354,6 +358,16 @@ export class AgentManager extends TypedEmitter<AgentManagerEvents> {
       logger.info('agent', `Context compacted for ${agent.role.name} (${agent.id.slice(0, 8)}): ${info.percentDrop}% reduction`);
       this.emit('agent:context_compacted', { agentId: agent.id, ...info });
     });
+
+    // Wire cost tracking: attribute token usage to the agent's current dagTaskId
+    if (this.costTracker) {
+      const tracker = this.costTracker;
+      agent.onUsage(({ agentId, inputTokens, outputTokens, dagTaskId }) => {
+        if (dagTaskId && agent.parentId) {
+          tracker.recordUsage(agentId, dagTaskId, agent.parentId, inputTokens, outputTokens);
+        }
+      });
+    }
 
     agent.onStatus((status) => {
       this.emit('agent:status', { agentId: agent.id, status });
@@ -621,6 +635,46 @@ export class AgentManager extends TypedEmitter<AgentManagerEvents> {
     return Array.from(this.agents.values());
   }
 
+  /** Auto-spawn a Secretary agent as a child of the given lead. Returns the secretary or null. */
+  autoSpawnSecretary(leadAgent: Agent): Agent | null {
+    // Only for root leads (sub-leads don't get auto-secretary)
+    if (leadAgent.parentId) return null;
+
+    // Skip if lead already has a secretary
+    const existing = this.getAll().find(a =>
+      a.parentId === leadAgent.id &&
+      a.role.id === 'secretary' &&
+      a.status !== 'terminated' && a.status !== 'failed' && a.status !== 'completed'
+    );
+    if (existing) return existing;
+
+    const secretaryRole = this.roleRegistry.get('secretary');
+    if (!secretaryRole) return null;
+
+    try {
+      const secretary = this.spawn(
+        secretaryRole,
+        'You are the auto-created project secretary. Track DAG progress, provide status reports when asked, and assist with dependency inference for auto-DAG tasks.',
+        leadAgent.id,
+        true,
+        'gpt-4.1',
+        leadAgent.cwd,
+        undefined,
+        undefined,
+        { projectName: leadAgent.projectName, projectId: leadAgent.projectId },
+      );
+      secretary.isSystemAgent = true;
+      logger.info('agent', `Auto-spawned secretary (${secretary.id.slice(0, 8)}) for lead (${leadAgent.id.slice(0, 8)})`);
+      return secretary;
+    } catch (err: any) {
+      logger.warn('agent', `Failed to auto-spawn secretary: ${err.message}`);
+      setTimeout(() => {
+        leadAgent.sendMessage(`[System] Auto-secretary spawn failed: ${err.message}. You can manually create one with CREATE_AGENT.`);
+      }, 2000);
+      return null;
+    }
+  }
+
   /** Count agents that are alive (running, idle, or creating) — used for concurrency limit */
   getRunningCount(): number {
     return this.getAll().filter((a) => a.status === 'running' || a.status === 'creating' || a.status === 'idle').length;
@@ -642,7 +696,7 @@ export class AgentManager extends TypedEmitter<AgentManagerEvents> {
     const old = this.maxConcurrent;
     this.maxConcurrent = n;
     // Keep dispatcher context in sync
-    (this.dispatcher as any).ctx.maxConcurrent = n;
+    (this.dispatcher as any).handlerCtx.maxConcurrent = n;
     if (n !== old) {
       // Notify all running leads about the change
       const running = this.getRunningCount();
@@ -764,6 +818,14 @@ export class AgentManager extends TypedEmitter<AgentManagerEvents> {
     return this.taskDAG;
   }
 
+  getCostTracker(): CostTracker | undefined {
+    return this.costTracker;
+  }
+
+  getTimerRegistry(): TimerRegistry {
+    return this.timerRegistry;
+  }
+
   /** Persist a human message to the agent's conversation history */
   persistHumanMessage(agentId: string, text: string): void {
     this.flushAgentMessage(agentId); // flush any buffered agent text first
@@ -850,7 +912,7 @@ export class AgentManager extends TypedEmitter<AgentManagerEvents> {
         if (group.roles.some((r) => r.toLowerCase() === agent.role.id.toLowerCase())) {
           const added = this.chatGroupRegistry.addMembers(leadId, group.name, [agent.id]);
           if (added.length > 0) {
-            agent.queueMessage(`[System] You've been auto-added to group "${group.name}" (matches your role "${agent.role.id}"). Send messages: [[[ GROUP_MESSAGE {"group": "${group.name}", "content": "your message"} ]]]`);
+            agent.queueMessage(`[System] You've been auto-added to group "${group.name}" (matches your role "${agent.role.id}"). Send messages: ⟦ GROUP_MESSAGE {"group": "${group.name}", "content": "your message"} ⟧`);
             logger.info('groups', `Auto-added ${agent.role.name} (${agent.id.slice(0, 8)}) to group "${group.name}" via role criteria`);
           }
         }

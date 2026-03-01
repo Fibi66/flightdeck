@@ -10,22 +10,19 @@
 import type { Agent } from '../Agent.js';
 import type { CommandHandlerContext, CommandEntry } from './types.js';
 import { isTerminalStatus } from '../Agent.js';
+import { parseCommandPayload, directMessageSchema } from './commandSchemas.js';
 
-const DM_REGEX = /\[\[\[\s*DIRECT_MESSAGE\s*(\{.*?\})\s*\]\]\]/s;
-const QUERY_PEERS_REGEX = /\[\[\[\s*QUERY_PEERS\s*\]\]\]/s;
+const DM_REGEX = /⟦\s*DIRECT_MESSAGE\s*(\{.*?\})\s*⟧/s;
+const QUERY_PEERS_REGEX = /⟦\s*QUERY_PEERS\s*⟧/s;
 
 function handleDirectMessage(ctx: CommandHandlerContext, agent: Agent, data: string): void {
   const match = data.match(DM_REGEX);
   if (!match) return;
 
   try {
-    const payload = JSON.parse(match[1]);
+    const payload = parseCommandPayload(agent, match[1], directMessageSchema, 'DIRECT_MESSAGE');
+    if (!payload) return;
     const { to, content } = payload;
-
-    if (!to || !content) {
-      agent.sendMessage('[System] DIRECT_MESSAGE requires {"to": "agent-id", "content": "message"}');
-      return;
-    }
 
     // Resolve target: exact ID first, then short prefix match
     const target =
@@ -88,7 +85,7 @@ function handleQueryPeers(ctx: CommandHandlerContext, agent: Agent): void {
     if (peer.task) msg += ` — "${peer.task.slice(0, 60)}"`;
     msg += '\n';
   }
-  msg += `\nSend a message: [[[ DIRECT_MESSAGE {"to": "agent-id", "content": "..."} ]]]`;
+  msg += `\nSend a message: ⟦ DIRECT_MESSAGE {"to": "agent-id", "content": "..."} ⟧`;
 
   agent.sendMessage(`[System]\n${msg}`);
 }

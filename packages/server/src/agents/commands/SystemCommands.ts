@@ -10,13 +10,14 @@ import type { CommandHandlerContext, CommandEntry } from './types.js';
 import { logger } from '../../utils/logger.js';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { parseCommandPayload, requestLimitChangeSchema } from './commandSchemas.js';
 
 // ── Regex patterns ────────────────────────────────────────────────────
 
-const QUERY_CREW_REGEX = /\[\[\[\s*QUERY_CREW\s*\]\]\]/s;
-const HALT_HEARTBEAT_REGEX = /\[\[\[\s*HALT_HEARTBEAT\s*\]\]\]/s;
-const REQUEST_LIMIT_CHANGE_REGEX = /\[\[\[\s*REQUEST_LIMIT_CHANGE\s*(\{.*?\})\s*\]\]\]/s;
-const EXPORT_SESSION_REGEX = /\[\[\[\s*EXPORT_SESSION\s*\]\]\]/s;
+const QUERY_CREW_REGEX = /⟦\s*QUERY_CREW\s*⟧/s;
+const HALT_HEARTBEAT_REGEX = /⟦\s*HALT_HEARTBEAT\s*⟧/s;
+const REQUEST_LIMIT_CHANGE_REGEX = /⟦\s*REQUEST_LIMIT_CHANGE\s*(\{.*?\})\s*⟧/s;
+const EXPORT_SESSION_REGEX = /⟦\s*EXPORT_SESSION\s*⟧/s;
 
 // ── Handlers ──────────────────────────────────────────────────────────
 
@@ -98,18 +99,18 @@ function handleQueryCrew(ctx: CommandHandlerContext, agent: Agent): void {
     humanMsgIndicator = `\n⚠️ UNREAD HUMAN MESSAGE (${agoStr}): "${agent.lastHumanMessageText}"\nRespond to this FIRST before continuing other work.\n`;
   }
 
-  const response = `[[[ CREW_ROSTER${humanMsgIndicator}
+  const response = `⟦ CREW_ROSTER${humanMsgIndicator}
 == YOUR CREW (you can DELEGATE to these) ==
 ${rosterLines}
 ${budgetLine}${siblingSection}${memorySection}
 ⚠️ You can only DELEGATE to agents you created (your crew). Agents from other projects will return "Agent not found".
 To assign a task to an agent, use their ID:
-\`[[[ DELEGATE {"to": "agent-id", "task": "your task"} ]]]\`
+\`⟦ DELEGATE {"to": "agent-id", "task": "your task"} ⟧\`
 To create a new agent:
-\`[[[ CREATE_AGENT {"role": "developer", "model": "claude-opus-4.6", "task": "optional task"} ]]]\`
+\`⟦ CREATE_AGENT {"role": "developer", "model": "claude-opus-4.6", "task": "optional task"} ⟧\`
 To terminate an agent and free a slot:
-\`[[[ TERMINATE_AGENT {"id": "agent-id", "reason": "no longer needed"} ]]]\`
-CREW_ROSTER ]]]`;
+\`⟦ TERMINATE_AGENT {"id": "agent-id", "reason": "no longer needed"} ⟧\`
+CREW_ROSTER ⟧`;
 
   logger.info('agent', `QUERY_CREW response sent to ${agent.role.name} (${agent.id.slice(0, 8)}): ${roster.length} agents`);
   agent.sendMessage(response);
@@ -133,13 +134,10 @@ function handleRequestLimitChange(ctx: CommandHandlerContext, agent: Agent, data
   }
   const match = data.match(REQUEST_LIMIT_CHANGE_REGEX);
   if (!match) return;
+  const req = parseCommandPayload(agent, match[1], requestLimitChangeSchema, 'REQUEST_LIMIT_CHANGE');
+  if (!req) return;
   try {
-    const req = JSON.parse(match[1]);
-    const newLimit = parseInt(req.limit, 10);
-    if (!newLimit || newLimit < 1 || newLimit > 100) {
-      agent.sendMessage('[System] REQUEST_LIMIT_CHANGE error: limit must be between 1 and 100.');
-      return;
-    }
+    const newLimit = req.limit;
     const currentLimit = ctx.maxConcurrent;
     const decision = ctx.decisionLog.add(
       agent.id,
