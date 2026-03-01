@@ -65,14 +65,29 @@ function handleLockRelease(ctx: CommandHandlerContext, agent: Agent, data: strin
   try {
     const request = parseCommandPayload(agent, match[1], unlockFileSchema, 'UNLOCK_FILE');
     if (!request) return;
-    const released = ctx.lockRegistry.release(agent.id, request.filePath);
-    if (released) {
-      const agentRole = agent.role?.id ?? 'unknown';
-      ctx.activityLedger.log(agent.id, agentRole, 'lock_released', `Released ${request.filePath}`, {
-        filePath: request.filePath,
+
+    // Fix 3: Pre-release lock audit — warn if file has uncommitted changes
+    const cwd = agent.cwd || process.cwd();
+    execAsync(`git diff --name-only -- '${request.filePath.replace(/'/g, "'\\''")}'`, { cwd, timeout: 10_000 })
+      .then(({ stdout }) => {
+        const dirtyFiles = stdout.trim().split('\n').filter(Boolean);
+        if (dirtyFiles.length > 0) {
+          agent.sendMessage(`[System] ⚠ Warning: \`${request.filePath}\` has uncommitted changes. Consider running COMMIT before releasing the lock.`);
+        }
+      })
+      .catch(() => {
+        // Best-effort — don't block lock release if git check fails
+      })
+      .finally(() => {
+        const released = ctx.lockRegistry.release(agent.id, request.filePath);
+        if (released) {
+          const agentRole = agent.role?.id ?? 'unknown';
+          ctx.activityLedger.log(agent.id, agentRole, 'lock_released', `Released ${request.filePath}`, {
+            filePath: request.filePath,
+          });
+          agent.sendMessage(`[System] Lock released on \`${request.filePath}\`.`);
+        }
       });
-      agent.sendMessage(`[System] Lock released on \`${request.filePath}\`.`);
-    }
   } catch (err) {
     logger.debug('command', 'Failed to parse UNLOCK_FILE command', { error: (err as Error).message });
   }
@@ -181,11 +196,23 @@ function handleCommit(ctx: CommandHandlerContext, agent: Agent, data: string): v
     if (!req) return;
     const message = req.message || `Changes by ${agent.role.name} (${agent.id.slice(0, 8)})`;
 
+    // Fix 2: Merge locked files with explicitly specified files
     const currentLocks = ctx.lockRegistry.getByAgent(agent.id);
-    const files = currentLocks.map(l => l.filePath);
+    const lockedPaths = new Set(currentLocks.map(l => l.filePath));
+    const explicitFiles = req.files ?? [];
+
+    // Warn about explicitly specified files the agent doesn't hold locks for
+    const unlockedExplicit = explicitFiles.filter(f => !lockedPaths.has(f));
+    if (unlockedExplicit.length > 0) {
+      agent.sendMessage(`[System] ⚠ Warning: You specified files you don't hold locks for: ${unlockedExplicit.join(', ')}. Proceeding anyway — but consider using LOCK_FILE first.`);
+    }
+
+    // Merge: locked files + any explicitly specified files (deduplicated)
+    const allPaths = new Set([...lockedPaths, ...explicitFiles]);
+    const files = Array.from(allPaths);
 
     if (files.length === 0) {
-      agent.sendMessage('[System] COMMIT: No file locks held. Lock files before committing, or specify files manually with {"message": "...", "files": ["path1", "path2"]}.');
+      agent.sendMessage('[System] COMMIT: No file locks held and no files specified. Lock files before committing, or specify files manually with {"message": "...", "files": ["path1", "path2"]}.');
       return;
     }
 
@@ -201,18 +228,23 @@ function handleCommit(ctx: CommandHandlerContext, agent: Agent, data: string): v
       .then(async ({ stdout }) => {
         agent.sendMessage(`[System] COMMIT succeeded: ${stdout.trim().split('\n')[0]}`);
 
-        // A6: Post-commit verification — confirm files actually landed on HEAD
+        // Fix 1: Post-commit dirty-tree warning — alert agent if working tree still has changes
         try {
-          const { stdout: diffOut } = await execAsync('git diff --name-only HEAD~1', { cwd, timeout: 10_000 });
-          const committedFiles = diffOut.trim().split('\n').filter(Boolean);
-          const missing = files.filter(f => !committedFiles.includes(f));
-          if (missing.length > 0) {
-            // Locked-but-unmodified files are expected; only log at debug level
-            logger.debug('commit', `Post-commit verification: ${missing.length} locked file(s) not in commit for ${agent.id.slice(0, 8)}: ${missing.join(', ')}`);
+          const [{ stdout: modifiedOut }, { stdout: untrackedOut }] = await Promise.all([
+            execAsync('git diff --name-only', { cwd, timeout: 10_000 }),
+            execAsync('git ls-files --others --exclude-standard', { cwd, timeout: 10_000 }),
+          ]);
+          const modified = modifiedOut.trim().split('\n').filter(Boolean);
+          const untracked = untrackedOut.trim().split('\n').filter(Boolean);
+          const dirtyFiles = [...modified, ...untracked];
+          if (dirtyFiles.length > 0) {
+            const listed = dirtyFiles.slice(0, 10).join(', ');
+            const more = dirtyFiles.length > 10 ? ` (and ${dirtyFiles.length - 10} more)` : '';
+            agent.sendMessage(`[System] ⚠ Post-commit warning: Working tree still has uncommitted files: ${listed}${more}. Run \`git status\` to review.`);
           }
         } catch {
-          // Verification is best-effort — don't fail the commit if diff fails
-          logger.debug('commit', `Post-commit verification skipped for ${agent.id.slice(0, 8)} (git diff failed)`);
+          // Best-effort — don't fail the commit report if dirty-tree check fails
+          logger.debug('commit', `Post-commit dirty-tree check skipped for ${agent.id.slice(0, 8)} (git command failed)`);
         }
 
         // Log to ActivityLedger only after verified commit

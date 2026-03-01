@@ -7,6 +7,10 @@
 import type { Agent } from '../Agent.js';
 import type { CommandHandlerContext, Delegation } from './types.js';
 import { logger } from '../../utils/logger.js';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+
+const execAsync = promisify(exec);
 
 // ── Public API (called by CommandDispatcher thin wrappers) ────────────
 
@@ -108,6 +112,9 @@ export function notifyParentOfCompletion(ctx: CommandHandlerContext, agent: Agen
 
   logger.info('delegation', `Child ${agent.role.name} (${agent.id.slice(0, 8)}) → parent ${parent.role.name} (${parent.id.slice(0, 8)}): ${status}`);
   parent.sendMessage(summary);
+
+  // Fix 4: Pre-termination commit check — warn parent if agent has dirty locked files
+  checkDirtyLockedFiles(ctx, agent, parent);
   ctx.emit('agent:message_sent', {
     from: agent.id,
     fromRole: agent.role.name,
@@ -177,4 +184,32 @@ export function cleanupStaleDelegations(ctx: CommandHandlerContext, maxAgeMs = 3
     }
   }
   return count;
+}
+
+// ── Fix 4: Pre-termination dirty-file check ──────────────────────────
+
+function checkDirtyLockedFiles(ctx: CommandHandlerContext, agent: Agent, parent: Agent): void {
+  let locks: { filePath: string }[];
+  try {
+    locks = ctx.lockRegistry.getByAgent(agent.id);
+  } catch {
+    return; // lockRegistry not available in this context
+  }
+  if (locks.length === 0) return;
+
+  const cwd = agent.cwd || process.cwd();
+  const filePaths = locks.map(l => `'${l.filePath.replace(/'/g, "'\\''")}'`).join(' ');
+
+  execAsync(`git diff --name-only -- ${filePaths}`, { cwd, timeout: 10_000 })
+    .then(({ stdout }) => {
+      const dirtyFiles = stdout.trim().split('\n').filter(Boolean);
+      if (dirtyFiles.length > 0) {
+        const listed = dirtyFiles.slice(0, 10).join(', ');
+        const more = dirtyFiles.length > 10 ? ` (and ${dirtyFiles.length - 10} more)` : '';
+        parent.sendMessage(`[System] ⚠ Warning: Agent ${agent.role.name} (${agent.id.slice(0, 8)}) terminated with uncommitted changes in locked files: ${listed}${more}. These changes may be lost.`);
+      }
+    })
+    .catch(() => {
+      // Best-effort — don't block termination flow if git check fails
+    });
 }

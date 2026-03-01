@@ -170,16 +170,16 @@ describe('CommandDispatcher', () => {
   });
 
   describe('UNLOCK_FILE', () => {
-    it('releases lock via lockRegistry.release', () => {
+    it('releases lock via lockRegistry.release', async () => {
       dispatch(dispatcher, leadAgent, '⟦ UNLOCK_FILE {"filePath": "src/index.ts"} ⟧');
 
-      expect(ctx.lockRegistry.release).toHaveBeenCalledWith(
+      await vi.waitFor(() => expect(ctx.lockRegistry.release).toHaveBeenCalledWith(
         leadAgent.id,
         'src/index.ts',
-      );
-      expect((leadAgent.sendMessage as any)).toHaveBeenCalledWith(
+      ));
+      await vi.waitFor(() => expect((leadAgent.sendMessage as any)).toHaveBeenCalledWith(
         expect.stringContaining('Lock released'),
-      );
+      ));
     });
   });
 
