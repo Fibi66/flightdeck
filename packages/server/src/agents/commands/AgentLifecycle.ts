@@ -531,22 +531,30 @@ function autoCreateDagTask(
 ): AutoCreateResult {
   const depNotes: string[] = [];
 
-  // Check for near-duplicate before auto-creating
+  // Check for near-duplicate before auto-creating (active tasks only — done/skipped/cancelled are fair game for re-delegation)
   const existingTasks = ctx.taskDAG.getTasks(leadId);
-  const nearDuplicate = existingTasks.find(
-    t => descriptionSimilarity(taskText, t.description, t.title) > NEAR_DUPLICATE_THRESHOLD
-  );
+  const nearDuplicate = existingTasks
+    .filter(t => !['done', 'skipped', 'cancelled'].includes(t.dagStatus))
+    .find(
+      t => descriptionSimilarity(taskText, t.description, t.title) > NEAR_DUPLICATE_THRESHOLD
+    );
   if (nearDuplicate) {
     return { created: false, taskId: '', duplicate: nearDuplicate.id, depNotes };
   }
 
   const autoId = generateAutoTaskId(role, taskText);
-  const autoTask = ctx.taskDAG.addTask(leadId, {
-    id: autoId,
-    role,
-    title: taskText.slice(0, 120),
-    description: taskText,
-  });
+  let autoTask;
+  try {
+    autoTask = ctx.taskDAG.addTask(leadId, {
+      id: autoId,
+      role,
+      title: taskText.slice(0, 120),
+      description: taskText,
+    });
+  } catch (e: any) {
+    logger.warn('delegation', `Auto-DAG creation failed for "${autoId}": ${e.message}`);
+    return { created: false, taskId: autoId, depNotes };
+  }
 
   const started = ctx.taskDAG.startTask(leadId, autoTask.id, agentId);
   if (!started) {
@@ -612,7 +620,8 @@ export function inferReviewDependencies(
   const allTasks = ctx.taskDAG.getTasks(leadId);
 
   // Strategy 1: Agent ID reference (e.g., "review commit by 0b85de78")
-  for (const m of taskDesc.matchAll(/\b([0-9a-f]{8,})\b/g)) {
+  // Exactly 8 hex chars to avoid matching commit SHAs, color codes, etc.
+  for (const m of taskDesc.matchAll(/\b([0-9a-f]{8})\b/g)) {
     const refId = m[1];
     const task = allTasks.find(t =>
       t.assignedAgentId?.startsWith(refId) &&
@@ -622,12 +631,13 @@ export function inferReviewDependencies(
   }
 
   // Strategy 2: DAG task ID reference (e.g., "review p0-2-autolink")
+  // Prefer exact match; fall back to prefix only if no exact match found
   for (const m of taskDesc.matchAll(/\b(p\d+-\d+[-\w]*|auto-[-\w]+)\b/gi)) {
-    const task = allTasks.find(t =>
-      t.id.toLowerCase() === m[1].toLowerCase() ||
-      t.id.toLowerCase().startsWith(m[1].toLowerCase())
-    );
-    if (task && !deps.includes(task.id)) deps.push(task.id);
+    const ref = m[1].toLowerCase();
+    const exact = allTasks.find(t => t.id.toLowerCase() === ref);
+    if (exact && !deps.includes(exact.id)) { deps.push(exact.id); continue; }
+    const prefix = allTasks.find(t => t.id.toLowerCase().startsWith(ref));
+    if (prefix && !deps.includes(prefix.id)) deps.push(prefix.id);
   }
 
   // Strategy 3: Role reference (e.g., "review the developer's work")

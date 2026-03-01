@@ -401,6 +401,129 @@ describe('Tier 1: Explicit depends_on from payload', () => {
   });
 });
 
+describe('Critical review fixes', () => {
+  it('#1: addTask exception is caught gracefully (no crash on ID collision)', () => {
+    const ctx = makeCtx({
+      taskDAG: {
+        ...makeCtx().taskDAG,
+        getTasks: vi.fn().mockReturnValue([]),
+        findReadyTask: vi.fn().mockReturnValue(null),
+        addTask: vi.fn().mockImplementation(() => { throw new Error('Task "auto-x" already exists'); }),
+        getTask: vi.fn().mockReturnValue(null),
+        getStatus: vi.fn().mockReturnValue({ tasks: [], fileLockMap: {}, summary: { pending: 0, ready: 0, running: 0 } }),
+        hasActiveTasks: vi.fn().mockReturnValue(false),
+        hasAnyTasks: vi.fn().mockReturnValue(false),
+      },
+    });
+    const agent = makeLeadAgent();
+    const cmd = getCreateAgentHandler(ctx);
+
+    // Should not throw — gracefully handles the error
+    cmd.handler(agent, '⟦ CREATE_AGENT {"role": "developer", "task": "Build something"} ⟧');
+
+    // Agent still gets created (ack message sent)
+    expect(agent.sendMessage).toHaveBeenCalled();
+  });
+
+  it('#2: near-duplicate check ignores done/skipped/cancelled tasks', () => {
+    const doneTasks = [{
+      id: 'old-task', role: 'developer', dagStatus: 'done',
+      description: 'Fix the CSS styling', title: 'Fix CSS', dependsOn: [], files: [],
+    }];
+    const ctx = makeCtx({
+      taskDAG: {
+        ...makeCtx().taskDAG,
+        getTasks: vi.fn().mockReturnValue(doneTasks),
+        findReadyTask: vi.fn().mockReturnValue(null),
+        addTask: vi.fn().mockImplementation((_: string, t: any) => ({
+          id: t.id, role: t.role, title: t.title, description: t.description || '',
+          dagStatus: 'ready', dependsOn: [], files: [], priority: 0,
+        })),
+        startTask: vi.fn().mockReturnValue({ id: 'started', dagStatus: 'running' }),
+        addDependency: vi.fn().mockReturnValue(true),
+        getTask: vi.fn().mockReturnValue(null),
+        getStatus: vi.fn().mockReturnValue({ tasks: [], fileLockMap: {}, summary: { pending: 0, ready: 0, running: 0 } }),
+        hasActiveTasks: vi.fn().mockReturnValue(false),
+        hasAnyTasks: vi.fn().mockReturnValue(false),
+      },
+    });
+    const agent = makeLeadAgent();
+    const cmd = getCreateAgentHandler(ctx);
+
+    // Same description as old completed task — should NOT be blocked
+    cmd.handler(agent, '⟦ CREATE_AGENT {"role": "developer", "task": "Fix the CSS styling"} ⟧');
+
+    expect(ctx.taskDAG.addTask).toHaveBeenCalled();
+  });
+
+  it('#3: hex regex only matches exactly 8-char agent IDs', () => {
+    const tasks = [
+      { id: 'task-1', role: 'developer', assignedAgentId: 'deadbeef-full-uuid', dagStatus: 'running', description: 'Work', dependsOn: [], files: [] },
+    ];
+    const ctx = makeCtx({
+      taskDAG: {
+        ...makeCtx().taskDAG,
+        getTasks: vi.fn().mockReturnValue(tasks),
+        findReadyTask: vi.fn().mockReturnValue(null),
+        addTask: vi.fn().mockImplementation((_: string, t: any) => ({
+          id: t.id, role: t.role, title: t.title, description: t.description || '',
+          dagStatus: 'ready', dependsOn: [], files: [], priority: 0,
+        })),
+        startTask: vi.fn().mockReturnValue({ id: 'started', dagStatus: 'running' }),
+        addDependency: vi.fn().mockReturnValue(true),
+        getTask: vi.fn().mockReturnValue(null),
+        getStatus: vi.fn().mockReturnValue({ tasks: [], fileLockMap: {}, summary: { pending: 0, ready: 0, running: 0 } }),
+        hasActiveTasks: vi.fn().mockReturnValue(false),
+        hasAnyTasks: vi.fn().mockReturnValue(false),
+      },
+    });
+    const agent = makeLeadAgent();
+    const cmd = getCreateAgentHandler(ctx);
+
+    // 40-char SHA should NOT match as agent ID
+    cmd.handler(agent, '⟦ CREATE_AGENT {"role": "code-reviewer", "task": "Review commit deadbeefcafe1234abcd5678 for bugs"} ⟧');
+
+    // Should not create dependency from long hex string
+    expect(ctx.taskDAG.addDependency).not.toHaveBeenCalled();
+  });
+
+  it('#5: exact task ID match preferred over prefix match', () => {
+    const tasks = [
+      { id: 'p0-2', role: 'developer', dagStatus: 'running', description: 'Short task', dependsOn: [], files: [] },
+      { id: 'p0-2-autolink', role: 'developer', dagStatus: 'running', description: 'Autolink task', dependsOn: [], files: [] },
+    ];
+    const ctx = makeCtx({
+      taskDAG: {
+        ...makeCtx().taskDAG,
+        getTasks: vi.fn().mockReturnValue(tasks),
+        findReadyTask: vi.fn().mockReturnValue(null),
+        addTask: vi.fn().mockImplementation((_: string, t: any) => ({
+          id: t.id, role: t.role, title: t.title, description: t.description || '',
+          dagStatus: 'ready', dependsOn: [], files: [], priority: 0,
+        })),
+        startTask: vi.fn().mockReturnValue({ id: 'started', dagStatus: 'running' }),
+        addDependency: vi.fn().mockReturnValue(true),
+        getTask: vi.fn().mockReturnValue(null),
+        getStatus: vi.fn().mockReturnValue({ tasks: [], fileLockMap: {}, summary: { pending: 0, ready: 0, running: 0 } }),
+        hasActiveTasks: vi.fn().mockReturnValue(false),
+        hasAnyTasks: vi.fn().mockReturnValue(false),
+      },
+      roleRegistry: {
+        get: vi.fn().mockReturnValue({ id: 'code-reviewer', name: 'Code Reviewer' }),
+        getAll: vi.fn().mockReturnValue([]),
+      },
+    });
+    const agent = makeLeadAgent();
+    const cmd = getCreateAgentHandler(ctx);
+
+    // "p0-2" should match "p0-2" exactly, not prefix-match "p0-2-autolink"
+    cmd.handler(agent, '⟦ CREATE_AGENT {"role": "code-reviewer", "task": "Review p0-2 implementation"} ⟧');
+
+    // The dependency should be on "p0-2" (exact), not "p0-2-autolink" (prefix)
+    expect(ctx.taskDAG.addDependency).toHaveBeenCalledWith('lead-001', expect.any(String), 'p0-2');
+  });
+});
+
 describe('Tier 3: Secretary-assisted dependency inference', () => {
   function makeSecretaryCtx(tasks: any[] = [], secretaryAgent?: any): CommandHandlerContext {
     return makeCtx({
