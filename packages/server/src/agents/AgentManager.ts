@@ -668,6 +668,9 @@ export class AgentManager extends TypedEmitter<AgentManagerEvents> {
       return secretary;
     } catch (err: any) {
       logger.warn('agent', `Failed to auto-spawn secretary: ${err.message}`);
+      setTimeout(() => {
+        leadAgent.sendMessage(`[System] Auto-secretary spawn failed: ${err.message}. You can manually create one with CREATE_AGENT.`);
+      }, 2000);
       return null;
     }
   }
