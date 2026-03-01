@@ -328,4 +328,47 @@ describe('COMPLETE_TASK from lead agent', () => {
     expect(agent.sendMessage).toHaveBeenCalledWith(expect.stringContaining('Cannot complete task'));
     expect(ctx.taskDAG.completeTask).not.toHaveBeenCalled();
   });
+
+  it('accepts output field as summary alias for lead', () => {
+    const ctx = makeCtx();
+    const agent = makeLeadAgent();
+    const cmd = getCompleteHandler(ctx);
+
+    cmd.handler(agent, '[[[ COMPLETE_TASK {"id": "task-1", "output": "Build successful"} ]]]');
+
+    expect(ctx.taskDAG.completeTask).toHaveBeenCalledWith(agent.id, 'task-1');
+    expect(agent.sendMessage).toHaveBeenCalledWith(expect.stringContaining('Build successful'));
+  });
+});
+
+describe('COMPLETE_TASK edge cases', () => {
+  it('completes DAG task even when parent is terminated (getAgent returns undefined)', () => {
+    const ctx = makeCtx({
+      getAgent: vi.fn().mockReturnValue(undefined),
+    });
+    const agent = makeChildAgent('lead-001', { dagTaskId: 'task-1' });
+    const cmd = getCompleteHandler(ctx);
+
+    cmd.handler(agent, '[[[ COMPLETE_TASK {"summary": "Done"} ]]]');
+
+    // DAG task should still be completed even though parent is gone
+    expect(ctx.taskDAG.completeTask).toHaveBeenCalledWith('lead-001', 'task-1');
+    expect(ctx.emit).toHaveBeenCalledWith('dag:updated', { leadId: 'lead-001' });
+    expect(agent.sendMessage).toHaveBeenCalledWith(expect.stringContaining('marked as done in DAG'));
+  });
+
+  it('skips parent notification when parent is terminated but still emits events', () => {
+    const ctx = makeCtx({
+      getAgent: vi.fn().mockReturnValue(undefined),
+    });
+    const agent = makeChildAgent('lead-001', { dagTaskId: 'task-1' });
+    const cmd = getCompleteHandler(ctx);
+
+    cmd.handler(agent, '[[[ COMPLETE_TASK {"summary": "Done"} ]]]');
+
+    // agent:message_sent should NOT be emitted since parent doesn't exist
+    expect(ctx.emit).not.toHaveBeenCalledWith('agent:message_sent', expect.anything());
+    // But dag:updated should still fire
+    expect(ctx.emit).toHaveBeenCalledWith('dag:updated', { leadId: 'lead-001' });
+  });
 });

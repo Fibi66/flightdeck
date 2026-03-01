@@ -7,6 +7,13 @@
 import type { Agent } from '../Agent.js';
 import type { DagTaskInput } from '../../tasks/TaskDAG.js';
 import type { CommandEntry, CommandHandlerContext } from './types.js';
+import {
+  parseCommandPayload,
+  declareTasksSchema,
+  addTaskSchema,
+  taskIdSchema,
+  completeTaskSchema,
+} from './commandSchemas.js';
 
 // ── Regex patterns ────────────────────────────────────────────────────
 
@@ -31,28 +38,8 @@ function handleDeclareTasks(ctx: CommandHandlerContext, agent: Agent, data: stri
   const match = data.match(DECLARE_TASKS_REGEX);
   if (!match) return;
   try {
-    const req = JSON.parse(match[1]);
-    if (!req.tasks || !Array.isArray(req.tasks)) {
-      agent.sendMessage('[System] DECLARE_TASKS requires a "tasks" array.');
-      return;
-    }
-    // Validate each task before passing to DAG (match ADD_TASK validation)
-    for (let i = 0; i < req.tasks.length; i++) {
-      const t = req.tasks[i];
-      const id = typeof t.id === 'string' ? t.id.trim() : '';
-      if (!id) {
-        agent.sendMessage(`[System] DECLARE_TASKS error: Task at index ${i} is missing required field "id".`);
-        return;
-      }
-      if (id.length > 100) {
-        agent.sendMessage(`[System] DECLARE_TASKS error: Task "${id.slice(0, 20)}..." has invalid id (too long, max 100 chars).`);
-        return;
-      }
-      if (!t.role || (typeof t.role === 'string' && !t.role.trim())) {
-        agent.sendMessage(`[System] DECLARE_TASKS error: Task at index ${i} is missing required field "role".`);
-        return;
-      }
-    }
+    const req = parseCommandPayload(agent, match[1], declareTasksSchema, 'DECLARE_TASKS');
+    if (!req) return;
     const { tasks, conflicts } = ctx.taskDAG.declareTaskBatch(agent.id, req.tasks as DagTaskInput[]);
     let msg = `[System] Task DAG declared: ${tasks.length} tasks added.`;
     const readyCount = tasks.filter(t => t.dagStatus === 'ready').length;
@@ -117,7 +104,8 @@ function handlePauseTask(ctx: CommandHandlerContext, agent: Agent, data: string)
   const match = data.match(PAUSE_TASK_REGEX);
   if (!match) return;
   try {
-    const req = JSON.parse(match[1]);
+    const req = parseCommandPayload(agent, match[1], taskIdSchema, 'PAUSE_TASK');
+    if (!req) return;
     const ok = ctx.taskDAG.pauseTask(agent.id, req.id);
     agent.sendMessage(ok ? `[System] Task "${req.id}" paused.` : `[System] Cannot pause task "${req.id}" (must be pending or ready).`);
   } catch { agent.sendMessage('[System] PAUSE_TASK error: invalid payload.'); }
@@ -128,7 +116,8 @@ function handleRetryTask(ctx: CommandHandlerContext, agent: Agent, data: string)
   const match = data.match(RETRY_TASK_REGEX);
   if (!match) return;
   try {
-    const req = JSON.parse(match[1]);
+    const req = parseCommandPayload(agent, match[1], taskIdSchema, 'RETRY_TASK');
+    if (!req) return;
     const ok = ctx.taskDAG.retryTask(agent.id, req.id);
     if (ok) {
       agent.sendMessage(`[System] Task "${req.id}" reset to ready. Dependents unblocked. Use DELEGATE or CREATE_AGENT to assign it.`);
@@ -143,7 +132,8 @@ function handleSkipTask(ctx: CommandHandlerContext, agent: Agent, data: string):
   const match = data.match(SKIP_TASK_REGEX);
   if (!match) return;
   try {
-    const req = JSON.parse(match[1]);
+    const req = parseCommandPayload(agent, match[1], taskIdSchema, 'SKIP_TASK');
+    if (!req) return;
     const ok = ctx.taskDAG.skipTask(agent.id, req.id);
     if (ok) {
       agent.sendMessage(`[System] Task "${req.id}" skipped. Dependents may now be ready. Use TASK_STATUS to check.`);
@@ -158,8 +148,8 @@ function handleAddTask(ctx: CommandHandlerContext, agent: Agent, data: string): 
   const match = data.match(ADD_TASK_REGEX);
   if (!match) return;
   try {
-    const req = JSON.parse(match[1]) as DagTaskInput;
-    if (!req.id || !req.role) { agent.sendMessage('[System] ADD_TASK requires "id" and "role".'); return; }
+    const req = parseCommandPayload(agent, match[1], addTaskSchema, 'ADD_TASK');
+    if (!req) return;
     const task = ctx.taskDAG.addTask(agent.id, req);
     let msg = `[System] Task "${task.id}" added (${task.dagStatus}).`;
     if (task.dagStatus === 'ready') {
@@ -174,7 +164,8 @@ function handleCancelTask(ctx: CommandHandlerContext, agent: Agent, data: string
   const match = data.match(CANCEL_TASK_REGEX);
   if (!match) return;
   try {
-    const req = JSON.parse(match[1]);
+    const req = parseCommandPayload(agent, match[1], taskIdSchema, 'CANCEL_TASK');
+    if (!req) return;
     const ok = ctx.taskDAG.cancelTask(agent.id, req.id);
     agent.sendMessage(ok ? `[System] Task "${req.id}" cancelled.` : `[System] Cannot cancel task "${req.id}" (may be running or done).`);
   } catch { agent.sendMessage('[System] CANCEL_TASK error: invalid payload.'); }
@@ -195,7 +186,8 @@ function handleCompleteTask(ctx: CommandHandlerContext, agent: Agent, data: stri
   if (!match) return;
 
   try {
-    const req = JSON.parse(match[1]);
+    const req = parseCommandPayload(agent, match[1], completeTaskSchema, 'COMPLETE_TASK');
+    if (!req) return;
 
     // Non-lead agents: relay completion to parent lead's DAG
     if (agent.role.id !== 'lead') {
@@ -262,6 +254,7 @@ function handleCompleteTask(ctx: CommandHandlerContext, agent: Agent, data: stri
       agent.sendMessage('[System] COMPLETE_TASK requires an "id" field (the DAG task ID).');
       return;
     }
+    const summary = req.summary || req.output;
     const error = ctx.taskDAG.getTransitionError(agent.id, req.id, 'complete');
     if (error) {
       agent.sendMessage(`[System] Cannot complete task "${req.id}": ${error.currentStatus === 'not_found' ? 'task not found.' : `current status is "${error.currentStatus}". Must be running or ready.`}`);
@@ -269,6 +262,7 @@ function handleCompleteTask(ctx: CommandHandlerContext, agent: Agent, data: stri
     }
     const newlyReady = ctx.taskDAG.completeTask(agent.id, req.id);
     let msg = `[System] Task "${req.id}" marked as done.`;
+    if (summary) msg += ` Summary: ${summary}`;
     if (newlyReady && newlyReady.length > 0) {
       const readyNames = newlyReady.map(d => d.id).join(', ');
       msg += ` Newly ready tasks: ${readyNames}. Use DELEGATE or CREATE_AGENT to assign them.`;
