@@ -10,6 +10,7 @@ import type { CommandHandlerContext, CommandEntry } from './types.js';
 import { logger } from '../../utils/logger.js';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { parseCommandPayload, requestLimitChangeSchema } from './commandSchemas.js';
 
 // ── Regex patterns ────────────────────────────────────────────────────
 
@@ -133,13 +134,10 @@ function handleRequestLimitChange(ctx: CommandHandlerContext, agent: Agent, data
   }
   const match = data.match(REQUEST_LIMIT_CHANGE_REGEX);
   if (!match) return;
+  const req = parseCommandPayload(agent, match[1], requestLimitChangeSchema, 'REQUEST_LIMIT_CHANGE');
+  if (!req) return;
   try {
-    const req = JSON.parse(match[1]);
-    const newLimit = parseInt(req.limit, 10);
-    if (!newLimit || newLimit < 1 || newLimit > 100) {
-      agent.sendMessage('[System] REQUEST_LIMIT_CHANGE error: limit must be between 1 and 100.');
-      return;
-    }
+    const newLimit = req.limit;
     const currentLimit = ctx.maxConcurrent;
     const decision = ctx.decisionLog.add(
       agent.id,

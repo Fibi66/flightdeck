@@ -7,6 +7,7 @@
  */
 import type { Agent } from '../Agent.js';
 import type { CommandHandlerContext, CommandEntry } from './types.js';
+import { parseCommandPayload, acquireCapabilitySchema } from './commandSchemas.js';
 
 // ── Regex patterns ────────────────────────────────────────────────────
 
@@ -23,8 +24,9 @@ function handleAcquire(ctx: CommandHandlerContext, agent: Agent, data: string): 
   }
   const match = data.match(ACQUIRE_REGEX);
   if (!match) return;
+  const parsed = parseCommandPayload(agent, match[1], acquireCapabilitySchema, 'ACQUIRE_CAPABILITY');
+  if (!parsed) return;
   try {
-    const parsed = JSON.parse(match[1]);
     const { ok, message } = ctx.capabilityInjector.acquire(
       agent,
       parsed.capability,

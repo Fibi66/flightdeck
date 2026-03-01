@@ -8,6 +8,14 @@ import type { CommandHandlerContext, CommandEntry } from './types.js';
 import { logger } from '../../utils/logger.js';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import {
+  parseCommandPayload,
+  lockFileSchema,
+  unlockFileSchema,
+  activitySchema,
+  decisionSchema,
+  commitSchema,
+} from './commandSchemas.js';
 
 const execAsync = promisify(exec);
 
@@ -27,7 +35,8 @@ function handleLockRequest(ctx: CommandHandlerContext, agent: Agent, data: strin
   if (!match) return;
 
   try {
-    const request = JSON.parse(match[1]);
+    const request = parseCommandPayload(agent, match[1], lockFileSchema, 'LOCK_FILE');
+    if (!request) return;
     const agentRole = agent.role?.id ?? 'unknown';
     const result = ctx.lockRegistry.acquire(agent.id, agentRole, request.filePath, request.reason);
     if (result.ok) {
@@ -54,7 +63,8 @@ function handleLockRelease(ctx: CommandHandlerContext, agent: Agent, data: strin
   if (!match) return;
 
   try {
-    const request = JSON.parse(match[1]);
+    const request = parseCommandPayload(agent, match[1], unlockFileSchema, 'UNLOCK_FILE');
+    if (!request) return;
     const released = ctx.lockRegistry.release(agent.id, request.filePath);
     if (released) {
       const agentRole = agent.role?.id ?? 'unknown';
@@ -73,12 +83,13 @@ function handleActivity(ctx: CommandHandlerContext, agent: Agent, data: string):
   if (!match) return;
 
   try {
-    const entry = JSON.parse(match[1]);
+    const entry = parseCommandPayload(agent, match[1], activitySchema, 'ACTIVITY');
+    if (!entry) return;
     const agentRole = agent.role?.id ?? 'unknown';
     ctx.activityLedger.log(
       agent.id,
       agentRole,
-      entry.actionType ?? 'message_sent',
+      entry.actionType ?? 'message_sent' as any,
       entry.summary ?? '',
       entry.details ?? {},
     );
@@ -92,8 +103,8 @@ function handleDecision(ctx: CommandHandlerContext, agent: Agent, data: string):
   if (!match) return;
 
   try {
-    const decision = JSON.parse(match[1]);
-    if (!decision.title) return;
+    const decision = parseCommandPayload(agent, match[1], decisionSchema, 'DECISION');
+    if (!decision) return;
 
     const needsConfirmation = decision.needsConfirmation === true;
     const leadId = agent.parentId || agent.id;
@@ -120,10 +131,16 @@ function handleProgress(ctx: CommandHandlerContext, agent: Agent, data: string):
   if (!match) return;
 
   try {
-    const manual = JSON.parse(match[1]);
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(match[1]);
+    } catch {
+      agent.sendMessage('[System] PROGRESS error: invalid JSON payload.');
+      return;
+    }
     const leadId = agent.role.id === 'lead' ? agent.id : agent.parentId;
 
-    let progress: Record<string, unknown> = { ...manual };
+    let progress: Record<string, unknown> = { ...parsed };
     if (leadId) {
       const dagStatus = ctx.taskDAG.getStatus(leadId);
       if (dagStatus.tasks.length > 0) {
@@ -160,7 +177,8 @@ function handleCommit(ctx: CommandHandlerContext, agent: Agent, data: string): v
   const match = data.match(COMMIT_REGEX);
   if (!match) return;
   try {
-    const req = JSON.parse(match[1]);
+    const req = parseCommandPayload(agent, match[1], commitSchema, 'COMMIT');
+    if (!req) return;
     const message = req.message || `Changes by ${agent.role.name} (${agent.id.slice(0, 8)})`;
 
     const currentLocks = ctx.lockRegistry.getByAgent(agent.id);

@@ -1,6 +1,11 @@
 import type { Agent } from '../Agent.js';
 import type { CommandHandlerContext, CommandEntry } from './types.js';
 import { logger } from '../../utils/logger.js';
+import {
+  parseCommandPayload,
+  deferIssueSchema,
+  resolveDeferredSchema,
+} from './commandSchemas.js';
 
 // ── Regex patterns ──────────────────────────────────────────────────
 
@@ -24,11 +29,8 @@ function handleDeferIssue(ctx: CommandHandlerContext, agent: Agent, data: string
   const match = data.match(DEFER_ISSUE_REGEX);
   if (!match) return;
   try {
-    const req = JSON.parse(match[1]);
-    if (!req.description) {
-      agent.sendMessage('[System] DEFER_ISSUE requires a "description" field.');
-      return;
-    }
+    const req = parseCommandPayload(agent, match[1], deferIssueSchema, 'DEFER_ISSUE');
+    if (!req) return;
     const leadId = agent.role.id === 'lead' ? agent.id : agent.parentId;
     if (!leadId) {
       agent.sendMessage('[System] Cannot defer issue: no lead context found.');
@@ -86,11 +88,8 @@ function handleResolveDeferred(ctx: CommandHandlerContext, agent: Agent, data: s
   const match = data.match(RESOLVE_DEFERRED_REGEX);
   if (!match) return;
   try {
-    const req = JSON.parse(match[1]);
-    if (!req.id) {
-      agent.sendMessage('[System] RESOLVE_DEFERRED requires an "id" field.');
-      return;
-    }
+    const req = parseCommandPayload(agent, match[1], resolveDeferredSchema, 'RESOLVE_DEFERRED');
+    if (!req) return;
     const leadId = agent.role.id === 'lead' ? agent.id : agent.parentId;
     if (!leadId) {
       agent.sendMessage('[System] No deferred issues context found.');

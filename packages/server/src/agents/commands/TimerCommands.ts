@@ -6,6 +6,11 @@
 import type { Agent } from '../Agent.js';
 import type { CommandHandlerContext, CommandEntry } from './types.js';
 import { logger } from '../../utils/logger.js';
+import {
+  parseCommandPayload,
+  setTimerSchema,
+  cancelTimerSchema,
+} from './commandSchemas.js';
 
 // ── Regex patterns ────────────────────────────────────────────────────
 
@@ -20,17 +25,10 @@ function handleSetTimer(ctx: CommandHandlerContext, agent: Agent, data: string):
   if (!match) return;
 
   try {
-    const req = JSON.parse(match[1]);
-    if (!req.label || !req.delay || !req.message) {
-      agent.sendMessage('[System] SET_TIMER requires: {"label": "name", "delay": seconds, "message": "reminder text", "repeat": false}');
-      return;
-    }
+    const req = parseCommandPayload(agent, match[1], setTimerSchema, 'SET_TIMER');
+    if (!req) return;
 
-    const delay = Number(req.delay);
-    if (isNaN(delay) || delay < 5 || delay > 86400) {
-      agent.sendMessage('[System] SET_TIMER delay must be between 5 and 86400 seconds (24 hours).');
-      return;
-    }
+    const delay = req.delay;
 
     const timer = ctx.timerRegistry!.create(agent.id, {
       label: req.label,
@@ -57,12 +55,10 @@ function handleCancelTimer(ctx: CommandHandlerContext, agent: Agent, data: strin
   if (!match) return;
 
   try {
-    const req = JSON.parse(match[1]);
-    const timerId = req.id || req.name;
-    if (!timerId) {
-      agent.sendMessage('[System] CANCEL_TIMER requires: {"id": "timer-id"} or {"name": "timer-label"}');
-      return;
-    }
+    const req = parseCommandPayload(agent, match[1], cancelTimerSchema, 'CANCEL_TIMER');
+    if (!req) return;
+    const timerId = (req.id || req.name)!;
+    // timerId is guaranteed non-empty by the schema's refine check
 
     // Try by ID first, then by label
     let cancelled = ctx.timerRegistry!.cancel(timerId, agent.id);

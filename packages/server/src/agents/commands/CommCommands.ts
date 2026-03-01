@@ -2,6 +2,15 @@ import { isTerminalStatus } from '../Agent.js';
 import type { Agent } from '../Agent.js';
 import type { CommandHandlerContext, CommandEntry, Delegation } from './types.js';
 import { logger } from '../../utils/logger.js';
+import {
+  parseCommandPayload,
+  agentMessageSchema,
+  broadcastSchema,
+  createGroupSchema,
+  addToGroupSchema,
+  removeFromGroupSchema,
+  groupMessageSchema,
+} from './commandSchemas.js';
 
 // ── Regex patterns ──────────────────────────────────────────────────
 
@@ -90,8 +99,8 @@ function handleAgentMessage(ctx: CommandHandlerContext, agent: Agent, data: stri
   if (!match) return;
 
   try {
-    const msg = JSON.parse(match[1]);
-    if (!msg.to || !msg.content) return;
+    const msg = parseCommandPayload(agent, match[1], agentMessageSchema, 'AGENT_MESSAGE');
+    if (!msg) return;
 
     // Resolve "to" — could be full UUID, short ID prefix, role ID, or role name
     let targetId = msg.to;
@@ -157,8 +166,8 @@ function handleBroadcast(ctx: CommandHandlerContext, agent: Agent, data: string)
   if (!match) return;
 
   try {
-    const msg = JSON.parse(match[1]);
-    if (!msg.content) return;
+    const msg = parseCommandPayload(agent, match[1], broadcastSchema, 'BROADCAST');
+    if (!msg) return;
 
     const leadId = agent.role.id === 'lead' ? agent.id : agent.parentId;
     if (!leadId) {
@@ -202,11 +211,8 @@ function handleCreateGroup(ctx: CommandHandlerContext, agent: Agent, data: strin
   const match = data.match(CREATE_GROUP_REGEX);
   if (!match) return;
   try {
-    const req = JSON.parse(match[1]);
-    if (!req.name || (!req.members && !req.roles) || (req.members && !Array.isArray(req.members))) {
-      agent.sendMessage('[System] CREATE_GROUP requires "name" and either "members" (array of agent IDs) or "roles" (array of role names like ["developer", "designer"]).');
-      return;
-    }
+    const req = parseCommandPayload(agent, match[1], createGroupSchema, 'CREATE_GROUP');
+    if (!req) return;
     const leadId = agent.role.id === 'lead' ? agent.id : agent.parentId;
     if (!leadId) {
       agent.sendMessage('[System] Cannot create group — no lead context found.');
@@ -260,8 +266,8 @@ function handleAddToGroup(ctx: CommandHandlerContext, agent: Agent, data: string
   const match = data.match(ADD_TO_GROUP_REGEX);
   if (!match) return;
   try {
-    const req = JSON.parse(match[1]);
-    if (!req.group || !req.members) return;
+    const req = parseCommandPayload(agent, match[1], addToGroupSchema, 'ADD_TO_GROUP');
+    if (!req) return;
 
     const existingGroup = ctx.chatGroupRegistry.findGroupForAgent(req.group, agent.id);
     let leadId: string | undefined;
@@ -312,10 +318,10 @@ function handleRemoveFromGroup(ctx: CommandHandlerContext, agent: Agent, data: s
   const match = data.match(REMOVE_FROM_GROUP_REGEX);
   if (!match) return;
   try {
-    const req = JSON.parse(match[1]);
+    const req = parseCommandPayload(agent, match[1], removeFromGroupSchema, 'REMOVE_FROM_GROUP');
+    if (!req) return;
     const leadId = agent.role.id === 'lead' ? agent.id : agent.parentId;
     if (!leadId) { agent.sendMessage('[System] Cannot manage groups — no lead context found.'); return; }
-    if (!req.group || !req.members) return;
     const resolvedIds = req.members.map((m: string) => {
       const found = ctx.getAllAgents().find((a) => a.id === m || a.id.startsWith(m));
       return found?.id;
@@ -333,8 +339,8 @@ function handleGroupMessage(ctx: CommandHandlerContext, agent: Agent, data: stri
   const match = data.match(GROUP_MESSAGE_REGEX);
   if (!match) return;
   try {
-    const req = JSON.parse(match[1]);
-    if (!req.group || !req.content) return;
+    const req = parseCommandPayload(agent, match[1], groupMessageSchema, 'GROUP_MESSAGE');
+    if (!req) return;
 
     const leadId = agent.role.id === 'lead' ? agent.id : agent.parentId;
     if (!leadId) {
