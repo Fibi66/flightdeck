@@ -428,7 +428,7 @@ Agents embed **structured commands** in their natural language output:
 
 </div>
 
-<p class="text-sm text-gray-500 mt-2">50+ commands across 11 modules. Unicode <code>⟦ ⟧</code> delimiters — zero false positives. All Zod-validated.</p>
+<p class="text-sm text-gray-500 mt-2">50+ commands across 13 modules. Unicode <code>⟦ ⟧</code> delimiters — zero false positives. All Zod-validated.</p>
 
 <!--
 The command system is the core primitive. Agents embed structured commands
@@ -469,7 +469,7 @@ Now let's see how they talk to **each other**.
 
 <div class="text-sm text-gray-400 mt-2">
 
-- Point-to-point, queued
+- Point-to-point, async
 - Resolves by ID prefix or role
 
 </div>
@@ -630,9 +630,9 @@ zero operational overhead.
 ```
 ⟦ DECLARE_TASKS {
   "tasks": [
-    {"id": "api",  "deps": []},
-    {"id": "ui",   "deps": ["api"]},
-    {"id": "test", "deps": ["api","ui"]}
+    {"id": "api",  "depends_on": []},
+    {"id": "ui",   "depends_on": ["api"]},
+    {"id": "test", "depends_on": ["api","ui"]}
   ]
 } ⟧
 ```
@@ -742,57 +742,22 @@ Developer A finishes and commits. But the commit includes Developer B's half-fin
 1. **Code reviewer** caught the missing files immediately
 2. **Lead** broadcast a warning to all 13 agents: *"Never use git add -A"*
 3. **Architect** audited the commit system and found 4 gaps
-4. **Developer** hardened the commit command — it now only stages files you've explicitly claimed
+4. **Developer** hardened the commit command — now only stages files you've locked
+
+</div>
+
+<div class="bg-gray-800 rounded-lg p-2 border border-green-500 mt-2">
+
+🔒 **The fix: file locking.** 8 developers, 15+ files, zero conflicts. Each agent claims files before editing — no merge conflicts, no overwrites.
 
 </div>
 
 <!--
 This is the messy reality of multiple agents sharing one repo. Developer A
-commits and accidentally grabs Developer B's uncommitted changes. Five
-files from another feature never get committed because the agent only locked
-one of six files. The code reviewer caught it immediately. The lead
-broadcast a process warning to all 13 agents simultaneously. The architect
-audited the whole commit system and found gaps. By the end of the session,
-they'd built a hardened commit system. This is what I mean by agents
-behaving like a real team — they don't just code, they improve their own
-processes.
--->
-
-
----
-
-# How 8 Developers Shared One Codebase
-
-<div class="bg-gray-800 rounded-lg p-4 border border-gray-700 mt-2">
-
-<div class="text-sm space-y-1">
-<div class="flex items-center gap-2"><span class="font-mono text-xs text-gray-500 w-16">0b85de</span><span class="text-green-400">→</span> <code class="text-xs">findReadyTask.ts</code> <span class="text-gray-600">🔒</span></div>
-<div class="flex items-center gap-2"><span class="font-mono text-xs text-gray-500 w-16">2cf55f</span><span class="text-green-400">→</span> <code class="text-xs">AgentLifecycle.ts, TaskDAG.ts</code> <span class="text-gray-600">🔒</span></div>
-<div class="flex items-center gap-2"><span class="font-mono text-xs text-gray-500 w-16">bf1ec2</span><span class="text-green-400">→</span> <code class="text-xs">CommEventExtractor.ts, useTimelineSSE.ts</code> <span class="text-gray-600">🔒</span></div>
-<div class="flex items-center gap-2"><span class="font-mono text-xs text-gray-500 w-16">3194c4</span><span class="text-green-400">→</span> <code class="text-xs">CoordCommands.ts</code> <span class="text-gray-600">🔒</span></div>
-<div class="flex items-center gap-2"><span class="font-mono text-xs text-gray-500 w-16">3811ed</span><span class="text-green-400">→</span> <code class="text-xs">BrushTimeSelector.tsx, LeadDashboard.tsx</code> <span class="text-gray-600">🔒</span></div>
-<div class="flex items-center gap-2"><span class="font-mono text-xs text-gray-500 w-16">55753</span><span class="text-green-400">→</span> <code class="text-xs">CommandDispatcher.ts</code> <span class="text-gray-600">🔒</span></div>
-<div class="flex items-center gap-2"><span class="font-mono text-xs text-gray-500 w-16">31022d</span><span class="text-green-400">→</span> <code class="text-xs">TimerDisplay/, AcpOutput.tsx</code> <span class="text-gray-600">🔒</span></div>
-<div class="flex items-center gap-2"><span class="font-mono text-xs text-gray-500 w-16">f026d3</span><span class="text-green-400">→</span> <code class="text-xs">docs/guide/*.md</code> <span class="text-gray-600">🔒</span></div>
-</div>
-
-</div>
-
-<div class="bg-gray-800 rounded-lg p-3 border border-green-500 mt-3">
-
-🔒 **File locking** = each developer "owns" their files. Attempt to edit a locked file → blocked. No merge conflicts, no overwrites, no surprises.
-
-</div>
-
-<p class="text-sm text-gray-500 mt-2">8 developers, 15+ files, zero conflicts. Traditional git would have been a nightmare.</p>
-
-<!--
-Eight developers, one repo, no conflicts. How? File locking. Each developer
-claims the files they need — like checking out a library book. If someone
-else tries to edit a locked file, they're blocked. No merge conflicts, no
-overwritten work. This is pessimistic locking — the same pattern databases
-use. It's not fancy, but it works perfectly when you have 8 agents writing
-code simultaneously.
+commits and accidentally grabs Developer B's uncommitted changes. The code
+reviewer caught it. The lead broadcast a warning. The architect audited
+the system. They built file locking — each developer claims files like
+checking out a library book. 8 developers, 15+ files, zero conflicts.
 -->
 
 
@@ -920,7 +885,7 @@ layout: center
 </div>
 </div>
 
-<div class="text-center text-gray-500 mt-4">~30 minutes of wall clock time. One human. One command.</div>
+<div class="text-center text-gray-500 mt-4">~30 minutes of wall clock time. One human. One command. ~$4 in API tokens.</div>
 
 <!--
 Let this sink in. Read the numbers slowly. 13 agents. 10 features. Over
@@ -1227,6 +1192,18 @@ layout: center
 <br/>
 
 <div class="text-base text-gray-500">This will be available to you. It becomes your personal engineering team.</div>
+
+<br/>
+
+<div class="text-sm text-gray-400">
+
+```bash
+git clone https://github.com/justinchuby/ai-crew.git
+cd ai-crew && npm install && npm run dev
+# Requires: Node.js 20+, GitHub Copilot CLI
+```
+
+</div>
 
 <br/>
 
