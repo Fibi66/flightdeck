@@ -552,7 +552,10 @@ export class TaskDAG extends EventEmitter {
     return ready ? rowToTask(ready) : null;
   }
 
-  /** Find a ready DAG task matching a role (for auto-linking DELEGATE to DAG) */
+  /**
+   * Find a ready DAG task matching a role (for auto-linking DELEGATE to DAG).
+   * @deprecated Use {@link findReadyTask} instead, which supports dagTaskId + description fuzzy matching.
+   */
   findReadyTaskByRole(leadId: string, role: string): DagTask | null {
     const row = this.db.drizzle
       .select()
