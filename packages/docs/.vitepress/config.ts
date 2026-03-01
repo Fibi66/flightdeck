@@ -29,6 +29,7 @@ export default defineConfig({
             { text: 'Agent Commands', link: '/guide/commands' },
             { text: 'Command Syntax', link: '/guide/command-syntax' },
             { text: 'Coordination', link: '/guide/coordination' },
+            { text: 'Auto-DAG', link: '/guide/auto-dag' },
             { text: 'TIDE Protocol', link: '/guide/tide-protocol' },
           ],
         },
