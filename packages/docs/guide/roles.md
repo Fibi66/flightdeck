@@ -6,10 +6,10 @@
 |------|------|-------|---------------|
 | Project Lead | 🎯 | Coordination, delegation, synthesis | Claude Opus 4.6 |
 | Developer | 💻 | Code implementation, tests | Claude Opus 4.6 |
-| Architect | 🏗️ | System design, challenges problem framing | GPT-5.3 Codex |
+| Architect | 🏗️ | System design, challenges problem framing | Claude Opus 4.6 |
 | Code Reviewer | 📖 | Readability, maintainability, patterns | Gemini 3 Pro |
 | Critical Reviewer | 🛡️ | Security, performance, edge cases | Gemini 3 Pro |
-| Product Manager | 🎯 | User needs, product quality, UX | GPT-5.2 Codex |
+| Product Manager | 🎯 | User needs, product quality, UX | GPT-5.3 Codex |
 | Technical Writer | 📝 | Documentation, API design review | GPT-5.2 |
 | Designer | 🎨 | UI/UX, interaction design, accessibility | Claude Opus 4.6 |
 | Generalist | 🔧 | Cross-disciplinary problem solving | Claude Opus 4.6 |
@@ -21,8 +21,8 @@
 
 Roles deliberately use different AI models to bring diverse perspectives:
 
-- **Claude** (Opus 4.6): Lead, Developer, Designer, Generalist
-- **GPT** (5.3 Codex, 5.2 Codex, 5.2, 4.1): Architect, Product Manager, Technical Writer, Secretary
+- **Claude** (Opus 4.6): Lead, Developer, Architect, Designer, Generalist
+- **GPT** (5.3 Codex, 5.2, 4.1): Product Manager, Technical Writer, Secretary
 - **Gemini** (3 Pro): Code Reviewer, Critical Reviewer, Radical Thinker
 - **Claude** (Sonnet 4.6): QA Tester
 
