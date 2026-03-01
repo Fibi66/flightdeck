@@ -439,6 +439,52 @@ Now let's see how they talk to **each other**.
 
 ---
 
+# Parallel workstreams, one lead
+
+<div class="bg-gray-800 rounded-lg p-4 border border-blue-500 mt-2">
+
+**Right now**, in this session, the lead is coordinating simultaneously:
+
+</div>
+
+<div class="grid grid-cols-3 gap-2 mt-3 text-sm">
+<div class="bg-gray-800 rounded-lg p-2 border border-purple-500">
+
+### 🎬 Presentation
+5 agents writing, reviewing, and polishing these slides
+
+</div>
+<div class="bg-gray-800 rounded-lg p-2 border border-green-500">
+
+### 💻 Code
+8 developers implementing features, fixing bugs, writing tests
+
+</div>
+<div class="bg-gray-800 rounded-lg p-2 border border-yellow-500">
+
+### 🔍 Reviews
+Code reviewers and critical reviewers auditing every commit
+
+</div>
+</div>
+
+<div class="bg-gray-800 rounded-lg p-3 border border-gray-700 mt-3 text-sm">
+
+The lead doesn't context-switch — it holds **all workstreams in parallel**. When a developer finishes a feature, the lead assigns a reviewer. When a reviewer finds a bug, the lead assigns a fix. Meanwhile, the presentation team keeps iterating. **13 agents, multiple domains, one coordinator.**
+
+</div>
+
+<!--
+This is a key emergent capability. The lead agent doesn't do one thing at a
+time — it orchestrates parallel workstreams across completely different
+domains. While we were building this presentation, developers were
+implementing features, reviewers were auditing code, and the architect was
+designing new capabilities. The lead coordinates all of it concurrently,
+routing messages, assigning tasks, and resolving conflicts in real-time.
+-->
+
+---
+
 # Three communication channels
 
 <div class="grid grid-cols-3 gap-3 mt-2 text-sm">
@@ -1388,4 +1434,46 @@ after compaction.
 All 13 roles reference. Each has a purpose-built system prompt with
 specific instructions, behavioral guidelines, and model preferences.
 Custom roles can be defined for specialized needs.
+-->
+
+---
+
+# Appendix: Full Tech Stack
+
+<div class="grid grid-cols-2 gap-3 text-sm">
+<div>
+
+### Agent Coordination (main deck)
+<div class="bg-gray-800 rounded-lg p-2 border border-blue-500 mt-1">
+
+- **Agents**: Copilot CLI + ACP (stdio, NDJSON)
+- **Database**: SQLite + better-sqlite3 (WAL mode)
+- **Server**: Node.js + TypeScript
+- **Messaging**: ACP protocol + agent routing
+- **Context**: Content-hashed status updates
+
+</div>
+</div>
+<div>
+
+### Front-end & Tooling
+<div class="bg-gray-800 rounded-lg p-2 border border-gray-700 mt-1">
+
+- **Dashboard**: React + Vite (real-time via WebSocket + SSE)
+- **Documentation**: VitePress
+- **Presentation**: Slidev
+- **Models**: Claude, GPT, Gemini
+- **ORM**: Drizzle ORM
+- **Testing**: Vitest + Playwright
+
+</div>
+</div>
+</div>
+
+<p class="text-sm text-gray-500 mt-2">Monorepo: packages/server (orchestration), packages/web (dashboard), packages/docs (documentation).</p>
+
+<!--
+Full tech stack reference. The main deck focuses on coordination
+infrastructure. This appendix covers the complete stack including
+front-end tooling, testing, and documentation.
 -->
