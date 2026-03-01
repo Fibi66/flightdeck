@@ -886,6 +886,52 @@ The fix is one line: pass files directly to git commit, skipping the index.
 This is why you want specialists who think about failure modes for a living.
 -->
 
+---
+
+# The system improves itself
+
+<div class="bg-gray-800 rounded-lg p-3 border border-green-500 mt-2">
+
+At the end of every session, the crew writes its own **retrospective** — what worked, what broke, what to improve next time.
+
+</div>
+
+<div class="grid grid-cols-3 gap-2 mt-3 text-sm">
+<div class="bg-gray-800 rounded-lg p-2 border border-blue-500 text-center">
+
+### 📝 Session ends
+Crew writes retrospective: bugs found, process gaps, improvement ideas
+
+</div>
+<div class="bg-gray-800 rounded-lg p-2 border border-purple-500 text-center">
+
+### 🎫 Auto-filed
+Retrospective becomes a GitHub issue — prioritized, tracked, assigned
+
+</div>
+<div class="bg-gray-800 rounded-lg p-2 border border-yellow-500 text-center">
+
+### 🔄 Next session
+Crew implements its own fixes — the system literally improves itself
+
+</div>
+</div>
+
+<div class="bg-gray-800 rounded-lg p-3 border border-gray-700 mt-3 text-sm">
+
+**This session is proof.** We started by implementing improvements from our last retrospective ([issue #49](https://github.com/justinchuby/ai-crew/issues/49)). We just filed a new one ([issue #52](https://github.com/justinchuby/ai-crew/issues/52)) for next time. The system that builds software is building *itself*.
+
+</div>
+
+<!--
+This is recursive self-improvement in action. At the end of each session,
+the crew reflects on what worked and what didn't — then files it as a
+GitHub issue. Next session, the crew reads that issue and implements the
+fixes. Today we started by fixing bugs from issue #49 (our last retro),
+and we just filed issue #52 with new improvements for next time. The
+system doesn't just build software — it builds a better version of itself.
+-->
+
 
 ---
 layout: center
