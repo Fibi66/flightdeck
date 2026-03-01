@@ -646,7 +646,7 @@ routing messages, assigning tasks, and resolving conflicts in real-time.
 </div>
 
 ```mermaid
-graph TD
+graph LR
     Lead["🎯 Lead"] --> Dev1["👷 Dev A"] & Dev2["👷 Dev B"] & Arch["🏗️ Architect"] & Rev["🔍 Reviewer"] & Sec["📝 Secretary"]
     Dev1 -.->|"DM"| Arch
     Dev2 -.->|"DM"| Rev
