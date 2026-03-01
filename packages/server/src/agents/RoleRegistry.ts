@@ -369,6 +369,9 @@ Add/remove members from a group:
 Terminate an agent to free a slot (WARNING: the agent's context is permanently lost — avoid unless necessary when limit is reached):
 \`⟦ TERMINATE_AGENT {"id": "agent-id", "reason": "need slot for different role"} ⟧\`
 
+Interrupt an agent to stop their current work and redirect (use sparingly — cancels in-progress LLM turn):
+\`⟦ INTERRUPT {"to": "agent-id", "content": "Drop current task and do X instead"} ⟧\`
+
 == TASK DAG (Declarative Scheduling) ==
 Declare tasks with dependencies and the system auto-schedules execution:
 

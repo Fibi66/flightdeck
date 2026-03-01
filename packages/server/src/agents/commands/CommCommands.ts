@@ -5,6 +5,7 @@ import { logger } from '../../utils/logger.js';
 import {
   parseCommandPayload,
   agentMessageSchema,
+  interruptSchema,
   broadcastSchema,
   createGroupSchema,
   addToGroupSchema,
@@ -22,6 +23,7 @@ const REMOVE_FROM_GROUP_REGEX = /⟦\s*REMOVE_FROM_GROUP\s*(\{.*?\})\s*⟧/s;
 const GROUP_MESSAGE_REGEX = /⟦\s*GROUP_MESSAGE\s*(\{.*?\})\s*⟧/s;
 const LIST_GROUPS_REGEX = /⟦\s*LIST_GROUPS\s*⟧/s;
 const QUERY_GROUPS_REGEX = /⟦\s*QUERY_GROUPS\s*⟧/s;
+const INTERRUPT_REGEX = /⟦\s*INTERRUPT\s*(\{.*?\})\s*⟧/s;
 
 // ── Exported: command entry list ─────────────────────────────────────
 
@@ -35,6 +37,7 @@ export function getCommCommands(ctx: CommandHandlerContext): CommandEntry[] {
     { regex: GROUP_MESSAGE_REGEX, name: 'GROUP_MSG', handler: (a, d) => handleGroupMessage(ctx, a, d) },
     { regex: LIST_GROUPS_REGEX, name: 'LIST_GROUPS', handler: (a, _d) => handleListGroups(ctx, a) },
     { regex: QUERY_GROUPS_REGEX, name: 'QUERY_GROUPS', handler: (a, _d) => handleListGroups(ctx, a) },
+    { regex: INTERRUPT_REGEX, name: 'INTERRUPT', handler: (a, d) => handleInterrupt(ctx, a, d) },
   ];
 }
 
@@ -392,4 +395,76 @@ function handleListGroups(ctx: CommandHandlerContext, agent: Agent): void {
     return `- "${g.name}" — ${g.memberIds.length} members: ${memberNames}\n  ${msgInfo}`;
   });
   agent.sendMessage(`[System] Your groups (${groups.length}):\n${lines.join('\n')}\nSend messages: ⟦ GROUP_MESSAGE {"group": "name", "content": "..."} ⟧`);
+}
+
+// ── INTERRUPT handler ───────────────────────────────────────────────
+
+async function handleInterrupt(ctx: CommandHandlerContext, agent: Agent, data: string): Promise<void> {
+  const match = data.match(INTERRUPT_REGEX);
+  if (!match) return;
+
+  try {
+    const req = parseCommandPayload(agent, match[1], interruptSchema, 'INTERRUPT');
+    if (!req) return;
+
+    // Resolve target agent (same resolution as AGENT_MESSAGE)
+    let targetId = req.to;
+    const allAgents = ctx.getAllAgents();
+    if (!ctx.getAgent(targetId)) {
+      const byPrefix = allAgents.find((a) => a.id.startsWith(req.to) && (a.status === 'running' || a.status === 'idle'));
+      if (byPrefix) {
+        targetId = byPrefix.id;
+      } else {
+        const byRoleId = allAgents.find((a) => a.role.id === req.to && (a.status === 'running' || a.status === 'idle'));
+        if (byRoleId) {
+          targetId = byRoleId.id;
+        } else {
+          const lower = req.to.toLowerCase();
+          const byRoleName = allAgents.find((a) =>
+            a.role.name.toLowerCase() === lower && (a.status === 'running' || a.status === 'idle')
+          );
+          if (byRoleName) {
+            targetId = byRoleName.id;
+          }
+        }
+      }
+    }
+
+    const target = ctx.getAgent(targetId);
+    if (!target) {
+      agent.sendMessage(`[System] Cannot resolve agent "${req.to}" for interrupt.`);
+      return;
+    }
+
+    // Cannot interrupt yourself
+    if (target.id === agent.id) {
+      agent.sendMessage('[System] Cannot interrupt yourself.');
+      return;
+    }
+
+    // Only parent agents can interrupt their children
+    if (target.parentId !== agent.id) {
+      agent.sendMessage(`[System] Cannot interrupt ${target.role.name} (${target.id.slice(0, 8)}) — you are not their parent agent.`);
+      return;
+    }
+
+    // Cannot interrupt a terminated agent
+    if (isTerminalStatus(target.status)) {
+      agent.sendMessage(`[System] Cannot interrupt ${target.role.name} (${target.id.slice(0, 8)}) — agent is ${target.status}.`);
+      return;
+    }
+
+    const formatted = `[PRIORITY — Interrupt from ${agent.role.name} (${agent.id.slice(0, 8)})]\n${req.content}\n\nThis message interrupted your current work. Address it immediately.`;
+    await target.interruptWithMessage(formatted);
+
+    agent.sendMessage(`[System] Interrupted ${target.role.name} (${target.id.slice(0, 8)}). New instructions delivered.`);
+
+    ctx.activityLedger.log(agent.id, agent.role.id, 'agent_interrupted',
+      `Interrupted ${target.role.name} (${target.id.slice(0, 8)}): ${req.content.slice(0, 120)}`,
+      { toAgentId: target.id, toRole: target.role.id });
+
+    ctx.emit('agent:interrupted', { from: agent.id, to: target.id, content: req.content });
+  } catch (err) {
+    logger.debug('command', 'Failed to parse INTERRUPT command', { error: (err as Error).message });
+  }
 }

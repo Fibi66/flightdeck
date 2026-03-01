@@ -23,6 +23,11 @@ export const agentMessageSchema = z.object({
   content: z.string({ message: 'Missing required field "content"' }).min(1, 'Missing required field "content"').max(MAX_CONTENT_LENGTH, `"content" too long (max ${MAX_CONTENT_LENGTH})`),
 });
 
+export const interruptSchema = z.object({
+  to: z.string({ message: 'Missing required field "to" (agent ID or role)' }).min(1, 'Missing required field "to" (agent ID or role)').max(MAX_ID_LENGTH, `"to" too long (max ${MAX_ID_LENGTH})`),
+  content: z.string({ message: 'Missing required field "content"' }).min(1, 'Missing required field "content"').max(MAX_CONTENT_LENGTH, `"content" too long (max ${MAX_CONTENT_LENGTH})`),
+});
+
 export const broadcastSchema = z.object({
   content: z.string({ message: 'Missing required field "content"' }).min(1, 'Missing required field "content"').max(MAX_CONTENT_LENGTH, `"content" too long (max ${MAX_CONTENT_LENGTH})`),
 });
