@@ -1,6 +1,8 @@
 import express from 'express';
 import { createServer } from 'http';
 import cors from 'cors';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { getConfig, updateConfig } from './config.js';
 import { WebSocketServer } from './comms/WebSocketServer.js';
 import { MessageBus } from './comms/MessageBus.js';
@@ -13,6 +15,11 @@ import { FileLockRegistry } from './coordination/FileLockRegistry.js';
 import { ActivityLedger } from './coordination/ActivityLedger.js';
 import { DecisionLog } from './coordination/DecisionLog.js';
 import { AgentMemory } from './agents/AgentMemory.js';
+
+// Resolve repo root reliably via __dirname (works regardless of process.cwd())
+// __dirname = packages/server/dist/ → repo root is 3 levels up
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(__dirname, '../../..');
 import { TaskDAG } from './tasks/TaskDAG.js';
 import { DeferredIssueRegistry } from './tasks/DeferredIssueRegistry.js';
 import { TaskTemplateRegistry } from './tasks/TaskTemplates.js';
@@ -121,7 +128,7 @@ const taskDecomposer = new TaskDecomposer(taskTemplateRegistry);
 const projectRegistry = new ProjectRegistry(db);
 
 // File dependency graph — tracks import relationships for impact analysis
-const fileDependencyGraph = new FileDependencyGraph(process.cwd());
+const fileDependencyGraph = new FileDependencyGraph(repoRoot);
 
 // Auto-retry with exponential backoff — reschedules failed agent tasks
 const retryManager = new RetryManager();
@@ -141,6 +148,10 @@ const modelSelector = new ModelSelector();
 
 // Token budget optimizer — allocates context budget proportional to task importance
 const tokenBudgetOptimizer = new TokenBudgetOptimizer();
+
+// Cost tracker — per-agent per-task token usage attribution
+import { CostTracker } from './agents/CostTracker.js';
+const costTracker = new CostTracker(db);
 
 // Meeting summarizer — synthesizes group chat outcomes into structured meeting notes
 const meetingSummarizer = new MeetingSummarizer();
@@ -169,12 +180,12 @@ const capabilityInjector = new CapabilityInjector();
 
 // Git worktree isolation — each agent gets its own working copy
 import { WorktreeManager } from './coordination/WorktreeManager.js';
-const worktreeManager = new WorktreeManager(process.cwd(), lockRegistry);
+const worktreeManager = new WorktreeManager(repoRoot, lockRegistry);
 worktreeManager.cleanupOrphans().catch(err => {
   console.warn(`[worktree] Orphan cleanup failed on startup: ${err.message}`);
 });
 
-const agentManager = new AgentManager(config, roleRegistry, lockRegistry, activityLedger, messageBus, decisionLog, agentMemory, chatGroupRegistry, taskDAG, { db, deferredIssueRegistry, timerRegistry, capabilityInjector, taskTemplateRegistry, taskDecomposer, worktreeManager });
+const agentManager = new AgentManager(config, roleRegistry, lockRegistry, activityLedger, messageBus, decisionLog, agentMemory, chatGroupRegistry, taskDAG, { db, deferredIssueRegistry, timerRegistry, capabilityInjector, taskTemplateRegistry, taskDecomposer, worktreeManager, costTracker });
 agentManager.setProjectRegistry(projectRegistry);
 const contextRefresher = new ContextRefresher(agentManager, lockRegistry, activityLedger);
 const wsServer = new WebSocketServer(httpServer, agentManager, lockRegistry, activityLedger, decisionLog, chatGroupRegistry);
@@ -182,7 +193,7 @@ const wsServer = new WebSocketServer(httpServer, agentManager, lockRegistry, act
 // CI runner — auto-builds and tests after commits, reports results to agents
 import { CIRunner } from './coordination/CIRunner.js';
 const ciRunner = new CIRunner({
-  cwd: process.cwd(),
+  cwd: repoRoot,
   getAgent: (id) => agentManager.get(id),
   getAllAgents: () => agentManager.getAll(),
   activityLedger,
@@ -291,16 +302,13 @@ import { CoverageTracker } from './coordination/CoverageTracker.js';
 import { ComplexityMonitor } from './coordination/ComplexityMonitor.js';
 import { DependencyScanner } from './coordination/DependencyScanner.js';
 const coverageTracker = new CoverageTracker();
-const complexityMonitor = new ComplexityMonitor(process.cwd());
-const dependencyScanner = new DependencyScanner(process.cwd());
+const complexityMonitor = new ComplexityMonitor(repoRoot);
+const dependencyScanner = new DependencyScanner(repoRoot);
 
 // Wire up API routes
 app.use('/api', apiRouter(agentManager, roleRegistry, config, db, lockRegistry, activityLedger, decisionLog, projectRegistry, alertEngine, capabilityRegistry, sessionRetro, sessionExporter, eagerScheduler, fileDependencyGraph, agentMatcher, retryManager, crashForensics, webhookManager, taskTemplateRegistry, taskDecomposer, searchEngine, performanceTracker, decisionRecordStore, coverageTracker, complexityMonitor, dependencyScanner, notificationManager, escalationManager, modelSelector, tokenBudgetOptimizer, meetingSummarizer, reportGenerator, projectTemplateRegistry, knowledgeTransfer, eventPipeline));
 
 // Serve built web frontend in production
-import path from 'path';
-import { fileURLToPath } from 'url';
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const webDistPath = path.resolve(__dirname, '../../web/dist');
 
 import fs from 'fs';
