@@ -412,6 +412,186 @@ made 6 decisions in 7 minutes, keeping 12 other agents productive.
 -->
 
 ---
+
+# How 8 Developers Shared One Codebase
+
+<div class="bg-gray-800 rounded-lg p-4 border border-gray-700 mt-2">
+
+<div class="text-sm space-y-1">
+<div class="flex items-center gap-2"><span class="font-mono text-xs text-gray-500 w-16">0b85de</span><span class="text-green-400">→</span> <code class="text-xs">findReadyTask.ts</code> <span class="text-gray-600">🔒</span></div>
+<div class="flex items-center gap-2"><span class="font-mono text-xs text-gray-500 w-16">2cf55f</span><span class="text-green-400">→</span> <code class="text-xs">AgentLifecycle.ts, TaskDAG.ts</code> <span class="text-gray-600">🔒</span></div>
+<div class="flex items-center gap-2"><span class="font-mono text-xs text-gray-500 w-16">bf1ec2</span><span class="text-green-400">→</span> <code class="text-xs">CommEventExtractor.ts, useTimelineSSE.ts</code> <span class="text-gray-600">🔒</span></div>
+<div class="flex items-center gap-2"><span class="font-mono text-xs text-gray-500 w-16">3194c4</span><span class="text-green-400">→</span> <code class="text-xs">CoordCommands.ts</code> <span class="text-gray-600">🔒</span></div>
+<div class="flex items-center gap-2"><span class="font-mono text-xs text-gray-500 w-16">3811ed</span><span class="text-green-400">→</span> <code class="text-xs">BrushTimeSelector.tsx, LeadDashboard.tsx</code> <span class="text-gray-600">🔒</span></div>
+<div class="flex items-center gap-2"><span class="font-mono text-xs text-gray-500 w-16">55753</span><span class="text-green-400">→</span> <code class="text-xs">CommandDispatcher.ts</code> <span class="text-gray-600">🔒</span></div>
+<div class="flex items-center gap-2"><span class="font-mono text-xs text-gray-500 w-16">31022d</span><span class="text-green-400">→</span> <code class="text-xs">TimerDisplay/, AcpOutput.tsx</code> <span class="text-gray-600">🔒</span></div>
+<div class="flex items-center gap-2"><span class="font-mono text-xs text-gray-500 w-16">f026d3</span><span class="text-green-400">→</span> <code class="text-xs">docs/guide/*.md</code> <span class="text-gray-600">🔒</span></div>
+</div>
+
+</div>
+
+<div class="bg-gray-800 rounded-lg p-3 border border-green-500 mt-3">
+
+🔒 **File locking** = each developer "owns" their files. Attempt to edit a locked file → blocked. No merge conflicts, no overwrites, no surprises.
+
+</div>
+
+<p class="text-sm text-gray-500 mt-2">8 developers, 15+ files, zero conflicts. Traditional git would have been a nightmare.</p>
+
+<!--
+Eight developers, one repo, no conflicts. How? File locking. Each developer
+claims the files they need — like checking out a library book. If someone
+else tries to edit a locked file, they're blocked. No merge conflicts, no
+overwritten work. This is pessimistic locking — the same pattern databases
+use. It's not fancy, but it works perfectly when you have 8 agents writing
+code simultaneously.
+-->
+
+---
+
+# The Review Chain: From Code to Bulletproof
+
+<div class="bg-gray-800 rounded-lg p-3 border border-gray-700 mt-2">
+
+```mermaid
+graph LR
+    Dev["👷 3194c4df<br/>Implements<br/>commit hardening"]
+    CR["🔍 c6dc1c05<br/>Code Review<br/>'Approved with notes'"]
+    Crit["🛡️ b529689d<br/>Critical Review<br/>'Race condition!'"]
+    Fix["👷 3194c4df<br/>Fixes atomic<br/>commits"]
+    Dev --> CR --> Crit --> Fix
+```
+
+</div>
+
+<div class="grid grid-cols-3 gap-2 mt-3 text-sm">
+<div class="bg-gray-800 rounded-lg p-2 border border-gray-700">
+
+**Code Reviewer** found:
+- Missing test for dirty-file check
+- Suggested scoping improvements
+
+</div>
+<div class="bg-gray-800 rounded-lg p-2 border border-red-500">
+
+**Critical Reviewer** found:
+- ⚠️ **Race condition**: two agents committing simultaneously share a git index — cross-contamination possible
+- Fix: atomic `git commit -- files`
+
+</div>
+<div class="bg-gray-800 rounded-lg p-2 border border-green-500">
+
+**Developer** fixed all 3 issues in commit `de3e414`. Tests pass.
+
+</div>
+</div>
+
+<!--
+Watch how a real review chain works. Developer 3194c4df built the scoped
+commit hardening — 4 safety features. Code reviewer c6dc1c05 approved it
+but noted a missing test. Then the critical reviewer — whose job is
+finding things that can go wrong — found a race condition. Two agents
+committing at the same time share a git index file. That means Agent A's
+"git add" could include Agent B's files before "git commit" runs. The fix:
+pass files directly to git commit with the double-dash syntax. One line
+change, but it prevents a class of bugs that only exist in multi-agent
+environments. Three passes, three different perspectives, bulletproof result.
+-->
+
+---
+
+# Agents Talking to Each Other
+
+<div class="bg-gray-800 rounded-lg p-4 border border-gray-700 mt-2">
+
+<div class="text-sm space-y-3">
+
+<div class="flex items-start gap-2">
+<span class="text-purple-400">🏗️ 437a822b</span>
+<span>→ writes architecture design → sends to <span class="text-green-400">👷 2cf55f61</span> and <span class="text-green-400">👷 0b85de78</span></span>
+</div>
+
+<div class="flex items-start gap-2">
+<span class="text-green-400">👷 f026d3d1</span>
+<span>→ investigates highlight display bug → sends findings directly to <span class="text-green-400">👷 3811edef</span> who's fixing it</span>
+</div>
+
+<div class="flex items-start gap-2">
+<span class="text-green-400">👷 bf1ec2c1</span>
+<span>→ finishes real-time heatmap → reports to Lead → Lead assigns reviewer</span>
+</div>
+
+<div class="flex items-start gap-2">
+<span class="text-yellow-400">📝 35feec68</span>
+<span>→ tracks all 19 tasks → flags "86% complete" anomaly → triggers investigation</span>
+</div>
+
+</div>
+</div>
+
+<div class="bg-gray-800 rounded-lg p-3 border border-blue-500 mt-3">
+
+💡 **Not everything goes through the Lead.** Agents message each other directly for peer coordination — the architect sends specs to developers, one developer shares investigation results with another. The lead only gets involved for decisions and delegation.
+
+</div>
+
+<!--
+The communication patterns are fascinating. Not everything flows through
+the lead — that would be a bottleneck. The architect sends design specs
+directly to the developers who need them. Developer f026d3d1 investigated
+a UI bug and sent the findings directly to developer 3811edef who was
+assigned to fix it. The secretary tracked progress independently and
+flagged anomalies. This is organic team communication — agents figuring
+out who needs what information and sending it directly. The lead stays
+focused on decisions, not message routing.
+-->
+
+---
+
+# The Bug That Only Exists in Multi-Agent Systems
+
+<div class="bg-gray-800 rounded-lg p-4 border border-red-500 mt-2">
+
+### Critical reviewer b529689d discovered:
+
+<div class="bg-gray-900 rounded p-3 mt-2 text-sm font-mono">
+<div class="text-gray-500"># Agent A (17:23:01)</div>
+<div>git add CoordCommands.ts</div>
+<div class="text-gray-500"># Agent B (17:23:01) — same millisecond!</div>
+<div>git add AgentLifecycle.ts</div>
+<div class="text-gray-500"># Agent A (17:23:02)</div>
+<div>git commit -m "hardening"</div>
+<div class="text-red-400"># ⚠️ Agent A's commit now contains Agent B's file!</div>
+</div>
+
+</div>
+
+<div class="bg-gray-800 rounded-lg p-3 border border-gray-700 mt-3">
+
+**Why this matters:** This bug is *invisible* in single-agent systems. It only appears when multiple agents share a git working directory and commit concurrently. The critical reviewer — who never wrote any code — found it by reasoning about concurrent execution.
+
+</div>
+
+<div class="bg-gray-800 rounded-lg p-3 border border-green-500 mt-2">
+
+**Fix:** <code>git commit -m "msg" -- file1 file2</code> — atomic, no shared state.
+
+</div>
+
+<!--
+This is the most interesting bug of the session. It only exists because
+multiple agents share one git working directory. Git's staging area — the
+index — is a single file. When Agent A runs "git add" and then "git commit",
+there's a window where Agent B's "git add" can slip in between. Agent A's
+commit now includes Agent B's file. The critical reviewer found this by
+thinking about what happens when two agents commit at the exact same time.
+No single-agent system would ever have this bug. The fix is elegant: pass
+files directly to git commit, bypassing the shared index entirely. This is
+why specialized reviewers matter — they think about failure modes that
+developers don't.
+-->
+
+---
 layout: center
 ---
 
