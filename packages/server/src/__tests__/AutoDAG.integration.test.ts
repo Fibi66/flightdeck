@@ -895,14 +895,24 @@ describe('Auto-DAG integration', () => {
         status: 'running',
         sendMessage: vi.fn(),
       });
-      (ctx.getAllAgents as any).mockReturnValue([lead, secretary]);
 
       // Create a pre-existing task so secretary has something to analyze
       dag.declareTaskBatch(lead.id, [
         { id: 'existing', role: 'architect', description: 'Design system' },
       ]);
 
-      createAgent({ task: 'Implement the API endpoint for users' });
+      // Create agent — the helper sets getAllAgents to [lead, child],
+      // but we need secretary included. Use childOverrides to pass the
+      // secretary through, then re-mock getAllAgents before dispatch.
+      const role = 'developer';
+      const roleObj = makeRole({ id: role, name: 'Developer' });
+      (ctx.roleRegistry.get as any).mockReturnValue(roleObj);
+      const child = makeChild(lead.id, { role: roleObj });
+      (ctx.spawnAgent as any).mockReturnValue(child);
+      // Include secretary so requestSecretaryDependencyAnalysis can find it
+      (ctx.getAllAgents as any).mockReturnValue([lead, child, secretary]);
+
+      dispatch(dispatcher, lead, `⟦ CREATE_AGENT ${JSON.stringify({ role, task: 'Implement the API endpoint for users' })} ⟧`);
 
       // Secretary should have received a dependency analysis request
       expect(secretary.sendMessage).toHaveBeenCalledWith(
