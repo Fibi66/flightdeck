@@ -100,6 +100,7 @@ function makeContext(overrides: Partial<CommandContext> = {}): CommandContext {
       getTaskByAgent: vi.fn().mockReturnValue(null),
       getTask: vi.fn().mockReturnValue(null),
       findReadyTaskByRole: vi.fn().mockReturnValue(null),
+      findReadyTask: vi.fn().mockReturnValue(null),
       getTransitionError: vi.fn().mockReturnValue(null),
       completeTask: vi.fn().mockReturnValue([]),
       failTask: vi.fn(),
@@ -154,7 +155,7 @@ describe('CommandDispatcher', () => {
 
   describe('LOCK_FILE', () => {
     it('dispatches lock request to lockRegistry.acquire', () => {
-      dispatch(dispatcher, leadAgent, '[[[ LOCK_FILE {"filePath": "src/index.ts", "reason": "editing"} ]]]');
+      dispatch(dispatcher, leadAgent, '⟦ LOCK_FILE {"filePath": "src/index.ts", "reason": "editing"} ⟧');
 
       expect(ctx.lockRegistry.acquire).toHaveBeenCalledWith(
         leadAgent.id,
@@ -170,7 +171,7 @@ describe('CommandDispatcher', () => {
 
   describe('UNLOCK_FILE', () => {
     it('releases lock via lockRegistry.release', () => {
-      dispatch(dispatcher, leadAgent, '[[[ UNLOCK_FILE {"filePath": "src/index.ts"} ]]]');
+      dispatch(dispatcher, leadAgent, '⟦ UNLOCK_FILE {"filePath": "src/index.ts"} ⟧');
 
       expect(ctx.lockRegistry.release).toHaveBeenCalledWith(
         leadAgent.id,
@@ -186,7 +187,7 @@ describe('CommandDispatcher', () => {
 
   describe('ACTIVITY', () => {
     it('logs activity to the activityLedger', () => {
-      dispatch(dispatcher, leadAgent, '[[[ ACTIVITY {"actionType": "file_edit", "summary": "edited index.ts"} ]]]');
+      dispatch(dispatcher, leadAgent, '⟦ ACTIVITY {"actionType": "file_edit", "summary": "edited index.ts"} ⟧');
 
       expect(ctx.activityLedger.log).toHaveBeenCalledWith(
         leadAgent.id,
@@ -202,7 +203,7 @@ describe('CommandDispatcher', () => {
 
   describe('DECISION', () => {
     it('records decision via decisionLog.add', () => {
-      dispatch(dispatcher, leadAgent, '[[[ DECISION {"title": "Use React", "rationale": "best fit"} ]]]');
+      dispatch(dispatcher, leadAgent, '⟦ DECISION {"title": "Use React", "rationale": "best fit"} ⟧');
 
       expect(ctx.decisionLog.add).toHaveBeenCalledWith(
         leadAgent.id,
@@ -221,7 +222,7 @@ describe('CommandDispatcher', () => {
   describe('PROGRESS', () => {
     it('emits lead:progress event', () => {
       (ctx.getAllAgents as any).mockReturnValue([leadAgent]);
-      dispatch(dispatcher, leadAgent, '[[[ PROGRESS {"summary": "50% done"} ]]]');
+      dispatch(dispatcher, leadAgent, '⟦ PROGRESS {"summary": "50% done"} ⟧');
 
       expect(ctx.emit).toHaveBeenCalledWith(
         'lead:progress',
@@ -238,7 +239,7 @@ describe('CommandDispatcher', () => {
       (ctx.getAllAgents as any).mockReturnValue([leadAgent, child]);
       (ctx.getRunningCount as any).mockReturnValue(2);
 
-      dispatch(dispatcher, leadAgent, '[[[ QUERY_CREW ]]]');
+      dispatch(dispatcher, leadAgent, '⟦ QUERY_CREW ⟧');
 
       expect((leadAgent.sendMessage as any)).toHaveBeenCalledWith(
         expect.stringContaining('CREW_ROSTER'),
@@ -260,7 +261,7 @@ describe('CommandDispatcher', () => {
       });
       (ctx.getAllAgents as any).mockReturnValue([leadAgent, child1, child2]);
 
-      dispatch(dispatcher, leadAgent, '[[[ BROADCAST {"content": "hello all"} ]]]');
+      dispatch(dispatcher, leadAgent, '⟦ BROADCAST {"content": "hello all"} ⟧');
 
       expect((child1.sendMessage as any)).toHaveBeenCalledWith(
         expect.stringContaining('hello all'),
@@ -280,7 +281,7 @@ describe('CommandDispatcher', () => {
       const newChild = makeChildAgent(leadAgent.id, { id: 'agent-new-child-0000-000000000005' });
       (ctx.spawnAgent as any).mockReturnValue(newChild);
 
-      dispatch(dispatcher, leadAgent, '[[[ CREATE_AGENT {"role": "developer", "task": "build feature"} ]]]');
+      dispatch(dispatcher, leadAgent, '⟦ CREATE_AGENT {"role": "developer", "task": "build feature"} ⟧');
 
       expect(ctx.roleRegistry.get).toHaveBeenCalledWith('developer');
       expect(ctx.spawnAgent).toHaveBeenCalledWith(
@@ -300,7 +301,7 @@ describe('CommandDispatcher', () => {
         role: makeRole(),
       });
 
-      dispatch(dispatcher, devAgent, '[[[ CREATE_AGENT {"role": "developer", "task": "build"} ]]]');
+      dispatch(dispatcher, devAgent, '⟦ CREATE_AGENT {"role": "developer", "task": "build"} ⟧');
 
       expect(ctx.spawnAgent).not.toHaveBeenCalled();
       expect((devAgent.sendMessage as any)).toHaveBeenCalledWith(
@@ -321,7 +322,7 @@ describe('CommandDispatcher', () => {
         return newChild;
       });
 
-      dispatch(dispatcher, leadAgent, '[[[ CREATE_AGENT {"role": "developer", "task": "build"} ]]]');
+      dispatch(dispatcher, leadAgent, '⟦ CREATE_AGENT {"role": "developer", "task": "build"} ⟧');
 
       // Should have auto-scaled and retried
       expect(ctx.maxConcurrent).toBe(20); // 10 + 10
@@ -341,7 +342,7 @@ describe('CommandDispatcher', () => {
         throw new Error('Concurrency limit reached');
       });
 
-      dispatch(dispatcher, leadAgent, '[[[ CREATE_AGENT {"role": "developer", "task": "build"} ]]]');
+      dispatch(dispatcher, leadAgent, '⟦ CREATE_AGENT {"role": "developer", "task": "build"} ⟧');
 
       // Should have auto-scaled once, then reported failure on retry
       expect(ctx.maxConcurrent).toBe(20);
@@ -364,7 +365,7 @@ describe('CommandDispatcher', () => {
         throw new Error('Concurrency limit reached');
       });
 
-      dispatch(dispatcher, leadAgent, '[[[ CREATE_AGENT {"role": "developer", "task": "build"} ]]]');
+      dispatch(dispatcher, leadAgent, '⟦ CREATE_AGENT {"role": "developer", "task": "build"} ⟧');
 
       // Should NOT auto-scale past the hard cap
       expect(ctx.maxConcurrent).toBe(MAX_CONCURRENCY_LIMIT);
@@ -381,7 +382,7 @@ describe('CommandDispatcher', () => {
       const child = makeChildAgent(leadAgent.id);
       (ctx.getAllAgents as any).mockReturnValue([leadAgent, child]);
 
-      dispatch(dispatcher, leadAgent, `[[[ DELEGATE {"to": "${child.id}", "task": "review code"} ]]]`);
+      dispatch(dispatcher, leadAgent, `⟦ DELEGATE {"to": "${child.id}", "task": "review code"} ⟧`);
 
       // Delegation was tracked
       const delegations = dispatcher.getDelegationsMap();
@@ -403,7 +404,7 @@ describe('CommandDispatcher', () => {
         role: makeRole(),
       });
 
-      dispatch(dispatcher, devAgent, '[[[ DELEGATE {"to": "agent-123", "task": "review"} ]]]');
+      dispatch(dispatcher, devAgent, '⟦ DELEGATE {"to": "agent-123", "task": "review"} ⟧');
 
       expect(dispatcher.getDelegationsMap().size).toBe(0);
       expect((devAgent.sendMessage as any)).toHaveBeenCalledWith(
@@ -422,7 +423,7 @@ describe('CommandDispatcher', () => {
       });
       (ctx.getAllAgents as any).mockReturnValue([architectAgent, child]);
 
-      dispatch(dispatcher, architectAgent, `[[[ DELEGATE {"to": "${child.id}", "task": "implement API"} ]]]`);
+      dispatch(dispatcher, architectAgent, `⟦ DELEGATE {"to": "${child.id}", "task": "implement API"} ⟧`);
 
       expect(dispatcher.getDelegationsMap().size).toBe(1);
       expect((child.sendMessage as any)).toHaveBeenCalledWith('implement API');
@@ -434,9 +435,9 @@ describe('CommandDispatcher', () => {
       (ctx.getAllAgents as any).mockReturnValue([leadAgent, child1, child2]);
 
       // First delegation
-      dispatch(dispatcher, leadAgent, `[[[ DELEGATE {"to": "${child1.id}", "task": "fix the cascade termination bug in AgentManager"} ]]]`);
+      dispatch(dispatcher, leadAgent, `⟦ DELEGATE {"to": "${child1.id}", "task": "fix the cascade termination bug in AgentManager"} ⟧`);
       // Second delegation with similar task
-      dispatch(dispatcher, leadAgent, `[[[ DELEGATE {"to": "${child2.id}", "task": "fix the cascade termination issue in AgentManager"} ]]]`);
+      dispatch(dispatcher, leadAgent, `⟦ DELEGATE {"to": "${child2.id}", "task": "fix the cascade termination issue in AgentManager"} ⟧`);
 
       // Second delegation should include a duplicate warning
       expect((leadAgent.sendMessage as any)).toHaveBeenCalledWith(
@@ -452,7 +453,7 @@ describe('CommandDispatcher', () => {
       const child = makeChildAgent(leadAgent.id);
       (ctx.getAllAgents as any).mockReturnValue([leadAgent, child]);
 
-      dispatch(dispatcher, leadAgent, `[[[ TERMINATE_AGENT {"id": "${child.id}", "reason": "done"} ]]]`);
+      dispatch(dispatcher, leadAgent, `⟦ TERMINATE_AGENT {"id": "${child.id}", "reason": "done"} ⟧`);
 
       expect(ctx.terminateAgent).toHaveBeenCalledWith(child.id);
       expect((leadAgent.sendMessage as any)).toHaveBeenCalledWith(
@@ -466,7 +467,7 @@ describe('CommandDispatcher', () => {
         role: makeRole(),
       });
 
-      dispatch(dispatcher, devAgent, '[[[ TERMINATE_AGENT {"id": "agent-123", "reason": "done"} ]]]');
+      dispatch(dispatcher, devAgent, '⟦ TERMINATE_AGENT {"id": "agent-123", "reason": "done"} ⟧');
 
       expect(ctx.terminateAgent).not.toHaveBeenCalled();
       expect((devAgent.sendMessage as any)).toHaveBeenCalledWith(
@@ -485,7 +486,7 @@ describe('CommandDispatcher', () => {
       });
       (ctx.getAllAgents as any).mockReturnValue([leadAgent, subLead, grandchild]);
 
-      dispatch(dispatcher, leadAgent, `[[[ TERMINATE_AGENT {"id": "${grandchild.id}", "reason": "cleanup"} ]]]`);
+      dispatch(dispatcher, leadAgent, `⟦ TERMINATE_AGENT {"id": "${grandchild.id}", "reason": "cleanup"} ⟧`);
 
       expect(ctx.terminateAgent).toHaveBeenCalledWith(grandchild.id);
       expect((leadAgent.sendMessage as any)).toHaveBeenCalledWith(
@@ -504,7 +505,7 @@ describe('CommandDispatcher', () => {
       });
       (ctx.getAllAgents as any).mockReturnValue([leadAgent, otherLead, otherChild]);
 
-      dispatch(dispatcher, leadAgent, `[[[ TERMINATE_AGENT {"id": "${otherChild.id}", "reason": "steal"} ]]]`);
+      dispatch(dispatcher, leadAgent, `⟦ TERMINATE_AGENT {"id": "${otherChild.id}", "reason": "steal"} ⟧`);
 
       expect(ctx.terminateAgent).not.toHaveBeenCalled();
       expect((leadAgent.sendMessage as any)).toHaveBeenCalledWith(
@@ -520,7 +521,7 @@ describe('CommandDispatcher', () => {
       });
       (ctx.getAllAgents as any).mockReturnValue([leadAgent, otherLead]);
 
-      dispatch(dispatcher, leadAgent, `[[[ TERMINATE_AGENT {"id": "${otherLead.id}", "reason": "remove"} ]]]`);
+      dispatch(dispatcher, leadAgent, `⟦ TERMINATE_AGENT {"id": "${otherLead.id}", "reason": "remove"} ⟧`);
 
       expect(ctx.terminateAgent).not.toHaveBeenCalled();
       expect((leadAgent.sendMessage as any)).toHaveBeenCalledWith(
@@ -540,7 +541,7 @@ describe('CommandDispatcher', () => {
       (ctx.roleRegistry.get as any).mockReturnValue(devRole);
 
       // Create a delegation by spawning via CREATE_AGENT
-      dispatch(dispatcher, leadAgent, `[[[ CREATE_AGENT {"role": "developer", "task": "work"} ]]]`);
+      dispatch(dispatcher, leadAgent, `⟦ CREATE_AGENT {"role": "developer", "task": "work"} ⟧`);
 
       const delegations = dispatcher.getDelegations(leadAgent.id);
       expect(delegations.length).toBeGreaterThan(0);
@@ -561,7 +562,7 @@ describe('CommandDispatcher', () => {
       (ctx.roleRegistry.get as any).mockReturnValue(devRole);
 
       // Create a delegation
-      dispatch(dispatcher, leadAgent, `[[[ CREATE_AGENT {"role": "developer", "task": "work"} ]]]`);
+      dispatch(dispatcher, leadAgent, `⟦ CREATE_AGENT {"role": "developer", "task": "work"} ⟧`);
 
       // Mark it as completed
       dispatcher.completeDelegationsForAgent(child.id);
@@ -579,9 +580,9 @@ describe('CommandDispatcher', () => {
     it('dispatches both LOCK_FILE and ACTIVITY from one text', () => {
       const text = [
         'Some preamble text.',
-        '[[[ LOCK_FILE {"filePath": "src/main.ts", "reason": "editing"} ]]]',
+        '⟦ LOCK_FILE {"filePath": "src/main.ts", "reason": "editing"} ⟧',
         'Some middle text.',
-        '[[[ ACTIVITY {"actionType": "file_edit", "summary": "changed main"} ]]]',
+        '⟦ ACTIVITY {"actionType": "file_edit", "summary": "changed main"} ⟧',
         'Trailing text.',
       ].join('\n');
 
@@ -611,7 +612,7 @@ describe('CommandDispatcher', () => {
       // as a valid JSON object. But a regex-matching string with invalid JSON will
       // hit the try/catch in the handler and be silently ignored (logged).
       expect(() => {
-        dispatch(dispatcher, leadAgent, '[[[ LOCK_FILE {"filePath": "missing-quote} ]]]');
+        dispatch(dispatcher, leadAgent, '⟦ LOCK_FILE {"filePath": "missing-quote} ⟧');
       }).not.toThrow();
 
       // No lock should have been acquired since JSON parsing failed
@@ -627,7 +628,7 @@ describe('CommandDispatcher', () => {
       (ctx.getAllAgents as any).mockReturnValue([leadAgent, child]);
 
       // Create via DELEGATE command
-      dispatch(dispatcher, leadAgent, `[[[ DELEGATE {"to": "${child.id}", "task": "task-1"} ]]]`);
+      dispatch(dispatcher, leadAgent, `⟦ DELEGATE {"to": "${child.id}", "task": "task-1"} ⟧`);
 
       const map = dispatcher.getDelegationsMap();
       expect(map.size).toBe(1);
@@ -640,7 +641,7 @@ describe('CommandDispatcher', () => {
       const child = makeChildAgent(leadAgent.id);
       (ctx.getAllAgents as any).mockReturnValue([leadAgent, child]);
 
-      dispatch(dispatcher, leadAgent, `[[[ DELEGATE {"to": "${child.id}", "task": "task-1"} ]]]`);
+      dispatch(dispatcher, leadAgent, `⟦ DELEGATE {"to": "${child.id}", "task": "task-1"} ⟧`);
 
       const forLead = dispatcher.getDelegations(leadAgent.id);
       expect(forLead.length).toBe(1);
@@ -658,7 +659,7 @@ describe('CommandDispatcher', () => {
       dispatcher.appendToBuffer('agent-1', 'world');
       // Verify by dispatching a command that spans both appends
       const agent = makeAgent({ id: 'agent-1' });
-      dispatcher.appendToBuffer('agent-1', ' [[[ QUERY_CREW ]]]');
+      dispatcher.appendToBuffer('agent-1', ' ⟦ QUERY_CREW ⟧');
       (ctx.getAllAgents as any).mockReturnValue([agent]);
       (ctx.getRunningCount as any).mockReturnValue(1);
       dispatcher.scanBuffer(agent);
@@ -669,7 +670,7 @@ describe('CommandDispatcher', () => {
     });
 
     it('clearBuffer removes buffered text', () => {
-      dispatcher.appendToBuffer('agent-1', '[[[ QUERY_CREW ]]]');
+      dispatcher.appendToBuffer('agent-1', '⟦ QUERY_CREW ⟧');
       dispatcher.clearBuffer('agent-1');
 
       const agent = makeAgent({ id: 'agent-1' });
@@ -690,7 +691,7 @@ describe('CommandDispatcher', () => {
       const newChild = makeChildAgent(leadAgent.id, { id: 'agent-new-0009' });
       (ctx.spawnAgent as any).mockReturnValue(newChild);
 
-      dispatch(dispatcher, leadAgent, '[[[ CREATE_AGENT {"role": "developer", "task": "build", "model": "claude-opus-4"} ]]]');
+      dispatch(dispatcher, leadAgent, '⟦ CREATE_AGENT {"role": "developer", "task": "build", "model": "claude-opus-4"} ⟧');
 
       expect(ctx.spawnAgent).toHaveBeenCalledWith(
         devRole,
@@ -718,7 +719,7 @@ describe('CommandDispatcher', () => {
       const child = makeChildAgent(leadAgent.id);
       (ctx.getAllAgents as any).mockReturnValue([leadAgent, child]);
 
-      dispatch(dispatcher, leadAgent, `[[[ DELEGATE {"to": "${child.id}", "task": "review code", "context": "PR #42"} ]]]`);
+      dispatch(dispatcher, leadAgent, `⟦ DELEGATE {"to": "${child.id}", "task": "review code", "context": "PR #42"} ⟧`);
 
       expect((child.sendMessage as any)).toHaveBeenCalledWith('review code\n\nContext: PR #42');
 
@@ -748,10 +749,10 @@ describe('CommandDispatcher', () => {
       });
 
       // First create a delegation so there's something to cancel
-      dispatch(dispatcher, leadAgent, `[[[ DELEGATE {"to": "${child.id}", "task": "review code"} ]]]`);
+      dispatch(dispatcher, leadAgent, `⟦ DELEGATE {"to": "${child.id}", "task": "review code"} ⟧`);
 
       // Now cancel it
-      dispatch(dispatcher, leadAgent, `[[[ CANCEL_DELEGATION {"agentId": "${child.id}"} ]]]`);
+      dispatch(dispatcher, leadAgent, `⟦ CANCEL_DELEGATION {"agentId": "${child.id}"} ⟧`);
 
       // Delegation should be cancelled
       const delegations = Array.from(dispatcher.getDelegationsMap().values());
@@ -779,13 +780,13 @@ describe('CommandDispatcher', () => {
       });
 
       // Create a delegation
-      dispatch(dispatcher, leadAgent, `[[[ DELEGATE {"to": "${child.id}", "task": "build feature"} ]]]`);
+      dispatch(dispatcher, leadAgent, `⟦ DELEGATE {"to": "${child.id}", "task": "build feature"} ⟧`);
 
       const delegations = Array.from(dispatcher.getDelegationsMap().values());
       const delegationId = delegations[0].id;
 
       // Cancel by delegation ID
-      dispatch(dispatcher, leadAgent, `[[[ CANCEL_DELEGATION {"delegationId": "${delegationId}"} ]]]`);
+      dispatch(dispatcher, leadAgent, `⟦ CANCEL_DELEGATION {"delegationId": "${delegationId}"} ⟧`);
 
       expect(delegations[0].status).toBe('cancelled');
       expect(clearPendingMessages).toHaveBeenCalled();
@@ -800,7 +801,7 @@ describe('CommandDispatcher', () => {
         role: makeRole(),
       });
 
-      dispatch(dispatcher, devAgent, '[[[ CANCEL_DELEGATION {"agentId": "some-agent"} ]]]');
+      dispatch(dispatcher, devAgent, '⟦ CANCEL_DELEGATION {"agentId": "some-agent"} ⟧');
 
       expect((devAgent.sendMessage as any)).toHaveBeenCalledWith(
         expect.stringContaining('Only the Project Lead'),
@@ -811,7 +812,7 @@ describe('CommandDispatcher', () => {
       (ctx.getAllAgents as any).mockReturnValue([leadAgent]);
       (ctx.getAgent as any).mockReturnValue(undefined);
 
-      dispatch(dispatcher, leadAgent, '[[[ CANCEL_DELEGATION {"agentId": "nonexistent"} ]]]');
+      dispatch(dispatcher, leadAgent, '⟦ CANCEL_DELEGATION {"agentId": "nonexistent"} ⟧');
 
       expect((leadAgent.sendMessage as any)).toHaveBeenCalledWith(
         expect.stringContaining('Agent not found'),
@@ -819,7 +820,7 @@ describe('CommandDispatcher', () => {
     });
 
     it('reports error when delegation not found by ID', () => {
-      dispatch(dispatcher, leadAgent, '[[[ CANCEL_DELEGATION {"delegationId": "del-nonexistent"} ]]]');
+      dispatch(dispatcher, leadAgent, '⟦ CANCEL_DELEGATION {"delegationId": "del-nonexistent"} ⟧');
 
       expect((leadAgent.sendMessage as any)).toHaveBeenCalledWith(
         expect.stringContaining('Delegation not found'),
@@ -827,7 +828,7 @@ describe('CommandDispatcher', () => {
     });
 
     it('reports error when no agentId or delegationId provided', () => {
-      dispatch(dispatcher, leadAgent, '[[[ CANCEL_DELEGATION {} ]]]');
+      dispatch(dispatcher, leadAgent, '⟦ CANCEL_DELEGATION {} ⟧');
 
       expect((leadAgent.sendMessage as any)).toHaveBeenCalledWith(
         expect.stringContaining('requires either "agentId" or "delegationId"'),
@@ -847,11 +848,11 @@ describe('CommandDispatcher', () => {
       });
 
       // Create a delegation
-      dispatch(dispatcher, leadAgent, `[[[ DELEGATE {"to": "${child.id}", "task": "test task"} ]]]`);
+      dispatch(dispatcher, leadAgent, `⟦ DELEGATE {"to": "${child.id}", "task": "test task"} ⟧`);
 
       // Cancel using short ID prefix (first 8 chars)
       const shortId = child.id.slice(0, 8);
-      dispatch(dispatcher, leadAgent, `[[[ CANCEL_DELEGATION {"agentId": "${shortId}"} ]]]`);
+      dispatch(dispatcher, leadAgent, `⟦ CANCEL_DELEGATION {"agentId": "${shortId}"} ⟧`);
 
       const delegations = Array.from(dispatcher.getDelegationsMap().values());
       expect(delegations[0].status).toBe('cancelled');
@@ -870,12 +871,12 @@ describe('CommandDispatcher', () => {
       });
 
       // Create delegation and mark as completed
-      dispatch(dispatcher, leadAgent, `[[[ DELEGATE {"to": "${child.id}", "task": "done task"} ]]]`);
+      dispatch(dispatcher, leadAgent, `⟦ DELEGATE {"to": "${child.id}", "task": "done task"} ⟧`);
       const delegations = Array.from(dispatcher.getDelegationsMap().values());
       delegations[0].status = 'completed';
 
       // Try to cancel it
-      dispatch(dispatcher, leadAgent, `[[[ CANCEL_DELEGATION {"delegationId": "${delegations[0].id}"} ]]]`);
+      dispatch(dispatcher, leadAgent, `⟦ CANCEL_DELEGATION {"delegationId": "${delegations[0].id}"} ⟧`);
 
       expect((leadAgent.sendMessage as any)).toHaveBeenCalledWith(
         expect.stringContaining('already completed'),
@@ -895,8 +896,8 @@ describe('CommandDispatcher', () => {
       });
 
       // Create and cancel a delegation
-      dispatch(dispatcher, leadAgent, `[[[ DELEGATE {"to": "${child.id}", "task": "cancelled task"} ]]]`);
-      dispatch(dispatcher, leadAgent, `[[[ CANCEL_DELEGATION {"agentId": "${child.id}"} ]]]`);
+      dispatch(dispatcher, leadAgent, `⟦ DELEGATE {"to": "${child.id}", "task": "cancelled task"} ⟧`);
+      dispatch(dispatcher, leadAgent, `⟦ CANCEL_DELEGATION {"agentId": "${child.id}"} ⟧`);
 
       // Cleanup with maxAge=0 should remove cancelled delegations
       const removed = dispatcher.cleanupStaleDelegations(0);
@@ -920,7 +921,7 @@ describe('CommandDispatcher', () => {
       });
       (ctx.spawnAgent as any).mockReturnValue(subLead);
 
-      dispatch(dispatcher, leadAgent, '[[[ CREATE_AGENT {"role": "lead", "task": "Handle deployment"} ]]]');
+      dispatch(dispatcher, leadAgent, '⟦ CREATE_AGENT {"role": "lead", "task": "Handle deployment"} ⟧');
 
       // projectName is now passed through spawn options, not set after
       expect(ctx.spawnAgent).toHaveBeenCalledWith(
@@ -941,7 +942,7 @@ describe('CommandDispatcher', () => {
       });
       (ctx.spawnAgent as any).mockReturnValue(subLead);
 
-      dispatch(dispatcher, leadAgent, '[[[ CREATE_AGENT {"role": "lead", "task": "Handle deployment", "name": "Deploy v2"} ]]]');
+      dispatch(dispatcher, leadAgent, '⟦ CREATE_AGENT {"role": "lead", "task": "Handle deployment", "name": "Deploy v2"} ⟧');
 
       expect(ctx.spawnAgent).toHaveBeenCalledWith(
         leadRole, 'Handle deployment', leadAgent.id, true, undefined, leadAgent.cwd,
@@ -955,7 +956,7 @@ describe('CommandDispatcher', () => {
       const child = makeChildAgent(leadAgent.id, { id: 'agent-dev-0000-000000000011', projectName: undefined });
       (ctx.spawnAgent as any).mockReturnValue(child);
 
-      dispatch(dispatcher, leadAgent, '[[[ CREATE_AGENT {"role": "developer", "task": "Fix bug"} ]]]');
+      dispatch(dispatcher, leadAgent, '⟦ CREATE_AGENT {"role": "developer", "task": "Fix bug"} ⟧');
 
       // Non-lead roles should NOT get projectName in options
       expect(ctx.spawnAgent).toHaveBeenCalledWith(
@@ -971,7 +972,7 @@ describe('CommandDispatcher', () => {
       const child = makeChildAgent(leadWithProject.id, { id: 'agent-dev-proj-child' });
       (ctx.spawnAgent as any).mockReturnValue(child);
 
-      dispatch(dispatcher, leadWithProject, '[[[ CREATE_AGENT {"role": "developer", "task": "Build API"} ]]]');
+      dispatch(dispatcher, leadWithProject, '⟦ CREATE_AGENT {"role": "developer", "task": "Build API"} ⟧');
 
       expect(ctx.spawnAgent).toHaveBeenCalledWith(
         devRole, 'Build API', leadWithProject.id, true, undefined, leadWithProject.cwd,
@@ -986,7 +987,7 @@ describe('CommandDispatcher', () => {
       const subLead = makeAgent({ id: 'agent-sublead-proj', role: leadRole, parentId: leadWithProject.id, hierarchyLevel: 0 });
       (ctx.spawnAgent as any).mockReturnValue(subLead);
 
-      dispatch(dispatcher, leadWithProject, '[[[ CREATE_AGENT {"role": "lead", "task": "Deploy v2"} ]]]');
+      dispatch(dispatcher, leadWithProject, '⟦ CREATE_AGENT {"role": "lead", "task": "Deploy v2"} ⟧');
 
       expect(ctx.spawnAgent).toHaveBeenCalledWith(
         leadRole, 'Deploy v2', leadWithProject.id, true, undefined, leadWithProject.cwd,
@@ -1030,7 +1031,7 @@ describe('CommandDispatcher', () => {
         return undefined;
       });
 
-      dispatch(dispatcher, devAgent, `[[[ ADD_TO_GROUP {"group": "config-team", "members": ["${newAgent.id}"]} ]]]`);
+      dispatch(dispatcher, devAgent, `⟦ ADD_TO_GROUP {"group": "config-team", "members": ["${newAgent.id}"]} ⟧`);
 
       expect(ctx.chatGroupRegistry.addMembers).toHaveBeenCalledWith(
         leadAgent.id,
@@ -1054,7 +1055,7 @@ describe('CommandDispatcher', () => {
       // Mock: devAgent is NOT a member of the group
       (ctx.chatGroupRegistry as any).findGroupForAgent = vi.fn().mockReturnValue(undefined);
 
-      dispatch(dispatcher, devAgent, '[[[ ADD_TO_GROUP {"group": "config-team", "members": ["some-agent"]} ]]]');
+      dispatch(dispatcher, devAgent, '⟦ ADD_TO_GROUP {"group": "config-team", "members": ["some-agent"]} ⟧');
 
       expect((devAgent.sendMessage as any)).toHaveBeenCalledWith(
         expect.stringContaining('must be a member'),
@@ -1146,12 +1147,16 @@ describe('CommandDispatcher', () => {
       const child = makeChildAgent(leadAgent.id);
       (ctx.getAllAgents as any).mockReturnValue([leadAgent, child]);
       const dagTask = { id: 'auth-impl', dagStatus: 'ready', role: 'developer' };
-      (ctx.taskDAG.getTask as any).mockReturnValue(dagTask);
+      (ctx.taskDAG.findReadyTask as any).mockReturnValue(dagTask);
       (ctx.taskDAG.startTask as any).mockReturnValue(dagTask);
 
-      dispatch(dispatcher, leadAgent, `[[[ DELEGATE {"to": "${child.id}", "task": "implement auth", "dagTaskId": "auth-impl"} ]]]`);
+      dispatch(dispatcher, leadAgent, `⟦ DELEGATE {"to": "${child.id}", "task": "implement auth", "dagTaskId": "auth-impl"} ⟧`);
 
-      expect(ctx.taskDAG.getTask).toHaveBeenCalledWith(leadAgent.id, 'auth-impl');
+      expect(ctx.taskDAG.findReadyTask).toHaveBeenCalledWith(leadAgent.id, {
+        dagTaskId: 'auth-impl',
+        role: 'developer',
+        taskDescription: 'implement auth',
+      });
       expect(ctx.taskDAG.startTask).toHaveBeenCalledWith(leadAgent.id, 'auth-impl', child.id);
       expect((leadAgent.sendMessage as any)).toHaveBeenCalledWith(
         expect.stringContaining('DAG: "auth-impl"'),
@@ -1162,21 +1167,25 @@ describe('CommandDispatcher', () => {
       const child = makeChildAgent(leadAgent.id);
       (ctx.getAllAgents as any).mockReturnValue([leadAgent, child]);
       const dagTask = { id: 'api-build', dagStatus: 'ready', role: 'developer' };
-      (ctx.taskDAG.findReadyTaskByRole as any).mockReturnValue(dagTask);
+      (ctx.taskDAG.findReadyTask as any).mockReturnValue(dagTask);
       (ctx.taskDAG.startTask as any).mockReturnValue(dagTask);
 
-      dispatch(dispatcher, leadAgent, `[[[ DELEGATE {"to": "${child.id}", "task": "build API"} ]]]`);
+      dispatch(dispatcher, leadAgent, `⟦ DELEGATE {"to": "${child.id}", "task": "build API"} ⟧`);
 
-      expect(ctx.taskDAG.findReadyTaskByRole).toHaveBeenCalledWith(leadAgent.id, 'developer');
+      expect(ctx.taskDAG.findReadyTask).toHaveBeenCalledWith(leadAgent.id, {
+        dagTaskId: undefined,
+        role: 'developer',
+        taskDescription: 'build API',
+      });
       expect(ctx.taskDAG.startTask).toHaveBeenCalledWith(leadAgent.id, 'api-build', child.id);
     });
 
     it('skips DAG linking when no matching task found', () => {
       const child = makeChildAgent(leadAgent.id);
       (ctx.getAllAgents as any).mockReturnValue([leadAgent, child]);
-      (ctx.taskDAG.findReadyTaskByRole as any).mockReturnValue(null);
+      (ctx.taskDAG.findReadyTask as any).mockReturnValue(null);
 
-      dispatch(dispatcher, leadAgent, `[[[ DELEGATE {"to": "${child.id}", "task": "review code"} ]]]`);
+      dispatch(dispatcher, leadAgent, `⟦ DELEGATE {"to": "${child.id}", "task": "review code"} ⟧`);
 
       expect(ctx.taskDAG.startTask).not.toHaveBeenCalled();
     });
@@ -1192,7 +1201,7 @@ describe('CommandDispatcher', () => {
       });
       (ctx.getAllAgents as any).mockReturnValue([architectAgent, child]);
 
-      dispatch(dispatcher, architectAgent, `[[[ DELEGATE {"to": "${child.id}", "task": "implement API"} ]]]`);
+      dispatch(dispatcher, architectAgent, `⟦ DELEGATE {"to": "${child.id}", "task": "implement API"} ⟧`);
 
       expect(ctx.taskDAG.startTask).not.toHaveBeenCalled();
     });
@@ -1210,12 +1219,16 @@ describe('CommandDispatcher', () => {
       (ctx.roleRegistry.get as any).mockReturnValue(makeRole());
       (ctx.spawnAgent as any).mockReturnValue(child);
       const dagTask = { id: 'auth-impl', dagStatus: 'ready', role: 'developer' };
-      (ctx.taskDAG.getTask as any).mockReturnValue(dagTask);
+      (ctx.taskDAG.findReadyTask as any).mockReturnValue(dagTask);
       (ctx.taskDAG.startTask as any).mockReturnValue(dagTask);
 
-      dispatch(dispatcher, leadAgent, '[[[ CREATE_AGENT {"role": "developer", "task": "implement auth", "dagTaskId": "auth-impl"} ]]]');
+      dispatch(dispatcher, leadAgent, '⟦ CREATE_AGENT {"role": "developer", "task": "implement auth", "dagTaskId": "auth-impl"} ⟧');
 
-      expect(ctx.taskDAG.getTask).toHaveBeenCalledWith(leadAgent.id, 'auth-impl');
+      expect(ctx.taskDAG.findReadyTask).toHaveBeenCalledWith(leadAgent.id, {
+        dagTaskId: 'auth-impl',
+        role: 'developer',
+        taskDescription: 'implement auth',
+      });
       expect(ctx.taskDAG.startTask).toHaveBeenCalledWith(leadAgent.id, 'auth-impl', child.id);
     });
 
@@ -1228,12 +1241,16 @@ describe('CommandDispatcher', () => {
       (ctx.roleRegistry.get as any).mockReturnValue(makeRole());
       (ctx.spawnAgent as any).mockReturnValue(child);
       const dagTask = { id: 'api-build', dagStatus: 'ready', role: 'developer' };
-      (ctx.taskDAG.findReadyTaskByRole as any).mockReturnValue(dagTask);
+      (ctx.taskDAG.findReadyTask as any).mockReturnValue(dagTask);
       (ctx.taskDAG.startTask as any).mockReturnValue(dagTask);
 
-      dispatch(dispatcher, leadAgent, '[[[ CREATE_AGENT {"role": "developer", "task": "build API"} ]]]');
+      dispatch(dispatcher, leadAgent, '⟦ CREATE_AGENT {"role": "developer", "task": "build API"} ⟧');
 
-      expect(ctx.taskDAG.findReadyTaskByRole).toHaveBeenCalledWith(leadAgent.id, 'developer');
+      expect(ctx.taskDAG.findReadyTask).toHaveBeenCalledWith(leadAgent.id, {
+        dagTaskId: undefined,
+        role: 'developer',
+        taskDescription: 'build API',
+      });
       expect(ctx.taskDAG.startTask).toHaveBeenCalledWith(leadAgent.id, 'api-build', child.id);
     });
   });
@@ -1245,7 +1262,7 @@ describe('CommandDispatcher', () => {
       (ctx.taskDAG.getTransitionError as any).mockReturnValue(null);
       (ctx.taskDAG.completeTask as any).mockReturnValue([{ id: 'task-2' }]);
 
-      dispatch(dispatcher, leadAgent, '[[[ COMPLETE_TASK {"id": "task-1", "summary": "Auth done"} ]]]');
+      dispatch(dispatcher, leadAgent, '⟦ COMPLETE_TASK {"id": "task-1", "summary": "Auth done"} ⟧');
 
       expect(ctx.taskDAG.completeTask).toHaveBeenCalledWith(leadAgent.id, 'task-1');
       expect((leadAgent.sendMessage as any)).toHaveBeenCalledWith(
@@ -1264,7 +1281,7 @@ describe('CommandDispatcher', () => {
         validStatuses: ['running', 'ready'],
       });
 
-      dispatch(dispatcher, leadAgent, '[[[ COMPLETE_TASK {"id": "task-999"} ]]]');
+      dispatch(dispatcher, leadAgent, '⟦ COMPLETE_TASK {"id": "task-999"} ⟧');
 
       expect(ctx.taskDAG.completeTask).not.toHaveBeenCalled();
       expect((leadAgent.sendMessage as any)).toHaveBeenCalledWith(
@@ -1273,7 +1290,7 @@ describe('CommandDispatcher', () => {
     });
 
     it('lead requires id field', () => {
-      dispatch(dispatcher, leadAgent, '[[[ COMPLETE_TASK {"summary": "done"} ]]]');
+      dispatch(dispatcher, leadAgent, '⟦ COMPLETE_TASK {"summary": "done"} ⟧');
 
       expect(ctx.taskDAG.completeTask).not.toHaveBeenCalled();
       expect((leadAgent.sendMessage as any)).toHaveBeenCalledWith(
@@ -1291,7 +1308,7 @@ describe('CommandDispatcher', () => {
         id === leadAgent.id ? leadAgent : undefined,
       );
 
-      dispatch(dispatcher, devAgent, '[[[ COMPLETE_TASK {"summary": "Auth module done"} ]]]');
+      dispatch(dispatcher, devAgent, '⟦ COMPLETE_TASK {"summary": "Auth module done"} ⟧');
 
       expect((leadAgent.sendMessage as any)).toHaveBeenCalledWith(
         expect.stringContaining('completed task'),

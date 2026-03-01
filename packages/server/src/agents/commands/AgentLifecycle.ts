@@ -18,11 +18,11 @@ import {
 
 // ── Regex patterns ────────────────────────────────────────────────────
 
-const SPAWN_REQUEST_REGEX = /\[\[\[\s*SPAWN_AGENT\s*(\{.*?\})\s*\]\]\]/s;
-const CREATE_AGENT_REGEX = /\[\[\[\s*CREATE_AGENT\s*(\{.*?\})\s*\]\]\]/s;
-const DELEGATE_REGEX = /\[\[\[\s*DELEGATE\s*(\{.*?\})\s*\]\]\]/s;
-const TERMINATE_AGENT_REGEX = /\[\[\[\s*TERMINATE_AGENT\s*(\{.*?\})\s*\]\]\]/s;
-const CANCEL_DELEGATION_REGEX = /\[\[\[\s*CANCEL_DELEGATION\s*(\{.*?\})\s*\]\]\]/s;
+const SPAWN_REQUEST_REGEX = /⟦\s*SPAWN_AGENT\s*(\{.*?\})\s*⟧/s;
+const CREATE_AGENT_REGEX = /⟦\s*CREATE_AGENT\s*(\{.*?\})\s*⟧/s;
+const DELEGATE_REGEX = /⟦\s*DELEGATE\s*(\{.*?\})\s*⟧/s;
+const TERMINATE_AGENT_REGEX = /⟦\s*TERMINATE_AGENT\s*(\{.*?\})\s*⟧/s;
+const CANCEL_DELEGATION_REGEX = /⟦\s*CANCEL_DELEGATION\s*(\{.*?\})\s*⟧/s;
 
 // ── Exported: command entry list ──────────────────────────────────────
 

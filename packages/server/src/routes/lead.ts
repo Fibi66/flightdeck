@@ -230,6 +230,25 @@ export function leadRoutes(ctx: AppContext): Router {
     res.json(tracker.getAgentTaskCosts(req.params.agentId));
   });
 
+  // --- Timers ---
+  router.get('/timers', (_req, res) => {
+    const registry = agentManager.getTimerRegistry();
+    if (!registry) return res.json([]);
+    const timers = registry.getAllTimers().map(t => ({
+      id: t.id,
+      agentId: t.agentId,
+      label: t.label,
+      message: t.message,
+      fireAt: t.fireAt,
+      createdAt: t.createdAt,
+      fired: t.fired,
+      repeat: t.repeat,
+      intervalSeconds: t.intervalSeconds,
+      remainingMs: t.fired ? 0 : Math.max(0, t.fireAt - Date.now()),
+    }));
+    res.json(timers);
+  });
+
   router.get('/lead/:id/progress', (req, res) => {
     const leadId = req.params.id;
     const delegations = agentManager.getDelegations(leadId);

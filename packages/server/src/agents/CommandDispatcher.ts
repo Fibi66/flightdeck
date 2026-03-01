@@ -1,7 +1,7 @@
 /**
  * CommandDispatcher — Thin router for ACP commands.
  *
- * Scans agent text buffers for [[[ COMMAND {...} ]]] patterns and dispatches
+ * Scans agent text buffers for ⟦ COMMAND {...} ⟧ patterns and dispatches
  * to handler modules. All command logic lives in ./commands/*.ts.
  *
  * This file owns: buffer management, the dispatch loop, and public API
@@ -102,7 +102,7 @@ export class CommandDispatcher {
     let found = true;
     while (found) {
       found = false;
-      // Find the leftmost match across ALL patterns to prevent inner [[[ from
+      // Find the leftmost match across ALL patterns to prevent inner ⟦ from
       // being parsed before the outer command that contains them (issue #26).
       let best: { index: number; end: number; name: string; handler: (a: Agent, d: string) => void; text: string } | null = null;
       for (const { regex, name, handler } of this.patterns) {
@@ -114,7 +114,7 @@ export class CommandDispatcher {
         }
       }
       if (best) {
-        // Skip commands whose [[[ is nested inside another [[[ ]]] block
+        // Skip commands whose ⟦ is nested inside another ⟦ ⟧ block
         if (CommandDispatcher.isInsideCommandBlock(buf, best.index)) {
           logger.debug('agent', `Skipped nested command: ${best.name} from ${agent.role.name} (${agent.id.slice(0, 8)})`);
           buf = buf.slice(0, best.index) + buf.slice(best.end);
@@ -138,7 +138,7 @@ export class CommandDispatcher {
     }
 
     // Keep only last 500 chars that might contain an incomplete command
-    const lastOpen = buf.lastIndexOf('[[[');
+    const lastOpen = buf.lastIndexOf('⟦');
     if (lastOpen >= 0) {
       buf = buf.slice(lastOpen);
     } else if (buf.length > 500) {
@@ -191,11 +191,11 @@ export class CommandDispatcher {
   // ── Static helpers ─────────────────────────────────────────────────
 
   /**
-   * Check if a position in the buffer is nested inside a [[[ ]]] command block
+   * Check if a position in the buffer is nested inside a ⟦ ⟧ command block
    * OR inside a JSON string literal. This prevents:
-   * - Command injection via task text containing [[[ delimiters (#26)
-   * - Parsing [[[ inside JSON string values (e.g. task descriptions)
-   * - Parsing [[[ inside quoted examples in agent output
+   * - Command injection via task text containing ⟦ delimiters (#26)
+   * - Parsing ⟦ inside JSON string values (e.g. task descriptions)
+   * - Parsing ⟦ inside quoted examples in agent output
    */
   static isInsideCommandBlock(buf: string, pos: number): boolean {
     let depth = 0;
@@ -222,12 +222,10 @@ export class CommandDispatcher {
 
       if (inString) continue;
 
-      if (i + 2 < pos && buf[i] === '[' && buf[i + 1] === '[' && buf[i + 2] === '[') {
+      if (buf[i] === '⟦') {
         depth++;
-        i += 2;
-      } else if (i + 2 <= pos && buf[i] === ']' && buf[i + 1] === ']' && buf[i + 2] === ']') {
+      } else if (buf[i] === '⟧') {
         depth = Math.max(0, depth - 1);
-        i += 2;
       }
     }
     return depth > 0 || inString;
