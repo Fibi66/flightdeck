@@ -57,6 +57,7 @@ export function LeadDashboard({ api, ws }: Props) {
   const [newProjectModelConfig, setNewProjectModelConfig] = useState<Record<string, string[]> | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
+  const reportsScrollRef = useRef<HTMLDivElement>(null);
   const [sidebarWidth, setSidebarWidth] = useState(320);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [sidebarTab, setSidebarTab] = useState<string>('team');
@@ -269,6 +270,14 @@ export function LeadDashboard({ api, ws }: Props) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
   }, [currentProject?.messages]);
+
+  // Auto-scroll agent reports to show latest
+  useEffect(() => {
+    const el = reportsScrollRef.current;
+    if (el) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [currentProject?.agentReports?.length]);
 
   // Poll progress for selected lead (skip for project: prefixed IDs — those are persisted projects, not running agents)
   const isActiveAgent = selectedLeadId != null && !selectedLeadId.startsWith('project:');
@@ -1432,7 +1441,7 @@ export function LeadDashboard({ api, ws }: Props) {
                   <span className="bg-amber-500/20 px-1.5 rounded text-[10px]">{agentReports.length}</span>
                 </button>
                 {reportsExpanded && (
-                  <div className="max-h-48 overflow-y-auto px-3 pb-2 space-y-1">
+                  <div ref={reportsScrollRef} className="max-h-48 overflow-y-auto px-3 pb-2 space-y-1">
                     {agentReports.slice(-20).map((r) => {
                       const time = new Date(r.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                       return (
@@ -1533,6 +1542,8 @@ export function LeadDashboard({ api, ws }: Props) {
                   const sysText = typeof msg.text === 'string' ? msg.text : '';
                   // Hide outgoing DM notifications — redundant with command blocks
                   if (sysText.startsWith('📤')) return null;
+                  // Hide incoming DM notifications — shown in agent chat panes instead
+                  if (sysText.startsWith('📨')) return null;
                   return (
                     <div key={i} className="flex justify-center py-1">
                       <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-th-bg-alt/60 border border-th-border/50 text-xs font-mono text-th-text-muted">
