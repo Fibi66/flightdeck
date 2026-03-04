@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { ProjectModelConfig } from '../projects/ModelConfigDefaults.js';
+import { DEFAULT_MODEL_CONFIG } from '../projects/ModelConfigDefaults.js';
+import { AgentManager } from '../agents/AgentManager.js';
 
 /**
  * Standalone mirror of AgentManager.resolveModelForRole for focused unit testing.
@@ -174,5 +176,79 @@ describe('resolveModelForRole (model config enforcement)', () => {
       expect(result.overridden).toBe(true);
       expect(result.model).toBe('claude-opus-4.6');
     });
+  });
+});
+
+// ── Integration tests: real AgentManager.resolveModelForRole() ───────
+
+describe('AgentManager.resolveModelForRole (integration)', () => {
+  function createMockProjectRegistry(configMap: Record<string, ProjectModelConfig>) {
+    return {
+      getModelConfig(projectId: string) {
+        const stored = configMap[projectId] ?? {};
+        const merged = { ...DEFAULT_MODEL_CONFIG, ...stored };
+        return { config: merged, defaults: DEFAULT_MODEL_CONFIG };
+      },
+    };
+  }
+
+  function callResolve(
+    projectRegistry: ReturnType<typeof createMockProjectRegistry> | undefined,
+    roleId: string,
+    requestedModel: string | undefined,
+    projectId: string | undefined,
+  ) {
+    // Call the real AgentManager method via prototype with a minimal context
+    return AgentManager.prototype.resolveModelForRole.call(
+      { projectRegistry },
+      roleId,
+      requestedModel,
+      projectId,
+    );
+  }
+
+  it('enforces allowed models from a mocked ProjectRegistry', () => {
+    const registry = createMockProjectRegistry({
+      'proj-1': { developer: ['claude-opus-4.6'], architect: ['claude-sonnet-4.6'] },
+    });
+    // Developer requesting haiku — should be overridden to opus
+    const result = callResolve(registry, 'developer', 'claude-haiku-4.5', 'proj-1');
+    expect(result.model).toBe('claude-opus-4.6');
+    expect(result.overridden).toBe(true);
+    expect(result.reason).toContain('claude-haiku-4.5');
+  });
+
+  it('allows a model that is in the configured allowed list', () => {
+    const registry = createMockProjectRegistry({
+      'proj-1': { architect: ['claude-sonnet-4.6', 'claude-opus-4.6'] },
+    });
+    const result = callResolve(registry, 'architect', 'claude-opus-4.6', 'proj-1');
+    expect(result.model).toBe('claude-opus-4.6');
+    expect(result.overridden).toBe(false);
+  });
+
+  it('uses role default when no model is requested', () => {
+    const registry = createMockProjectRegistry({
+      'proj-1': { secretary: ['gpt-4.1'] },
+    });
+    const result = callResolve(registry, 'secretary', undefined, 'proj-1');
+    expect(result.model).toBe('gpt-4.1');
+    expect(result.overridden).toBe(false);
+  });
+
+  it('passes through when no projectRegistry is set', () => {
+    const result = callResolve(undefined, 'developer', 'claude-haiku-4.5', 'proj-1');
+    expect(result.model).toBe('claude-haiku-4.5');
+    expect(result.overridden).toBe(false);
+  });
+
+  it('falls back to DEFAULT_MODEL_CONFIG for roles not in stored config', () => {
+    const registry = createMockProjectRegistry({
+      'proj-1': {}, // empty stored config — defaults apply
+    });
+    // developer defaults to ['claude-opus-4.6'] in DEFAULT_MODEL_CONFIG
+    const result = callResolve(registry, 'developer', undefined, 'proj-1');
+    expect(result.model).toBe(DEFAULT_MODEL_CONFIG['developer']?.[0]);
+    expect(result.overridden).toBe(false);
   });
 });
