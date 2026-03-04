@@ -205,7 +205,7 @@ export class Agent {
       .join('\n');
 
     const siblingSection = isLead && siblingLines
-      ? `\n== OTHER PROJECT AGENTS ==\n${siblingLines}`
+      ? `\n== OTHER TEAM MEMBERS ==\n${siblingLines}`
       : '';
 
     const budgetSection = isLead && budget

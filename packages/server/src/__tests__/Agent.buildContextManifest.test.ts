@@ -59,7 +59,7 @@ describe('Agent.buildContextManifest', () => {
     expect(result).toContain('write code');
   });
 
-  it('shows sibling leads under OTHER PROJECT AGENTS', () => {
+  it('shows sibling leads under OTHER TEAM MEMBERS', () => {
     const lead = makeLeadAgent();
     const child = makePeer({ id: 'child-aaa', parentId: LEAD_ID, task: 'write code' });
     const sibling = makePeer({
@@ -71,16 +71,16 @@ describe('Agent.buildContextManifest', () => {
     });
     const result = lead.buildContextManifest([child, sibling]);
     expect(result).toContain('== YOUR AGENTS ==');
-    expect(result).toContain('== OTHER PROJECT AGENTS ==');
+    expect(result).toContain('== OTHER TEAM MEMBERS ==');
     expect(result).toContain('sibling-');
     expect(result).toContain('handle testing');
   });
 
-  it('does NOT show OTHER PROJECT AGENTS when there are no siblings', () => {
+  it('does NOT show OTHER TEAM MEMBERS when there are no siblings', () => {
     const lead = makeLeadAgent();
     const child = makePeer({ id: 'child-aaa', parentId: LEAD_ID, task: 'write code' });
     const result = lead.buildContextManifest([child]);
-    expect(result).not.toContain('OTHER PROJECT AGENTS');
+    expect(result).not.toContain('OTHER TEAM MEMBERS');
   });
 
   it('excludes self from sibling list', () => {
@@ -95,11 +95,11 @@ describe('Agent.buildContextManifest', () => {
       task: 'testing domain',
     });
     const result = lead.buildContextManifest([self, sibling]);
-    // Should show sibling but not self in OTHER PROJECT AGENTS
+    // Should show sibling but not self in OTHER TEAM MEMBERS
     expect(result).toContain('sibling-');
-    expect(result).toContain('== OTHER PROJECT AGENTS ==');
+    expect(result).toContain('== OTHER TEAM MEMBERS ==');
     // Self's task should NOT appear in the sibling section
-    const otherSection = result.split('OTHER PROJECT AGENTS')[1]?.split('==')[0] ?? '';
+    const otherSection = result.split('OTHER TEAM MEMBERS')[1]?.split('==')[0] ?? '';
     expect(otherSection).not.toContain(LEAD_ID.slice(0, 8));
   });
 
@@ -110,7 +110,7 @@ describe('Agent.buildContextManifest', () => {
     const peer2 = makePeer({ id: 'peer-bbb', task: 'task B' });
     const result = dev.buildContextManifest([peer1, peer2]);
     expect(result).toContain('== ACTIVE CREW MEMBERS ==');
-    expect(result).not.toContain('OTHER PROJECT AGENTS');
+    expect(result).not.toContain('OTHER TEAM MEMBERS');
     expect(result).not.toContain('YOUR AGENTS');
     expect(result).toContain('peer-aaa');
     expect(result).toContain('peer-bbb');
@@ -127,7 +127,7 @@ describe('Agent.buildContextManifest', () => {
       task: longTask,
     });
     const result = lead.buildContextManifest([sibling]);
-    expect(result).toContain('OTHER PROJECT AGENTS');
+    expect(result).toContain('OTHER TEAM MEMBERS');
     // Task should be truncated to 80 chars
     expect(result).toContain('A'.repeat(80));
     expect(result).not.toContain('A'.repeat(81));
@@ -142,7 +142,7 @@ describe('Agent.buildContextManifest', () => {
       parentId: 'other-parent',
     });
     const result = lead.buildContextManifest([sibling]);
-    expect(result).toContain('OTHER PROJECT AGENTS');
+    expect(result).toContain('OTHER TEAM MEMBERS');
     expect(result).toContain('idle');
   });
 });
