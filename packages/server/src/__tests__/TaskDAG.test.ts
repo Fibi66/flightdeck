@@ -1282,6 +1282,21 @@ describe('TaskDAG', () => {
       expect(task!.dependsOn).toContain('a');
     });
 
+    it('does not regress failed task to blocked', () => {
+      dag.declareTaskBatch('lead-1', [
+        { taskId: 'a', role: 'Dev' },
+        { taskId: 'b', role: 'Dev' },
+      ]);
+      dag.startTask('lead-1', 'b', 'agent-1');
+      dag.failTask('lead-1', 'b');
+      // b is failed (terminal), adding dep on a should NOT block b
+      const result = dag.addDependency('lead-1', 'b', 'a');
+      expect(result).toBe(true);
+      const task = dag.getTask('lead-1', 'b');
+      expect(task!.dagStatus).toBe('failed');
+      expect(task!.dependsOn).toContain('a');
+    });
+
     it('still blocks ready/pending tasks when dependency is not done', () => {
       dag.declareTaskBatch('lead-1', [
         { taskId: 'a', role: 'Dev' },

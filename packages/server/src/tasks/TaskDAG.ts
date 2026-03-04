@@ -182,7 +182,7 @@ export class TaskDAG extends EventEmitter {
       const autoMatch = existingAutoTasks.find(auto =>
         !linkedAutoIds.has(auto.id)
         && auto.role === task.role
-        && descriptionSimilarity(task.description || '', auto.description, auto.title) > 0.5
+        && descriptionSimilarity(task.description || '', auto.description, auto.title) > 0.7
       );
 
       if (autoMatch) {
@@ -564,7 +564,7 @@ export class TaskDAG extends EventEmitter {
     // If the dependency isn't done/skipped yet, block this task —
     // but only if the task isn't already running or done (don't regress active/completed work)
     if (dep.dagStatus !== 'done' && dep.dagStatus !== 'skipped'
-        && task.dagStatus !== 'running' && task.dagStatus !== 'done') {
+        && task.dagStatus !== 'running' && task.dagStatus !== 'done' && task.dagStatus !== 'failed') {
       this.db.drizzle.update(dagTasks)
         .set({ dagStatus: 'blocked' })
         .where(and(eq(dagTasks.id, taskId), eq(dagTasks.leadId, leadId)))
