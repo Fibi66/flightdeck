@@ -1404,7 +1404,7 @@ export function LeadDashboard({ api, ws }: Props) {
                     <div key={i} data-user-prompt={i} className="flex justify-end items-start gap-2 py-1">
                       <span className="text-[10px] text-th-text-muted mt-1.5 shrink-0">{ts}</span>
                       <div className="max-w-[80%] rounded-lg px-3 py-2 bg-blue-600 text-white font-mono text-sm whitespace-pre-wrap">
-                        {msg.text}
+                        <MentionText text={msg.text} agents={agents} onClickAgent={(id) => useAppStore.getState().setSelectedAgent(id)} />
                       </div>
                     </div>
                   );
@@ -1430,7 +1430,7 @@ export function LeadDashboard({ api, ws }: Props) {
                     <div key={i} className="flex justify-center py-1">
                       <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-th-bg-alt/60 border border-th-border/50 text-xs font-mono text-th-text-muted">
                         <RefreshCw className="w-3 h-3 text-th-text-muted" />
-                        {msg.text}
+                        <MentionText text={msg.text} agents={agents} onClickAgent={(id) => useAppStore.getState().setSelectedAgent(id)} />
                         {ts && <span className="text-[10px] text-th-text-muted ml-1">{ts}</span>}
                       </div>
                     </div>
@@ -1562,7 +1562,11 @@ export function LeadDashboard({ api, ws }: Props) {
                       sendMessage('queue');
                     } else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
                       e.preventDefault();
-                      if (input.trim()) sendMessage('interrupt');
+                      if (input.trim()) {
+                        sendMessage('interrupt');
+                      } else if (selectedLeadId) {
+                        apiFetch(`/agents/${selectedLeadId}/interrupt`, { method: 'POST' });
+                      }
                     }
                   }}
                   placeholder={isActive ? 'Message the Lead... (Enter = send, Ctrl+Enter = interrupt)' : 'Project Lead is not active'}
@@ -2414,7 +2418,7 @@ function TeamStatusContent({ agents, delegations, comms, activity, allAgents, on
                             <span className="text-th-text-muted ml-auto">{time}</span>
                           </div>
                           <p className="text-th-text-alt mt-0.5 break-words whitespace-pre-wrap">
-                            {c.content.length > 200 ? c.content.slice(0, 200) + '…' : c.content}
+                            <MentionText text={c.content.length > 200 ? c.content.slice(0, 200) + '…' : c.content} agents={useAppStore.getState().agents} onClickAgent={(id) => useAppStore.getState().setSelectedAgent(id)} />
                           </p>
                         </div>
                       );
@@ -2465,7 +2469,7 @@ function TeamStatusContent({ agents, delegations, comms, activity, allAgents, on
                   value={agentMsg}
                   onChange={(e) => setAgentMsg(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
+                    if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
                       e.preventDefault();
                       if (agentMsg.trim() && !sendingMsg) {
                         setSendingMsg(true);
@@ -2479,6 +2483,26 @@ function TeamStatusContent({ agents, delegations, comms, activity, allAgents, on
                           useToastStore.getState().add('error', `Failed to send: ${err.message}`);
                         }).finally(() => setSendingMsg(false));
                       }
+                    } else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                      e.preventDefault();
+                      if (agentMsg.trim() && !sendingMsg) {
+                        setSendingMsg(true);
+                        apiFetch(`/agents/${selectedAgent.id}/message`, {
+                          method: 'POST',
+                          body: JSON.stringify({ text: agentMsg.trim(), mode: 'interrupt' }),
+                        }).then(() => {
+                          setAgentMsg('');
+                          useToastStore.getState().add('success', `Interrupt sent to ${selectedAgent.role.name}`);
+                        }).catch((err: Error) => {
+                          useToastStore.getState().add('error', `Failed to interrupt: ${err.message}`);
+                        }).finally(() => setSendingMsg(false));
+                      } else {
+                        apiFetch(`/agents/${selectedAgent.id}/interrupt`, { method: 'POST' }).then(() => {
+                          useToastStore.getState().add('success', `Interrupted ${selectedAgent.role.name}`);
+                        }).catch((err: Error) => {
+                          useToastStore.getState().add('error', `Failed to interrupt: ${err.message}`);
+                        });
+                      }
                     }
                   }}
                   placeholder={`Message ${selectedAgent.role.name}...`}
@@ -2486,29 +2510,58 @@ function TeamStatusContent({ agents, delegations, comms, activity, allAgents, on
                   rows={2}
                   disabled={sendingMsg}
                 />
-                <button
-                  onClick={() => {
-                    if (agentMsg.trim() && !sendingMsg) {
-                      setSendingMsg(true);
-                      apiFetch(`/agents/${selectedAgent.id}/message`, {
-                        method: 'POST',
-                        body: JSON.stringify({ text: agentMsg.trim(), mode: 'queue' }),
-                      }).then(() => {
-                        setAgentMsg('');
-                        useToastStore.getState().add('success', `Message sent to ${selectedAgent.role.name}`);
-                      }).catch((err: Error) => {
-                        useToastStore.getState().add('error', `Failed to send: ${err.message}`);
-                      }).finally(() => setSendingMsg(false));
-                    }
-                  }}
-                  disabled={!agentMsg.trim() || sendingMsg}
-                  className="self-end px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-medium flex items-center gap-1 transition-colors"
-                  title="Send message (Enter)"
-                >
-                  <Send size={12} /> {sendingMsg ? 'Sending…' : 'Send'}
-                </button>
+                <div className="flex flex-col gap-1 self-end shrink-0">
+                  <button
+                    onClick={() => {
+                      if (agentMsg.trim() && !sendingMsg) {
+                        setSendingMsg(true);
+                        apiFetch(`/agents/${selectedAgent.id}/message`, {
+                          method: 'POST',
+                          body: JSON.stringify({ text: agentMsg.trim(), mode: 'queue' }),
+                        }).then(() => {
+                          setAgentMsg('');
+                          useToastStore.getState().add('success', `Message sent to ${selectedAgent.role.name}`);
+                        }).catch((err: Error) => {
+                          useToastStore.getState().add('error', `Failed to send: ${err.message}`);
+                        }).finally(() => setSendingMsg(false));
+                      }
+                    }}
+                    disabled={!agentMsg.trim() || sendingMsg}
+                    className="px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-medium flex items-center gap-1 transition-colors"
+                    title="Send message (Enter)"
+                  >
+                    <Send size={12} /> {sendingMsg ? 'Sending…' : 'Send'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (agentMsg.trim() && !sendingMsg) {
+                        setSendingMsg(true);
+                        apiFetch(`/agents/${selectedAgent.id}/message`, {
+                          method: 'POST',
+                          body: JSON.stringify({ text: agentMsg.trim(), mode: 'interrupt' }),
+                        }).then(() => {
+                          setAgentMsg('');
+                          useToastStore.getState().add('success', `Interrupt sent to ${selectedAgent.role.name}`);
+                        }).catch((err: Error) => {
+                          useToastStore.getState().add('error', `Failed to interrupt: ${err.message}`);
+                        }).finally(() => setSendingMsg(false));
+                      } else {
+                        apiFetch(`/agents/${selectedAgent.id}/interrupt`, { method: 'POST' }).then(() => {
+                          useToastStore.getState().add('success', `Interrupted ${selectedAgent.role.name}`);
+                        }).catch((err: Error) => {
+                          useToastStore.getState().add('error', `Failed to interrupt: ${err.message}`);
+                        });
+                      }
+                    }}
+                    disabled={sendingMsg}
+                    className="px-3 py-1.5 rounded bg-orange-600/80 hover:bg-orange-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-medium flex items-center gap-1 transition-colors"
+                    title="Interrupt agent (Ctrl+Enter)"
+                  >
+                    <AlertCircle size={12} /> Interrupt
+                  </button>
+                </div>
               </div>
-              <p className="text-[10px] text-th-text-muted mt-1">Enter to send · Shift+Enter for newline · Message is queued for the agent</p>
+              <p className="text-[10px] text-th-text-muted mt-1">Enter to send · Shift+Enter for newline · Ctrl+Enter to interrupt</p>
             </div>
 
           </div>
