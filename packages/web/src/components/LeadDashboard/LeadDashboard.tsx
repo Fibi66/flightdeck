@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Crown, Send, Users, CheckCircle, AlertCircle, Clock, Loader2, Plus, Trash2, Wrench, MessageSquare, GitBranch, PanelRightClose, PanelRightOpen, ChevronDown, ChevronRight, ChevronUp, Lightbulb, Bot, FolderOpen, Check, X, BarChart3, AlertTriangle, RefreshCw, Network, Pencil, Hand, Square, Filter, Download } from 'lucide-react';
+import { Crown, Send, Users, CheckCircle, AlertCircle, Clock, Loader2, Plus, Trash2, Wrench, MessageSquare, GitBranch, PanelRightClose, PanelRightOpen, ChevronDown, ChevronRight, ChevronUp, Lightbulb, Bot, FolderOpen, Check, X, BarChart3, AlertTriangle, RefreshCw, Network, Pencil, Hand, Square, Filter, Download, Settings, Eye, EyeOff } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import { useLeadStore } from '../../stores/leadStore';
 import { useTimerStore, selectActiveTimerCount } from '../../stores/timerStore';
@@ -79,6 +79,17 @@ export function LeadDashboard({ api, ws }: Props) {
     return allSupportedTabs;
   });
   const [dragOverTab, setDragOverTab] = useState<string | null>(null);
+  const [hiddenTabs, setHiddenTabs] = useState<Set<string>>(() => {
+    try {
+      const stored = localStorage.getItem('flightdeck-hidden-tabs');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) return new Set(parsed);
+      }
+    } catch {}
+    return new Set();
+  });
+  const [showTabConfig, setShowTabConfig] = useState(false);
   const [showProgressDetail, setShowProgressDetail] = useState(false);
   const [expandedReport, setExpandedReport] = useState<AgentReport | null>(null);
   const [reportsExpanded, setReportsExpanded] = useState(true);
@@ -651,6 +662,29 @@ export function LeadDashboard({ api, ws }: Props) {
 
   const handleTabDragEnd = useCallback(() => {
     setDragOverTab(null);
+  }, []);
+
+  const toggleTabVisibility = useCallback((tabId: string) => {
+    setHiddenTabs((prev) => {
+      const next = new Set(prev);
+      if (next.has(tabId)) {
+        next.delete(tabId);
+      } else {
+        next.add(tabId);
+      }
+      localStorage.setItem('flightdeck-hidden-tabs', JSON.stringify([...next]));
+      // If hiding the active tab, switch to first visible tab
+      if (next.has(tabId)) {
+        setSidebarTab((current) => {
+          if (current === tabId) {
+            const allSupportedTabs = ['team', 'comms', 'groups', 'dag', 'models', 'tokens', 'costs', 'timers'];
+            return allSupportedTabs.find((id) => !next.has(id)) ?? 'team';
+          }
+          return current;
+        });
+      }
+      return next;
+    });
   }, []);
 
   const startLead = useCallback(async (name: string, task?: string, model?: string, cwd?: string, sessionId?: string, initialTeam?: string[]) => {
@@ -1680,7 +1714,7 @@ export function LeadDashboard({ api, ws }: Props) {
 
                 {/* Tabbed bottom panels */}
                 <div className="flex-1 min-h-0 border-t border-th-border flex flex-col relative">
-                  <div className="flex flex-wrap border-b border-th-border shrink-0">
+                  <div className="flex flex-wrap border-b border-th-border shrink-0 items-center">
                     {(() => {
                       const allTabs: Record<string, { icon: React.ReactNode; label: string; badge?: number }> = {
                         team: { icon: <Bot className="w-3 h-3" />, label: 'Team', badge: teamAgents.length },
@@ -1692,10 +1726,10 @@ export function LeadDashboard({ api, ws }: Props) {
                         costs: { icon: <BarChart3 className="w-3 h-3" />, label: 'Costs' },
                         timers: { icon: <Clock className="w-3 h-3" />, label: 'Timers', badge: activeTimerCount || undefined },
                       };
-                      const orderedIds = tabOrder.filter((id) => id in allTabs);
-                      // Append any missing tabs (safety net)
+                      const orderedIds = tabOrder.filter((id) => id in allTabs && !hiddenTabs.has(id));
+                      // Append any missing visible tabs (safety net)
                       for (const id of Object.keys(allTabs)) {
-                        if (!orderedIds.includes(id)) orderedIds.push(id);
+                        if (!orderedIds.includes(id) && !hiddenTabs.has(id)) orderedIds.push(id);
                       }
                       return orderedIds.map((tabId) => {
                         const tab = allTabs[tabId];
@@ -1726,6 +1760,36 @@ export function LeadDashboard({ api, ws }: Props) {
                         );
                       });
                     })()}
+                    {/* Tab visibility settings */}
+                    <div className="relative ml-auto">
+                      <button
+                        onClick={() => setShowTabConfig((v) => !v)}
+                        className="flex items-center px-1.5 py-1.5 text-th-text-muted hover:text-th-text-alt transition-colors"
+                        title="Configure visible tabs"
+                      >
+                        <Settings className="w-3 h-3" />
+                      </button>
+                      {showTabConfig && (
+                        <>
+                          <div className="fixed inset-0 z-40" onClick={() => setShowTabConfig(false)} />
+                          <div className="absolute right-0 top-full mt-1 z-50 bg-th-bg-panel border border-th-border rounded-md shadow-lg py-1 min-w-[140px]">
+                            {(['team', 'comms', 'groups', 'dag', 'models', 'tokens', 'costs', 'timers'] as const).map((tabId) => (
+                              <button
+                                key={tabId}
+                                onClick={() => toggleTabVisibility(tabId)}
+                                className="flex items-center gap-2 w-full px-3 py-1.5 text-[11px] hover:bg-th-bg-muted transition-colors"
+                              >
+                                {hiddenTabs.has(tabId)
+                                  ? <EyeOff className="w-3 h-3 text-th-text-muted" />
+                                  : <Eye className="w-3 h-3 text-blue-500" />
+                                }
+                                <span className={hiddenTabs.has(tabId) ? 'text-th-text-muted' : ''}>{tabId.charAt(0).toUpperCase() + tabId.slice(1)}</span>
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
                   </div>
                   <div className="flex-1 min-h-0 overflow-hidden">
                     {sidebarTab === 'team' && <TeamStatusContent agents={teamAgents} delegations={progress?.delegations ?? []} comms={comms} activity={activity} allAgents={agents} onOpenChat={handleOpenAgentChat} />}
