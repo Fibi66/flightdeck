@@ -8,6 +8,8 @@ import { PlaybookLibrary } from '../Playbooks';
 import { IntentRulesDashboard } from '../IntentRules';
 import { RecoverySettingsPanel, RecoveryMetricsCard } from '../Recovery';
 import { NotificationPreferencesPanel, NotificationActivityLog } from '../Notifications';
+import { PredictionSettingsPanel } from '../Predictions';
+import { WorkflowDashboard } from '../Workflow';
 
 interface Props {
   api: any;
@@ -191,6 +193,16 @@ export function SettingsPanel({ api }: Props) {
       {/* Intent Rules */}
       <section className="bg-surface-raised border border-th-border rounded-lg p-4 mb-6">
         <IntentRulesDashboard />
+      </section>
+
+      {/* Workflow Automation */}
+      <section className="bg-surface-raised border border-th-border rounded-lg p-4 mb-6">
+        <WorkflowDashboard />
+      </section>
+
+      {/* Prediction Settings */}
+      <section className="bg-surface-raised border border-th-border rounded-lg p-4 mb-6">
+        <PredictionSettingsPanel />
       </section>
 
       {/* Recovery Settings */}

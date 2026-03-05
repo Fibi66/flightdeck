@@ -4,6 +4,7 @@ import { useAppStore } from '../../stores/appStore';
 import type { AgentInfo } from '../../types';
 import { estimateCostUsd } from '../../constants/pricing';
 import { PulseRecoveryIndicator } from '../Recovery';
+import { PulsePredictionIndicator } from '../Predictions';
 
 function formatCost(usd: number): string {
   if (usd < 0.01) return '<$0.01';
@@ -209,6 +210,12 @@ export function PulseStrip() {
 
       {/* Recovery Status */}
       <PulseRecoveryIndicator />
+
+      {/* Separator */}
+      <div className="w-px h-4 bg-th-border/50" />
+
+      {/* Prediction Indicator */}
+      <PulsePredictionIndicator />
     </div>
   );
 }
