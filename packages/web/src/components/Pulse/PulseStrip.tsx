@@ -2,15 +2,8 @@ import { useMemo } from 'react';
 import { DollarSign, Users, AlertCircle, Brain } from 'lucide-react';
 import { useAppStore } from '../../stores/appStore';
 import type { AgentInfo } from '../../types';
-
-// ── Pricing (approximate per-token costs in USD) ─────────────────────
-
-const INPUT_COST_PER_TOKEN = 0.000003; // $3 per 1M input tokens (blended avg)
-const OUTPUT_COST_PER_TOKEN = 0.000015; // $15 per 1M output tokens (blended avg)
-
-function estimateCostUsd(inputTokens: number, outputTokens: number): number {
-  return inputTokens * INPUT_COST_PER_TOKEN + outputTokens * OUTPUT_COST_PER_TOKEN;
-}
+import { estimateCostUsd } from '../../constants/pricing';
+import { PulseRecoveryIndicator } from '../Recovery';
 
 function formatCost(usd: number): string {
   if (usd < 0.01) return '<$0.01';
@@ -210,6 +203,12 @@ export function PulseStrip() {
           <span className="text-th-text-muted">—</span>
         )}
       </div>
+
+      {/* Separator */}
+      <div className="w-px h-4 bg-th-border/50" />
+
+      {/* Recovery Status */}
+      <PulseRecoveryIndicator />
     </div>
   );
 }

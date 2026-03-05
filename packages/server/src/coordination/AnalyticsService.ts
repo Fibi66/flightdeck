@@ -2,6 +2,7 @@ import type { Database } from '../db/database.js';
 import { projectSessions, taskCostRecords, sessionRetros } from '../db/schema.js';
 import { eq, sql, desc, and, inArray } from 'drizzle-orm';
 import { activityLog } from '../db/schema.js';
+import { estimateCostUsd } from '../constants/pricing.js';
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -50,10 +51,6 @@ export interface SessionComparison {
     agentCountDelta: number;
   } | null;
 }
-
-// Token pricing (same as BudgetEnforcer)
-const INPUT_COST_PER_TOKEN = 3.0 / 1_000_000;
-const OUTPUT_COST_PER_TOKEN = 15.0 / 1_000_000;
 
 // ── AnalyticsService ──────────────────────────────────────────────
 
@@ -112,7 +109,7 @@ export class AnalyticsService {
         startedAt: s.startedAt ?? '',
         endedAt: s.endedAt ?? null,
         durationMs: endMs && startMs ? endMs - startMs : null,
-        estimatedCostUsd: Math.round((inputTokens * INPUT_COST_PER_TOKEN + outputTokens * OUTPUT_COST_PER_TOKEN) * 100) / 100,
+        estimatedCostUsd: Math.round(estimateCostUsd(inputTokens, outputTokens) * 100) / 100,
         taskCount: cost?.taskCount ?? 0,
         agentCount: agentCountByProject.get(s.leadId) ?? 0,
       };
@@ -174,14 +171,14 @@ export class AnalyticsService {
         taskCount: cost?.taskCount ?? 0,
         totalInputTokens: inputTokens,
         totalOutputTokens: outputTokens,
-        estimatedCostUsd: Math.round((inputTokens * INPUT_COST_PER_TOKEN + outputTokens * OUTPUT_COST_PER_TOKEN) * 100) / 100,
+        estimatedCostUsd: Math.round(estimateCostUsd(inputTokens, outputTokens) * 100) / 100,
       };
     });
 
     // Compute totals
     const totalInputTokens = summaries.reduce((sum, s) => sum + s.totalInputTokens, 0);
     const totalOutputTokens = summaries.reduce((sum, s) => sum + s.totalOutputTokens, 0);
-    const totalCostUsd = Math.round((totalInputTokens * INPUT_COST_PER_TOKEN + totalOutputTokens * OUTPUT_COST_PER_TOKEN) * 100) / 100;
+    const totalCostUsd = Math.round(estimateCostUsd(totalInputTokens, totalOutputTokens) * 100) / 100;
 
     // Cost trend by date
     const costByDate = new Map<string, number>();
@@ -261,7 +258,7 @@ export class AnalyticsService {
         taskCount: cost?.taskCount ?? 0,
         totalInputTokens: inputTokens,
         totalOutputTokens: outputTokens,
-        estimatedCostUsd: Math.round((inputTokens * INPUT_COST_PER_TOKEN + outputTokens * OUTPUT_COST_PER_TOKEN) * 100) / 100,
+        estimatedCostUsd: Math.round(estimateCostUsd(inputTokens, outputTokens) * 100) / 100,
       });
     }
 
