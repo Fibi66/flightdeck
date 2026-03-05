@@ -5,6 +5,9 @@ import type { ThemeMode } from '../../stores/settingsStore';
 import { Trash2, Plus, Sun, Moon, Monitor, Settings, Cpu, Users, Terminal, ChevronDown, ChevronRight, Zap, Volume2 } from 'lucide-react';
 import { DashboardCustomizer } from './DashboardCustomizer';
 import { PlaybookLibrary } from '../Playbooks';
+import { IntentRulesDashboard } from '../IntentRules';
+import { RecoverySettingsPanel, RecoveryMetricsCard } from '../Recovery';
+import { NotificationPreferencesPanel, NotificationActivityLog } from '../Notifications';
 
 interface Props {
   api: any;
@@ -182,6 +185,31 @@ export function SettingsPanel({ api }: Props) {
       {/* Playbooks */}
       <section className="bg-surface-raised border border-th-border rounded-lg p-4 mb-6">
         <PlaybookLibrary />
+      </section>
+
+      {/* Intent Rules */}
+      <section className="bg-surface-raised border border-th-border rounded-lg p-4 mb-6">
+        <IntentRulesDashboard />
+      </section>
+
+      {/* Recovery Settings */}
+      <section className="bg-surface-raised border border-th-border rounded-lg p-4 mb-6">
+        <RecoverySettingsPanel />
+      </section>
+
+      {/* Recovery Metrics */}
+      <section className="bg-surface-raised border border-th-border rounded-lg p-4 mb-6">
+        <RecoveryMetricsCard />
+      </section>
+
+      {/* Notification Preferences */}
+      <section className="bg-surface-raised border border-th-border rounded-lg p-4 mb-6">
+        <NotificationPreferencesPanel />
+      </section>
+
+      {/* Notification Activity Log */}
+      <section className="bg-surface-raised border border-th-border rounded-lg p-4 mb-6">
+        <NotificationActivityLog />
       </section>
 
       {/* Roles */}

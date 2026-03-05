@@ -13,6 +13,7 @@ import { AlertsPanel } from './AlertsPanel';
 import { CommHeatmap } from '../FleetOverview/CommHeatmap';
 import { CommFlowGraph } from '../CommFlow';
 import { DiffPreview } from '../DiffPreview';
+import { DebatesPanel } from '../Debates';
 import { useFocusAgent } from '../../hooks/useFocusAgent';
 import { useDashboardLayout } from '../../hooks/useDashboardLayout';
 import type { PanelConfig } from '../../hooks/useDashboardLayout';
@@ -97,6 +98,12 @@ function PanelSlot({ panel, leadId, agents }: { panel: PanelConfig; leadId: stri
       );
     case 'diff':
       return <AgentDiffPanel agents={agents} leadId={leadId} />;
+    case 'debates':
+      return (
+        <div className="bg-th-bg rounded-lg border border-th-border-muted p-4">
+          <DebatesPanel leadId={leadId} />
+        </div>
+      );
     default:
       return null;
   }

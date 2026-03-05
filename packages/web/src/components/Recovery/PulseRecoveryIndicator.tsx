@@ -1,12 +1,24 @@
 import { useState, useEffect } from 'react';
+import { apiFetch } from '../../hooks/useApi';
 import { STATUS_DISPLAY, type RecoveryEvent } from './types';
 
 interface PulseRecoveryIndicatorProps {
-  events: RecoveryEvent[];
+  events?: RecoveryEvent[];
   onClickEvent?: (id: string) => void;
 }
 
-export function PulseRecoveryIndicator({ events, onClickEvent }: PulseRecoveryIndicatorProps) {
+export function PulseRecoveryIndicator({ events: propEvents, onClickEvent }: PulseRecoveryIndicatorProps) {
+  const [fetchedEvents, setFetchedEvents] = useState<RecoveryEvent[]>([]);
+
+  // Self-fetch when no events prop — for standalone use in PulseStrip
+  useEffect(() => {
+    if (propEvents) return;
+    apiFetch<RecoveryEvent[]>('/recovery')
+      .then((data) => setFetchedEvents(Array.isArray(data) ? data : []))
+      .catch(() => setFetchedEvents([]));
+  }, [propEvents]);
+
+  const events = propEvents ?? fetchedEvents;
   // Filter to active (non-terminal) events
   const active = events.filter((e) => e.status !== 'recovered' && e.status !== 'failed');
   const recovered = events.filter((e) => e.status === 'recovered');

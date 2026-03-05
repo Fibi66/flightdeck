@@ -1,4 +1,4 @@
-import { useMemo, useEffect, useRef, useCallback } from 'react';
+import { useMemo, useEffect, useRef, useCallback, useState } from 'react';
 import { RefreshCw, Filter, Trash2 } from 'lucide-react';
 import { useTimelineData } from './useTimelineData';
 import type { TimelineData, CommType, TimelineStatus } from './useTimelineData';
@@ -12,7 +12,7 @@ import { AccessibilityAnnouncer } from './AccessibilityAnnouncer';
 import { useAccessibilityAnnouncements } from './useAccessibilityAnnouncements';
 import { useAppStore } from '../../stores/appStore';
 import { useTimelineStore } from '../../stores/timelineStore';
-import { ReplayScrubber } from '../SessionReplay';
+import { ReplayScrubber, ShareDropdown } from '../SessionReplay';
 import './timeline-a11y.css';
 
 interface Props {
@@ -118,6 +118,10 @@ export function TimelinePage({ api, ws }: Props) {
   const hiddenStatuses = useTimelineStore((s) => s.hiddenStatuses);
   const setHiddenStatuses = useTimelineStore((s) => s.setHiddenStatuses);
   const setCachedData = useTimelineStore((s) => s.setCachedData);
+
+  // Share/highlights dialog state
+  const [showShareDialog, setShowShareDialog] = useState(false);
+  const [showHighlights, setShowHighlights] = useState(false);
   const getCachedData = useTimelineStore((s) => s.getCachedData);
   const clearCachedData = useTimelineStore((s) => s.clearCachedData);
 
@@ -408,10 +412,18 @@ export function TimelinePage({ api, ws }: Props) {
         </div>
       )}
 
-      {/* Session Replay Scrubber — available when a lead is selected */}
+      {/* Session Replay Scrubber + Share Controls */}
       {selectedLead && !liveMode && (
-        <div className="shrink-0 px-0 pb-2">
+        <div className="shrink-0 px-0 pb-2 space-y-1">
           <ReplayScrubber leadId={selectedLead} />
+          <div className="flex justify-end px-2">
+            <ShareDropdown
+              onShareLink={() => setShowShareDialog(true)}
+              onExportHTML={() => {}}
+              onExportJSON={() => {}}
+              onHighlightsReel={() => setShowHighlights(true)}
+            />
+          </div>
         </div>
       )}
       </div>

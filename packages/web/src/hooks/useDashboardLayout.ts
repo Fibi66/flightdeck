@@ -24,6 +24,7 @@ export const DEFAULT_PANELS: PanelConfig[] = [
   { id: 'scorecards', label: 'Performance',      visible: false, order: 9 },
   { id: 'commflow',   label: 'Comm Flow Graph',  visible: true,  order: 10 },
   { id: 'diff',       label: 'Live Diffs',        visible: true,  order: 11 },
+  { id: 'debates',    label: 'Debates',           visible: true,  order: 12 },
 ];
 
 const STORAGE_KEY = 'dashboard-layout';

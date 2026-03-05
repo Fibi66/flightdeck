@@ -1,7 +1,9 @@
+import { useState, useEffect } from 'react';
+import { apiFetch } from '../../hooks/useApi';
 import { TRIGGER_LABELS, type RecoveryMetrics } from './types';
 
 interface RecoveryMetricsCardProps {
-  metrics: RecoveryMetrics;
+  metrics?: RecoveryMetrics;
   triggerBreakdown?: Record<string, number>;
 }
 
@@ -11,7 +13,23 @@ function rateColor(rate: number): string {
   return 'text-red-400';
 }
 
-export function RecoveryMetricsCard({ metrics, triggerBreakdown }: RecoveryMetricsCardProps) {
+const EMPTY_METRICS: RecoveryMetrics = {
+  sessionId: '', totalCrashes: 0, totalRecoveries: 0, successRate: 0,
+  avgRecoveryTimeMs: 0, tasksCompletedPostRecovery: 0, tasksAssignedPostRecovery: 0,
+};
+
+export function RecoveryMetricsCard({ metrics: propMetrics, triggerBreakdown }: RecoveryMetricsCardProps) {
+  const [fetchedMetrics, setFetchedMetrics] = useState<RecoveryMetrics | null>(null);
+
+  // Self-fetch when no metrics prop — for standalone use in Settings
+  useEffect(() => {
+    if (propMetrics) return;
+    apiFetch<RecoveryMetrics>('/recovery/metrics')
+      .then((data) => setFetchedMetrics(data))
+      .catch(() => setFetchedMetrics(EMPTY_METRICS));
+  }, [propMetrics]);
+
+  const metrics = propMetrics ?? fetchedMetrics ?? EMPTY_METRICS;
   const avgSec = (metrics.avgRecoveryTimeMs / 1000).toFixed(1);
   const postRecoveryLabel = `${metrics.tasksCompletedPostRecovery}/${metrics.tasksAssignedPostRecovery}`;
 
