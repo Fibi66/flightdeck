@@ -1,12 +1,24 @@
-import { useMemo } from 'react';
+import { useMemo, useState, useCallback } from 'react';
 import { useLeadStore } from '../../stores/leadStore';
 import { useAppStore } from '../../stores/appStore';
+import { useToastStore } from '../Toast';
+import { apiFetch } from '../../hooks/useApi';
 import type { DagStatus, Decision } from '../../types';
 import type { AgentInfo } from '../../types';
 
 // ── Types ────────────────────────────────────────────────────────────
 
 export type AlertSeverity = 'critical' | 'warning' | 'info';
+
+export interface AlertAction {
+  label: string;
+  description: string;
+  actionType: 'api_call';
+  endpoint: string;
+  method: 'POST' | 'DELETE' | 'PATCH';
+  body?: Record<string, any>;
+  confidence?: number;
+}
 
 export interface Alert {
   id: string;
@@ -15,6 +27,8 @@ export interface Alert {
   title: string;
   detail: string;
   timestamp: number;
+  agentId?: string;
+  actions?: AlertAction[];
 }
 
 // ── Detection ────────────────────────────────────────────────────────
@@ -29,20 +43,47 @@ export function detectAlerts(
   const alerts: Alert[] = [];
   const now = Date.now();
 
-  // 1. Context pressure (>85% critical, >70% warning)
+  // 1. Context pressure (>85% critical, >70% warning) — with actionable options
   for (const agent of agents) {
     if (agent.contextWindowSize && agent.contextWindowUsed) {
       const pct = agent.contextWindowUsed / agent.contextWindowSize;
       const roleName = typeof agent.role === 'object' ? agent.role.name : agent.role;
       const shortId = agent.id.slice(0, 8);
+      const burnLabel = agent.contextBurnRate && agent.contextBurnRate > 0
+        ? ` • ~${Math.round(agent.contextBurnRate * 60)}k tok/min`
+        : '';
+      const timeLabel = agent.estimatedExhaustionMinutes != null && agent.estimatedExhaustionMinutes > 0
+        ? ` • ~${Math.round(agent.estimatedExhaustionMinutes)} min remaining`
+        : '';
+
+      const actions: AlertAction[] = [
+        {
+          label: 'Compress context',
+          description: 'Restart agent with context handoff',
+          actionType: 'api_call',
+          endpoint: `/agents/${agent.id}/restart`,
+          method: 'POST',
+        },
+        {
+          label: 'Switch model',
+          description: 'Change to a model with larger context window',
+          actionType: 'api_call',
+          endpoint: `/agents/${agent.id}`,
+          method: 'PATCH',
+          body: { model: 'claude-opus-4.6-1m' },
+        },
+      ];
+
       if (pct > 0.85) {
         alerts.push({
           id: `ctx-${agent.id}`,
           severity: 'critical',
           icon: '🧠',
           title: `${roleName} at ${Math.round(pct * 100)}% context`,
-          detail: `Agent ${shortId} may produce lower quality output.`,
+          detail: `Agent ${shortId} may produce lower quality output.${burnLabel}${timeLabel}`,
+          agentId: agent.id,
           timestamp: now,
+          actions,
         });
       } else if (pct > 0.70) {
         alerts.push({
@@ -50,8 +91,24 @@ export function detectAlerts(
           severity: 'warning',
           icon: '🧠',
           title: `${roleName} at ${Math.round(pct * 100)}% context`,
-          detail: `Agent ${shortId} approaching context limit.`,
+          detail: `Agent ${shortId} approaching context limit.${burnLabel}${timeLabel}`,
+          agentId: agent.id,
           timestamp: now,
+          actions,
+        });
+      }
+
+      // Proactive burn-rate alert: <10 min remaining but not yet >70% context
+      if (pct <= 0.70 && agent.estimatedExhaustionMinutes != null && agent.estimatedExhaustionMinutes <= 10) {
+        alerts.push({
+          id: `burn-${agent.id}`,
+          severity: agent.estimatedExhaustionMinutes <= 5 ? 'critical' : 'warning',
+          icon: '🔥',
+          title: `${roleName} burning context fast`,
+          detail: `Agent ${shortId}: ~${Math.round(agent.estimatedExhaustionMinutes)} min until exhaustion at current rate.`,
+          agentId: agent.id,
+          timestamp: now,
+          actions,
         });
       }
     }
@@ -159,6 +216,8 @@ export function AlertsPanel({ leadId }: AlertsPanelProps) {
   const agents = useAppStore((s) => s.agents);
   const decisions = useLeadStore((s) => s.projects[leadId]?.decisions ?? EMPTY_DECISIONS);
   const dagStatus = useLeadStore((s) => s.projects[leadId]?.dagStatus ?? null);
+  const addToast = useToastStore((s) => s.add);
+  const [executingAction, setExecutingAction] = useState<string | null>(null);
 
   const teamAgents = useMemo(
     () => agents.filter((a) => a.parentId === leadId || a.id === leadId),
@@ -169,6 +228,22 @@ export function AlertsPanel({ leadId }: AlertsPanelProps) {
     () => detectAlerts(teamAgents, decisions, dagStatus),
     [teamAgents, decisions, dagStatus],
   );
+
+  const executeAction = useCallback(async (alertId: string, action: AlertAction) => {
+    if (!action.endpoint) return; // Dismiss action
+    setExecutingAction(`${alertId}-${action.label}`);
+    try {
+      await apiFetch(action.endpoint, {
+        method: action.method,
+        body: action.body ? JSON.stringify(action.body) : undefined,
+      });
+      addToast('success', `${action.label}: done`);
+    } catch (err: any) {
+      addToast('error', `${action.label} failed: ${err.message}`);
+    } finally {
+      setExecutingAction(null);
+    }
+  }, [addToast]);
 
   if (alerts.length === 0) return null;
 
@@ -185,6 +260,29 @@ export function AlertsPanel({ leadId }: AlertsPanelProps) {
             <div className="min-w-0 flex-1">
               <span className={`text-xs font-medium ${style.text}`}>{alert.title}</span>
               <p className="text-[11px] text-th-text-muted leading-tight">{alert.detail}</p>
+              {/* Actionable buttons */}
+              {alert.actions && alert.actions.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mt-1.5">
+                  {alert.actions.map((action) => {
+                    const isExecuting = executingAction === `${alert.id}-${action.label}`;
+                    return (
+                      <button
+                        key={action.label}
+                        onClick={() => executeAction(alert.id, action)}
+                        disabled={isExecuting}
+                        title={action.description}
+                        className={`px-2 py-0.5 text-[10px] font-medium rounded border transition-colors ${
+                          isExecuting
+                            ? 'opacity-50 cursor-wait'
+                            : 'bg-th-bg/50 border-th-border/50 text-th-text-muted hover:text-th-text-alt hover:border-th-border-hover'
+                        }`}
+                      >
+                        {isExecuting ? '...' : action.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         );

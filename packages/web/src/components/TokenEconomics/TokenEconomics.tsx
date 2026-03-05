@@ -10,6 +10,32 @@ function formatTokens(n: number): string {
   return String(n);
 }
 
+function formatBurnRate(tokensPerSecond: number): string {
+  const perMin = tokensPerSecond * 60;
+  if (perMin >= 1_000) return `~${(perMin / 1_000).toFixed(1)}k/min`;
+  return `~${Math.round(perMin)}/min`;
+}
+
+function formatTimeRemaining(minutes: number | null | undefined): string {
+  if (minutes == null || minutes <= 0) return '';
+  if (minutes < 1) return '<1 min left';
+  if (minutes < 60) return `~${Math.round(minutes)} min left`;
+  return `~${(minutes / 60).toFixed(1)} hr left`;
+}
+
+function exhaustionUrgency(minutes: number | null | undefined): 'normal' | 'warning' | 'critical' {
+  if (minutes == null || minutes <= 0) return 'normal';
+  if (minutes <= 5) return 'critical';
+  if (minutes <= 10) return 'warning';
+  return 'normal';
+}
+
+function exhaustionColor(urgency: 'normal' | 'warning' | 'critical'): string {
+  if (urgency === 'critical') return 'text-red-400';
+  if (urgency === 'warning') return 'text-yellow-600 dark:text-yellow-400';
+  return 'text-th-text-muted';
+}
+
 function contextPercent(agent: AgentInfo): number {
   if (!agent.contextWindowSize || !agent.contextWindowUsed) return 0;
   return Math.min(100, (agent.contextWindowUsed / agent.contextWindowSize) * 100);
@@ -82,6 +108,7 @@ export function TokenEconomics() {
               <th className="px-3 py-2 text-right font-medium">Output</th>
               <th className="px-3 py-2 text-right font-medium">Total</th>
               <th className="px-3 py-2 text-left font-medium w-36">Context</th>
+              <th className="px-3 py-2 text-left font-medium">Burn Rate</th>
             </tr>
           </thead>
           <tbody>
@@ -120,12 +147,23 @@ export function TokenEconomics() {
                   <td className="px-3 py-2">
                     {agent.contextWindowSize ? (
                       <div className="flex items-center gap-2">
-                        {/* Pressure bar */}
-                        <div className="flex-1 h-1.5 rounded-full bg-th-bg-muted overflow-hidden">
+                        {/* Pressure bar with projection */}
+                        <div className="flex-1 h-1.5 rounded-full bg-th-bg-muted overflow-hidden relative">
                           <div
                             className={`h-full rounded-full transition-all ${pressureColor(pct)}`}
                             style={{ width: `${pct}%` }}
                           />
+                          {/* Projected usage (dashed extension) */}
+                          {agent.contextBurnRate && agent.contextBurnRate > 0 && pct < 100 && (
+                            <div
+                              className="absolute top-0 h-full rounded-full opacity-40 border-t border-dashed border-current"
+                              style={{
+                                left: `${pct}%`,
+                                width: `${Math.min(100 - pct, 20)}%`,
+                                backgroundColor: pct >= 70 ? 'rgb(239 68 68 / 0.3)' : 'rgb(234 179 8 / 0.3)',
+                              }}
+                            />
+                          )}
                         </div>
                         <span className={`font-mono w-10 text-right ${pressureTextColor(pct)}`}>
                           {pct.toFixed(0)}%
@@ -135,6 +173,23 @@ export function TokenEconomics() {
                       <span className="text-th-text-muted">—</span>
                     )}
                   </td>
+                  {/* Burn Rate + Time Remaining */}
+                  <td className="px-3 py-2">
+                    {agent.contextBurnRate && agent.contextBurnRate > 0 ? (
+                      <div className="flex flex-col gap-0.5">
+                        <span className="font-mono text-th-text-muted">
+                          {formatBurnRate(agent.contextBurnRate)}
+                        </span>
+                        {agent.estimatedExhaustionMinutes != null && agent.estimatedExhaustionMinutes > 0 && (
+                          <span className={`text-[10px] font-medium ${exhaustionColor(exhaustionUrgency(agent.estimatedExhaustionMinutes))}`}>
+                            {formatTimeRemaining(agent.estimatedExhaustionMinutes)}
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-th-text-muted text-[10px]">Calculating…</span>
+                    )}
+                  </td>
                 </tr>
               );
             })}
@@ -142,26 +197,40 @@ export function TokenEconomics() {
         </table>
       </div>
 
-      {/* Pressure warnings */}
-      {sorted.some((a) => contextPercent(a) >= 80) && (
-        <div className="flex flex-col gap-1 text-xs">
+      {/* Pressure warnings — enhanced with burn rate + time remaining */}
+      {sorted.some((a) => contextPercent(a) >= 70 || exhaustionUrgency(a.estimatedExhaustionMinutes) !== 'normal') && (
+        <div className="flex flex-col gap-1.5 text-xs">
           {sorted
-            .filter((a) => contextPercent(a) >= 80)
+            .filter((a) => contextPercent(a) >= 70 || exhaustionUrgency(a.estimatedExhaustionMinutes) !== 'normal')
             .map((a) => {
               const pct = contextPercent(a);
-              const isRed = pct >= 90;
+              const urgency = exhaustionUrgency(a.estimatedExhaustionMinutes);
+              const isCritical = pct >= 90 || urgency === 'critical';
+              const isWarning = pct >= 70 || urgency === 'warning';
+              const timeLabel = formatTimeRemaining(a.estimatedExhaustionMinutes);
+              const burnLabel = a.contextBurnRate && a.contextBurnRate > 0
+                ? formatBurnRate(a.contextBurnRate)
+                : null;
+
               return (
                 <div
                   key={a.id}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded ${
-                    isRed ? 'bg-red-500/10 text-red-400' : 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400'
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded ${
+                    isCritical ? 'bg-red-500/10 text-red-400' : 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400'
                   }`}
                 >
-                  <span>{isRed ? '🔴' : '🟡'}</span>
-                  <span>
-                    {a.role.name} ({a.id.slice(0, 8)}) — {pct.toFixed(0)}% context used
-                    {isRed ? ' — nearing limit, may lose context' : ' — consider wrapping up'}
-                  </span>
+                  <span>{isCritical ? '🔴' : '🟡'}</span>
+                  <div className="flex-1 min-w-0">
+                    <span className="font-medium">
+                      {a.role.name} ({a.id.slice(0, 8)}) — {pct.toFixed(0)}% context
+                    </span>
+                    <div className="flex items-center gap-3 mt-0.5 text-[10px] opacity-80">
+                      {burnLabel && <span>🔥 {burnLabel}</span>}
+                      {timeLabel && <span>⏱ {timeLabel}</span>}
+                      {isCritical && <span className="font-medium">Nearing limit — may lose context</span>}
+                      {!isCritical && isWarning && <span>Consider wrapping up</span>}
+                    </div>
+                  </div>
                 </div>
               );
             })}

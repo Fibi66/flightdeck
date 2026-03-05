@@ -151,6 +151,8 @@ export interface AgentInfo {
   outputTokens?: number;
   contextWindowSize?: number;
   contextWindowUsed?: number;
+  contextBurnRate?: number;
+  estimatedExhaustionMinutes?: number | null;
 }
 
 export interface ServerConfig {
