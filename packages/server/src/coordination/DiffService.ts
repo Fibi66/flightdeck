@@ -1,5 +1,7 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import { readFile } from 'fs/promises';
+import { resolve } from 'path';
 import type { FileLockRegistry } from './FileLockRegistry.js';
 import { logger } from '../utils/logger.js';
 
@@ -146,22 +148,9 @@ export class DiffService {
 
   private async readFileContent(relativePath: string): Promise<string> {
     try {
-      const { stdout } = await execFileAsync(
-        'git', ['show', `:${relativePath}`],
-        { cwd: this.cwd, timeout: GIT_TIMEOUT_MS },
-      );
-      return stdout;
+      return await readFile(resolve(this.cwd, relativePath), 'utf-8');
     } catch {
-      // File is untracked — read from working tree
-      try {
-        const { stdout } = await execFileAsync(
-          'cat', [relativePath],
-          { cwd: this.cwd, timeout: GIT_TIMEOUT_MS },
-        );
-        return stdout;
-      } catch {
-        return '';
-      }
+      return '';
     }
   }
 }

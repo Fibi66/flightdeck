@@ -174,4 +174,42 @@ describe('DiffService', () => {
     expect(summary.additions).toBe(0);
     expect(summary.deletions).toBe(0);
   });
+
+  it('parses git diff output for agent with locked files', async () => {
+    const registry = makeLockRegistry([
+      { filePath: 'src/index.ts', agentId: 'agent-1' },
+    ]);
+    const service = new DiffService(registry, '/tmp/test');
+
+    const diffOutput = `diff --git a/src/index.ts b/src/index.ts
+index abc..def 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,3 +1,5 @@
+ import { foo } from './foo';
++import { bar } from './bar';
++import { baz } from './baz';
+ 
+ export function main() {
+`;
+    // Mock git diff call
+    mockExecFile.mockImplementation((_cmd: string, args: string[], _opts: unknown, cb: Function) => {
+      if (args[0] === 'diff') {
+        cb(null, { stdout: diffOutput, stderr: '' });
+      } else if (args[0] === 'ls-files') {
+        cb(null, { stdout: '', stderr: '' });
+      } else {
+        cb(new Error('unexpected command'));
+      }
+    });
+
+    const result = await service.getDiff('agent-1');
+    expect(result.agentId).toBe('agent-1');
+    expect(result.files).toHaveLength(1);
+    expect(result.files[0].path).toBe('src/index.ts');
+    expect(result.files[0].status).toBe('modified');
+    expect(result.files[0].additions).toBe(2);
+    expect(result.files[0].deletions).toBe(0);
+    expect(result.summary).toEqual({ filesChanged: 1, additions: 2, deletions: 0 });
+  });
 });
