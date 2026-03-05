@@ -19,6 +19,9 @@ import { apiFetch } from '../../hooks/useApi';
 import { useToastStore } from '../Toast';
 import { PromptNav, hasUserMention } from '../PromptNav';
 import { useFileDrop } from '../../hooks/useFileDrop';
+import { useAttachments } from '../../hooks/useAttachments';
+import { AttachmentBar } from '../AttachmentBar';
+import { DropOverlay } from '../DropOverlay';
 
 interface RoleInfo { id: string; name: string; icon: string; description: string; model: string; }
 
@@ -40,8 +43,10 @@ export function LeadDashboard({ api, ws }: Props) {
   const handleLeadFileInsert = useCallback((text: string) => {
     setInput(input ? input + ' ' + text : text);
   }, [input, setInput]);
-  const { isDragOver: isLeadDragOver, handleDragOver: leadDragOver, handleDragLeave: leadDragLeave, handleDrop: leadDrop, dropZoneClassName: leadDropZoneClassName } = useFileDrop({
+  const { attachments, addAttachment, removeAttachment, clearAttachments } = useAttachments();
+  const { isDragOver: isLeadDragOver, handleDragOver: leadDragOver, handleDragLeave: leadDragLeave, handleDrop: leadDrop, handlePaste: leadPaste, dropZoneClassName: leadDropZoneClassName } = useFileDrop({
     onInsertText: handleLeadFileInsert,
+    onAttach: addAttachment,
   });
   const [starting, setStarting] = useState(false);
   const [showNewProject, setShowNewProject] = useState(false);
@@ -57,6 +62,7 @@ export function LeadDashboard({ api, ws }: Props) {
   const [newProjectModelConfig, setNewProjectModelConfig] = useState<Record<string, string[]> | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
+  const reportsScrollRef = useRef<HTMLDivElement>(null);
   const [sidebarWidth, setSidebarWidth] = useState(320);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [sidebarTab, setSidebarTab] = useState<string>('team');
@@ -269,6 +275,14 @@ export function LeadDashboard({ api, ws }: Props) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
   }, [currentProject?.messages]);
+
+  // Auto-scroll agent reports to show latest
+  useEffect(() => {
+    const el = reportsScrollRef.current;
+    if (el) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [currentProject?.agentReports?.length, reportsExpanded]);
 
   // Poll progress for selected lead (skip for project: prefixed IDs — those are persisted projects, not running agents)
   const isActiveAgent = selectedLeadId != null && !selectedLeadId.startsWith('project:');
@@ -795,12 +809,23 @@ export function LeadDashboard({ api, ws }: Props) {
       }
     }
     store.addMessage(selectedLeadId, { type: 'text', text, sender: 'user', queued: mode === 'queue', timestamp: Date.now() });
-    await fetch(`/api/lead/${selectedLeadId}/message`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, mode }),
-    });
-  }, [input, selectedLeadId]);
+    const payload: Record<string, unknown> = { text, mode };
+    if (attachments.length > 0) {
+      payload.attachments = attachments
+        .filter((a) => a.data)
+        .map((a) => ({ name: a.name, mimeType: a.mimeType, data: a.data }));
+    }
+    try {
+      const resp = await fetch(`/api/lead/${selectedLeadId}/message`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (resp.ok) clearAttachments();
+    } catch {
+      // Network error — keep attachments so user can retry
+    }
+  }, [input, selectedLeadId, attachments, clearAttachments]);
 
   const removeQueuedMessage = useCallback(async (queueIndex: number) => {
     if (!selectedLeadId) return;
@@ -1316,7 +1341,14 @@ export function LeadDashboard({ api, ws }: Props) {
       ) : (
         <>
           {/* Chat area */}
-          <div className="flex-1 flex flex-col min-w-0">
+          <div
+            className="flex-1 flex flex-col min-w-0 relative"
+            onDragOver={leadDragOver}
+            onDragLeave={leadDragLeave}
+            onDrop={leadDrop}
+            onPaste={leadPaste}
+          >
+            {isLeadDragOver && <DropOverlay />}
             {/* Progress banner — clickable to open detail */}
             {progress && progress.totalDelegations > 0 && (
               <div
@@ -1432,7 +1464,7 @@ export function LeadDashboard({ api, ws }: Props) {
                   <span className="bg-amber-500/20 px-1.5 rounded text-[10px]">{agentReports.length}</span>
                 </button>
                 {reportsExpanded && (
-                  <div className="max-h-48 overflow-y-auto px-3 pb-2 space-y-1">
+                  <div ref={reportsScrollRef} className="max-h-48 overflow-y-auto px-3 pb-2 space-y-1">
                     {agentReports.slice(-20).map((r) => {
                       const time = new Date(r.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                       return (
@@ -1530,6 +1562,11 @@ export function LeadDashboard({ api, ws }: Props) {
                 }
 
                 if (msg.sender === 'system') {
+                  const sysText = typeof msg.text === 'string' ? msg.text : '';
+                  // Hide outgoing DM notifications — redundant with command blocks
+                  if (sysText.startsWith('📤')) return null;
+                  // Hide incoming DM notifications — shown in agent chat panes instead
+                  if (sysText.startsWith('📨')) return null;
                   return (
                     <div key={i} className="flex justify-center py-1">
                       <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-th-bg-alt/60 border border-th-border/50 text-xs font-mono text-th-text-muted">
@@ -1655,17 +1692,10 @@ export function LeadDashboard({ api, ws }: Props) {
 
             {/* Input */}
             <div className="border-t border-th-border p-3">
+              <AttachmentBar attachments={attachments} onRemove={removeAttachment} />
               <div
-                className={`flex gap-2 items-end relative rounded transition-all ${leadDropZoneClassName}`}
-                onDragOver={leadDragOver}
-                onDragLeave={leadDragLeave}
-                onDrop={leadDrop}
+                className="flex gap-2 items-end relative rounded transition-all"
               >
-                {isLeadDragOver && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-accent/10 border-2 border-dashed border-accent rounded z-10 pointer-events-none">
-                    <span className="text-xs font-medium text-accent">Drop file to mention or attach</span>
-                  </div>
-                )}
                 <textarea
                   value={input}
                   onChange={(e) => setInput(e.target.value)}

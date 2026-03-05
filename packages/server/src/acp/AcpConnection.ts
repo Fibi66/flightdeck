@@ -1,5 +1,5 @@
 import { EventEmitter } from 'events';
-import { spawn, ChildProcess } from 'child_process';
+import { spawn, execFileSync, ChildProcess } from 'child_process';
 import { Readable, Writable } from 'stream';
 import * as acp from '@agentclientprotocol/sdk';
 
@@ -46,15 +46,19 @@ function extractContentText(content: any): string | undefined {
   return String(content);
 }
 
+export type PromptContent = string | acp.ContentBlock[];
+
 export class AcpConnection extends EventEmitter {
   private process: ChildProcess | null = null;
   private connection: acp.ClientSideConnection | null = null;
   private sessionId: string | null = null;
   private _isConnected = false;
+  private _exited = false;
   private _isPrompting = false;
   private _promptingStartedAt: number | null = null;
-  private promptQueue: string[] = [];
+  private promptQueue: PromptContent[] = [];
   private autopilot: boolean;
+  private agentCapabilities: acp.AgentCapabilities | null = null;
   private pendingPermission: {
     resolve: (result: acp.RequestPermissionResponse) => void;
     options: acp.PermissionOption[];
@@ -69,6 +73,7 @@ export class AcpConnection extends EventEmitter {
   get isPrompting(): boolean { return this._isPrompting; }
   get promptingStartedAt(): number | null { return this._promptingStartedAt; }
   get currentSessionId(): string | null { return this.sessionId; }
+  get supportsImages(): boolean { return this.agentCapabilities?.promptCapabilities?.image ?? false; }
 
   async start(opts: AcpConnectionOptions): Promise<string> {
     await this.spawnAndConnect(opts);
@@ -86,7 +91,28 @@ export class AcpConnection extends EventEmitter {
     return sessionId;
   }
 
+  /**
+   * Verify that the CLI binary exists in PATH before attempting to spawn.
+   * Throws a descriptive error if the command is not found.
+   */
+  private validateCliCommand(command: string): void {
+    try {
+      // Use execFileSync (no shell) to avoid shell injection.
+      // 'which' exists as /usr/bin/which on all Unix systems.
+      // 'where' is the Windows equivalent.
+      const checkCmd = process.platform === 'win32' ? 'where' : 'which';
+      execFileSync(checkCmd, [command], { timeout: 3000, stdio: 'ignore' });
+    } catch {
+      throw new Error(
+        `CLI binary "${command}" not found in PATH. ` +
+        `Install it or set COPILOT_CLI_PATH to the full path of the binary.`,
+      );
+    }
+  }
+
   private async spawnAndConnect(opts: AcpConnectionOptions): Promise<void> {
+    this.validateCliCommand(opts.cliCommand);
+
     const args = ['--acp', '--stdio', ...(opts.cliArgs || [])];
     this.process = spawn(opts.cliCommand, args, {
       stdio: ['pipe', 'pipe', 'inherit'],
@@ -94,12 +120,32 @@ export class AcpConnection extends EventEmitter {
     });
 
     if (!this.process.stdin || !this.process.stdout) {
-      throw new Error('Failed to start Copilot ACP process');
+      throw new Error('Failed to start ACP process — stdin/stdout not available');
     }
 
-    this.process.on('exit', (code) => {
+    this._exited = false;
+
+    this.process.on('error', (err) => {
+      if (this._exited) return;
+      this._exited = true;
+      const errCode = (err as NodeJS.ErrnoException).code;
+      logger.error('acp', `Spawn error for "${opts.cliCommand}": ${err.message}`, {
+        code: errCode,
+        command: opts.cliCommand,
+      });
       this._isConnected = false;
-      this.emit('exit', code);
+      this.emit('exit', 1);
+    });
+
+    this.process.on('exit', (code, signal) => {
+      if (this._exited) return;
+      this._exited = true;
+      this._isConnected = false;
+      const exitCode = typeof code === 'number' ? code : 1;
+      if (code === null && signal) {
+        logger.warn('acp', `ACP process exited due to signal "${signal}", normalizing exit code to ${exitCode}`);
+      }
+      this.emit('exit', exitCode);
     });
 
     const output = Writable.toWeb(this.process.stdin) as WritableStream<Uint8Array>;
@@ -216,20 +262,21 @@ export class AcpConnection extends EventEmitter {
 
     this.connection = new acp.ClientSideConnection((_agent) => client, stream);
 
-    await this.connection.initialize({
+    const initResult = await this.connection.initialize({
       protocolVersion: acp.PROTOCOL_VERSION,
       clientCapabilities: {},
     });
+    this.agentCapabilities = initResult.agentCapabilities ?? null;
   }
 
-  async prompt(text: string): Promise<{ stopReason: acp.StopReason; usage?: { inputTokens: number; outputTokens: number } }> {
+  async prompt(content: PromptContent): Promise<{ stopReason: acp.StopReason; usage?: { inputTokens: number; outputTokens: number } }> {
     if (!this.connection || !this.sessionId) {
       throw new Error('ACP connection not established');
     }
 
     // Queue if already prompting — will be sent when current prompt completes
     if (this._isPrompting) {
-      this.promptQueue.push(text);
+      this.promptQueue.push(content);
       return { stopReason: 'end_turn' as acp.StopReason };
     }
 
@@ -237,10 +284,14 @@ export class AcpConnection extends EventEmitter {
     this._promptingStartedAt = Date.now();
     this.emit('prompting', true);
 
+    const blocks: acp.ContentBlock[] = typeof content === 'string'
+      ? [{ type: 'text', text: content }]
+      : content;
+
     try {
       const result = await this.connection.prompt({
         sessionId: this.sessionId,
-        prompt: [{ type: 'text', text }],
+        prompt: blocks,
       });
 
       this._isPrompting = false;
@@ -271,9 +322,26 @@ export class AcpConnection extends EventEmitter {
 
   private drainQueue(): void {
     if (this.promptQueue.length > 0) {
-      const next = this.promptQueue.join('\n');
-      this.promptQueue.length = 0;
-      this.prompt(next).catch((err) => {
+      const items = this.promptQueue.splice(0);
+      // Merge queued items: concatenate consecutive strings, preserve block arrays
+      const merged: acp.ContentBlock[] = [];
+      const textParts: string[] = [];
+      const flushText = () => {
+        if (textParts.length > 0) {
+          merged.push({ type: 'text', text: textParts.join('\n') });
+          textParts.length = 0;
+        }
+      };
+      for (const item of items) {
+        if (typeof item === 'string') {
+          textParts.push(item);
+        } else {
+          flushText();
+          merged.push(...item);
+        }
+      }
+      flushText();
+      this.prompt(merged).catch((err) => {
         logger.error('acp', `Drained prompt failed: ${err?.message || err}`);
       });
     }

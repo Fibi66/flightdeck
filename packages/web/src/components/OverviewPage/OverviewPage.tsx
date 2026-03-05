@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAppStore } from '../../stores/appStore';
 import { useLeadStore } from '../../stores/leadStore';
 import type { ProgressSnapshot } from '../../stores/leadStore';
-import type { Decision } from '../../types';
+import type { Decision, Project } from '../../types';
 import { AlertTriangle, Check, X, MessageSquare, Send, Clock } from 'lucide-react';
 import { apiFetch } from '../../hooks/useApi';
 import { MarkdownContent } from '../../utils/markdown';
@@ -50,11 +50,13 @@ function DetailPopup({ title, children, onClose }: { title: string; children: Re
 
 function PendingDecisionCard({
   decision,
+  projectName,
   onApprove,
   onDeny,
   onRespond,
 }: {
   decision: Decision;
+  projectName?: string;
   onApprove: (id: string, reason?: string) => void;
   onDeny: (id: string, reason?: string) => void;
   onRespond: (id: string, message: string) => void;
@@ -83,6 +85,11 @@ function PendingDecisionCard({
             <span className="text-[10px] font-mono text-th-text-muted bg-th-bg-muted/50 px-1 rounded">
               {decision.agentRole}
             </span>
+            {projectName && (
+              <span className="text-[10px] font-mono text-purple-400/70 bg-th-bg-muted/50 px-1 rounded">
+                {projectName}
+              </span>
+            )}
             <span className="text-[10px] text-th-text-muted">
               <Clock className="w-3 h-3 inline mr-0.5" />
               {fmtTime(decision.timestamp)}
@@ -350,6 +357,14 @@ export function OverviewPage({ api, ws }: Props) {
   const agents = useAppStore((s) => s.agents);
   const projects = useLeadStore((s) => s.projects);
 
+  // Fetch persistent project registry (includes past projects) for name resolution
+  const [registryProjects, setRegistryProjects] = useState<Project[]>([]);
+  useEffect(() => {
+    apiFetch<Project[]>('/projects').then(setRegistryProjects).catch(() => {
+      /* ignore — will fall back to agent-based names */
+    });
+  }, [allDecisions.length]);
+
   // Fetch all decisions on mount + poll every 5s
   const loadDecisions = useCallback(async () => {
     try {
@@ -457,8 +472,13 @@ export function OverviewPage({ api, ws }: Props) {
   // Map both lead.id (agent UUID) and lead.projectId (project registry UUID)
   // so resolveProjectName works regardless of which ID the decision carries
   const projectNameMap = new Map<string, string>();
+  // First, seed from persistent project registry (survives agent termination)
+  for (const proj of registryProjects) {
+    projectNameMap.set(proj.id, proj.name);
+  }
+  // Then overlay with live lead agent data (most up-to-date names)
   for (const lead of leadAgents) {
-    const name = lead.projectName || `Project ${lead.id.slice(0, 8)}`;
+    const name = lead.projectName || projectNameMap.get(lead.projectId ?? '') || `Project ${lead.id.slice(0, 8)}`;
     projectNameMap.set(lead.id, name);
     if (lead.projectId) {
       projectNameMap.set(lead.projectId, name);
@@ -466,7 +486,7 @@ export function OverviewPage({ api, ws }: Props) {
   }
 
   const resolveProjectName = (d: Decision) => {
-    if (d.projectId) return projectNameMap.get(d.projectId) ?? agentProjectMap.get(d.projectId) ?? `Project ${d.projectId.slice(0, 8)}`;
+    if (d.projectId) return projectNameMap.get(d.projectId) ?? agentProjectMap.get(d.projectId) ?? agentProjectMap.get(d.agentId) ?? `Project ${d.projectId.slice(0, 8)}`;
     return agentProjectMap.get(d.agentId) ?? 'Unknown Project';
   };
 
@@ -546,6 +566,7 @@ export function OverviewPage({ api, ws }: Props) {
                       <PendingDecisionCard
                         key={d.id}
                         decision={d}
+                        projectName={resolveProjectName(d)}
                         onApprove={handleApprove}
                         onDeny={handleDeny}
                         onRespond={handleRespond}
@@ -626,7 +647,7 @@ export function OverviewPage({ api, ws }: Props) {
                         <DecisionTimelineItem
                           key={d.id}
                           decision={d}
-                          projectName={agentProjectMap.get(d.agentId)}
+                          projectName={resolveProjectName(d)}
                           onApprove={handleApprove}
                           onDeny={handleDeny}
                           onRespond={handleRespond}
