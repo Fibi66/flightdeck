@@ -331,6 +331,7 @@ export function useWebSocket() {
               rationale: msg.rationale || '',
               needsConfirmation: true,
               status: 'recorded',
+              category: msg.category,
               timestamp: msg.timestamp || new Date().toISOString(),
             });
           }

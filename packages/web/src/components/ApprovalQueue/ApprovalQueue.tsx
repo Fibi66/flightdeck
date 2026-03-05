@@ -236,10 +236,10 @@ export function ApprovalQueue() {
       await apiFetch('/intents', {
         method: 'POST',
         body: JSON.stringify({
-          pattern: teachMePrompt.category,
+          category: teachMePrompt.category,
           matchField: 'category',
           action: 'auto-approve',
-          source: 'learned',
+          source: 'teach_me',
         }),
       });
       addToast('success', `Intent rule created: auto-approve "${teachMePrompt.category}" decisions`);
