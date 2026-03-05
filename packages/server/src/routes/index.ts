@@ -23,6 +23,7 @@ import { analyticsRoutes } from './analytics.js';
 import { recoveryRoutes } from './recovery.js';
 import { handoffRoutes } from './handoffs.js';
 import { notificationRoutes } from './notifications.js';
+import { nlRoutes } from './nl.js';
 
 export function mountAllRoutes(router: Router, ctx: AppContext): void {
   router.use(agentsRoutes(ctx));
@@ -48,4 +49,5 @@ export function mountAllRoutes(router: Router, ctx: AppContext): void {
   router.use(recoveryRoutes(ctx));
   router.use(handoffRoutes(ctx));
   router.use(notificationRoutes(ctx));
+  router.use(nlRoutes(ctx));
 }
