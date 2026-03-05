@@ -339,7 +339,9 @@ if (fs.existsSync(webDistPath)) {
   });
 }
 
-async function listenWithRetry(basePort: number, host: string, maxAttempts = 10): Promise<number> {
+const MAX_PORT_ATTEMPTS = 10;
+
+async function listenWithRetry(basePort: number, host: string, maxAttempts = MAX_PORT_ATTEMPTS): Promise<number> {
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const port = basePort + attempt;
     try {
@@ -364,6 +366,14 @@ listenWithRetry(config.port, config.host).then((actualPort) => {
     updateConfig({ port: actualPort });
   }
 
+  // Permanent error handler — catches runtime errors after successful startup.
+  // EADDRINUSE is already handled by listenWithRetry during startup; this covers
+  // unexpected runtime errors (EACCES, ECONNRESET, etc.).
+  httpServer.on('error', (err: NodeJS.ErrnoException) => {
+    console.error(`\n❌ HTTP server error: ${err.message}`);
+    process.exit(1);
+  });
+
   const url = `http://${config.host}:${actualPort}`;
   console.log(`FLIGHTDECK_PORT=${actualPort}`);
   console.log(`🚀 Flightdeck server running on ${url}`);
@@ -380,6 +390,9 @@ listenWithRetry(config.port, config.host).then((actualPort) => {
   escalationManager.start();
 }).catch((err) => {
   console.error(`❌ Failed to start server: ${err.message}`);
+  if (err.message.includes('No available port')) {
+    console.error(`   All ports ${config.port}–${config.port + MAX_PORT_ATTEMPTS - 1} are in use. Kill existing instances with: lsof -ti:${config.port} | xargs kill`);
+  }
   process.exit(1);
 });
 

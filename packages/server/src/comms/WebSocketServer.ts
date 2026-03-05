@@ -35,6 +35,13 @@ export class WebSocketServer {
     this.agentManager = agentManager;
     this.lockRegistry = lockRegistry;
 
+    // Prevent unhandled 'error' events from crashing the process.
+    // EADDRINUSE is handled by listenWithRetry in index.ts (auto-port-finding);
+    // this handler catches any residual or runtime WSS errors.
+    this.wss.on('error', (err: Error & { code?: string }) => {
+      logger.error('ws', `WebSocket server error: ${err.message}`);
+    });
+
     this.wss.on('connection', (ws, req) => {
       // Check auth if secret is configured (allow localhost without token)
       const secret = getAuthSecret();
