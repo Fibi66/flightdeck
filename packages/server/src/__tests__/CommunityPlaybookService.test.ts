@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   CommunityPlaybookService,
+  sanitizeConfig,
+  looksLikeSecret,
   type PublishInput,
   type CommunityPlaybook,
   type PlaybookReview,
@@ -591,6 +593,85 @@ describe('CommunityPlaybookService', () => {
       const emptyDb = createMockDb();
       const service2 = new CommunityPlaybookService(emptyDb as any);
       expect(service2.getAll()).toEqual([]);
+    });
+  });
+
+  describe('Privacy guardrails', () => {
+    it('strips systemPrompt from published config', () => {
+      const pb = service.publish(makeInput({
+        config: { roles: ['dev'], systemPrompt: 'You are a secret agent', model: 'sonnet' },
+      }));
+      expect(pb.config).toEqual({ roles: ['dev'], model: 'sonnet' });
+      expect(pb.config).not.toHaveProperty('systemPrompt');
+    });
+
+    it('strips api_key and token fields', () => {
+      const pb = service.publish(makeInput({
+        config: { name: 'test', apiKey: 'sk-abc123', token: 'ghp_secret' },
+      }));
+      expect(pb.config).toEqual({ name: 'test' });
+    });
+
+    it('strips nested sensitive keys recursively', () => {
+      const pb = service.publish(makeInput({
+        config: {
+          outer: { inner: { password: 'hunter2', safe: true } },
+          visible: 'ok',
+        },
+      }));
+      expect(pb.config).toEqual({ outer: { inner: { safe: true } }, visible: 'ok' });
+    });
+
+    it('strips values that look like GitHub PATs', () => {
+      const pb = service.publish(makeInput({
+        config: { ref: 'ghp_1234567890abcdef1234567890abcdef12345678' },
+      }));
+      expect(pb.config).toEqual({});
+    });
+
+    it('strips values that look like long tokens (40+ alphanum)', () => {
+      const longToken = 'a'.repeat(45);
+      const pb = service.publish(makeInput({
+        config: { key: longToken, name: 'ok' },
+      }));
+      expect(pb.config).toEqual({ name: 'ok' });
+    });
+
+    it('strips values with Bearer prefix', () => {
+      const pb = service.publish(makeInput({
+        config: { auth: 'Bearer eyJhbGciOiJSUzI1NiJ9.test', name: 'ok' },
+      }));
+      expect(pb.config).toEqual({ name: 'ok' });
+    });
+
+    it('preserves normal string values', () => {
+      const pb = service.publish(makeInput({
+        config: { name: 'My Playbook', count: 5, enabled: true },
+      }));
+      expect(pb.config).toEqual({ name: 'My Playbook', count: 5, enabled: true });
+    });
+
+    it('sanitizes config on update too', () => {
+      const pb = service.publish(makeInput({ config: { safe: true } }));
+      const updated = service.update(pb.id, {
+        config: { safe: false, secretKey: 'supersecret' },
+      });
+      expect(updated?.config).toEqual({ safe: false });
+    });
+
+    it('sanitizeConfig preserves arrays', () => {
+      const result = sanitizeConfig({ items: [1, 2, 3], tags: ['a', 'b'] });
+      expect(result).toEqual({ items: [1, 2, 3], tags: ['a', 'b'] });
+    });
+
+    it('looksLikeSecret detects GitHub PATs', () => {
+      expect(looksLikeSecret('ghp_1234567890abcdef1234567890abcdef12345678')).toBe(true);
+      expect(looksLikeSecret('ghs_1234567890abcdef1234567890abcdef12345678')).toBe(true);
+    });
+
+    it('looksLikeSecret rejects short normal strings', () => {
+      expect(looksLikeSecret('hello world')).toBe(false);
+      expect(looksLikeSecret('my-playbook-name')).toBe(false);
     });
   });
 });

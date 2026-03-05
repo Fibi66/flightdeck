@@ -69,6 +69,42 @@ const MAX_REVIEWS = 2000;
 const FEATURED_MIN_RATING = 3.5;
 const FEATURED_MIN_COUNT = 3;
 
+// Keys stripped from config during publish (privacy guardrails)
+const SENSITIVE_KEYS = new Set([
+  'systemPrompt', 'system_prompt', 'systemMessage', 'system_message',
+  'token', 'apiKey', 'api_key', 'apiToken', 'api_token',
+  'secret', 'password', 'credential', 'credentials',
+  'pat', 'personalAccessToken', 'accessToken', 'access_token',
+  'privateKey', 'private_key', 'secretKey', 'secret_key',
+  'webhookUrl', 'webhook_url', 'webhookSecret', 'webhook_secret',
+]);
+
+/** Recursively strip sensitive keys from a config object */
+export function sanitizeConfig(obj: Record<string, unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (SENSITIVE_KEYS.has(key)) continue;
+    if (typeof value === 'string' && looksLikeSecret(value)) continue;
+    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      result[key] = sanitizeConfig(value as Record<string, unknown>);
+    } else {
+      result[key] = value;
+    }
+  }
+  return result;
+}
+
+/** Heuristic: detect strings that look like tokens/secrets */
+export function looksLikeSecret(value: string): boolean {
+  // GitHub PATs
+  if (/^gh[ps]_[A-Za-z0-9]{36,}$/.test(value)) return true;
+  // Generic long hex/base64 tokens (40+ chars, no spaces)
+  if (value.length >= 40 && /^[A-Za-z0-9+/=_-]+$/.test(value)) return true;
+  // Bearer tokens
+  if (/^Bearer\s+/i.test(value)) return true;
+  return false;
+}
+
 // ── CommunityPlaybookService ──────────────────────────────────────
 
 export class CommunityPlaybookService {
@@ -146,6 +182,7 @@ export class CommunityPlaybookService {
     }
 
     const now = new Date().toISOString();
+    const safeConfig = sanitizeConfig(input.config ?? {});
     const playbook: CommunityPlaybook = {
       id: `cp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       name: input.name.trim(),
@@ -159,7 +196,7 @@ export class CommunityPlaybookService {
       publishedAt: now,
       updatedAt: now,
       featured: false,
-      config: input.config ?? {},
+      config: safeConfig,
       versions: [{ version: '1.0.0', publishedAt: now }],
     };
 
@@ -180,7 +217,7 @@ export class CommunityPlaybookService {
     if (updates.description !== undefined) playbook.description = updates.description;
     if (updates.category !== undefined) playbook.category = updates.category;
     if (updates.tags !== undefined) playbook.tags = updates.tags;
-    if (updates.config !== undefined) playbook.config = updates.config;
+    if (updates.config !== undefined) playbook.config = sanitizeConfig(updates.config);
     playbook.updatedAt = new Date().toISOString();
 
     this.savePlaybooks();
