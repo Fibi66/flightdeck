@@ -142,6 +142,7 @@ function handleDecision(ctx: CommandHandlerContext, agent: Agent, data: string):
       rationale: decision.rationale,
       needsConfirmation,
       status: recorded.status,
+      category: recorded.category,
     });
   } catch (err) {
     logger.debug('command', 'Failed to parse DECISION command', { error: (err as Error).message });
