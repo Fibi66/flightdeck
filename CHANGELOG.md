@@ -14,6 +14,86 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Sequential dev launcher** (`scripts/dev.mjs`) — `npm run dev` starts Express first, captures the actual port, then starts Vite with the correct proxy target; multiple instances can run simultaneously
 - **Commit sign-off convention** — all agent commits now include agent ID, role, and model name
 
+---
+
+## Phase 2 — Observability & Control
+
+Ten features giving leads full visibility and control over their agent fleet.
+
+- **Batch Approval** — confirm/reject multiple decisions at once with keyword-based classification, intent rules, and auto-approval
+- **Token Pressure Gauge** — burn rate tracking per agent with tiered context pressure alerts (70/85/95%) and actionable compact/restart/dismiss
+- **Diff Preview** — git diff scoped to each agent's locked files with 5s TTL cache
+- **Focus Mode** — aggregated agent view (output, activities, decisions, file locks, diff) via single endpoint
+- **Session Replay** — world-state reconstruction at any timestamp with keyframes, event range queries, and scrubber UI
+- **Communication Flow Viz** — agent-to-agent message graph with edge aggregation, type filtering, and stats
+- **Budget Enforcement** — session/project budget limits with warning/alert/pause events and dedup
+- **The Pulse** — persistent ambient status strip showing fleet health at a glance
+- **Canvas Lite** — spatial agent graph with ReactFlow for visual crew topology
+- **Smart Sidebar** — collapsible 7-item navigation with live badges
+
+## Phase 3 — Understanding & Intelligence
+
+Thirteen features adding learning, analysis, and self-healing capabilities.
+
+- **Playbook Library** — CRUD playbook service with apply/save, library UI with cards and picker
+- **Catch-Up Summary** — idle detection + activity aggregation since last interaction
+- **Intent Rules V2** — structured conditions, role scopes, priority ordering, effectiveness tracking, trust presets (conservative/moderate/autonomous)
+- **Debate Detection** — pattern-based disagreement detection with confidence scoring and thread grouping
+- **Shareable Session Replays** — token-based share links with expiry, access tracking, and revocation
+- **Cross-Session Analytics** — overview dashboard with cost trends, role contributions, model effectiveness, session comparison
+- **Overview Page Redesign** — temporal visualizations (progress timeline, task burndown, cost curve, agent heatmap, milestones)
+- **Self-Healing Crews** — automatic crash recovery with handoff briefing generation, review, retry logic, and metrics
+- **Agent Handoff Briefings** — 6 trigger types, quality scoring, session-end archival, review/edit/deliver lifecycle
+- **Notification Channels** — 5 channel types (desktop, slack, discord, email, webhook) with quiet hours, HMAC signing, and tier routing
+- **Tech Debt Fixes** — cache cleanup intervals, budget event dedup, error handling, WS throttle + heartbeat
+- **CatchUp URL Alias** — cleaner REST endpoint for catch-up banner
+- **RecoveryService Hardening** — dedup guard for same-agent recoveries + budget gate
+
+## Phase 4 — Platform & Automation
+
+Ten features transforming Flightdeck into a full automation platform.
+
+- **NL Crew Control** — natural language command engine with 30 patterns, 3-pass matching, preview/execute/undo lifecycle
+- **Command Palette V2** — fuzzy search across commands, navigation, and agents with keyboard shortcuts
+- **Smart Onboarding** — server-persisted progress tracking with contextual suggestions
+- **Predictive Intelligence** — 6 prediction types (context exhaustion, cost overrun, agent stall, task duration, completion estimate, file conflict) with linear extrapolation and accuracy tracking
+- **Workflow Automation** — 12 event triggers × 13 action types with AND conditions, cooldown/throttling, 12 templates, dry-run
+- **GitHub Integration** — PAT auth, PR creation (draft default), CI status polling, commit→task linking
+- **Conflict Detection** — 4 detection levels (same directory, import overlap, lock contention, branch divergence) with graduated severity and resolution suggestions
+- **Custom Role Builder** — visual builder with emoji, color, prompt templates, model preference, and dry-run testing
+- **Community Playbooks** — publish/browse/search/rate/fork with version tracking, featured gating, and privacy guardrails (secret stripping)
+- **Mobile PWA** — responsive layout with mobile navigation and touch-optimized controls
+
+## Infrastructure
+
+### Performance
+- React.lazy() code splitting for all route components
+- Granular Zustand selectors replacing destructured store access
+- WebSocket agent:text batching (100ms flush interval)
+- ActivityLedger query limits and timeline data caching
+- Unbounded Map caps on AlertEngine, FileDependencyGraph, ComplexityMonitor
+- DebateDetector N+1 query elimination
+- Token pricing constants extracted to shared modules
+
+### Accessibility
+- `<main>` landmark wrapper around route content
+- Skip-to-content link (sr-only, visible on focus)
+- ARIA labels on Settings inputs and dialog semantics
+- Role and status attributes on shared components
+
+### Polish
+- **Motion system** — unified animation tokens with 3 tiers (micro/standard/dramatic), 4 easings, prefers-reduced-motion support
+- **Chart theme** — dark/light color tokens for all visx charts replacing 15+ hardcoded hex colors
+- **Shared components** — EmptyState, SkeletonCard, ErrorPage integrated across 13 panels
+- LeadDashboard split into focused subcomponent files
+
+### Testing
+- **3,617 tests** across server (2,751) and web (866)
+- Coverage audit identified and filled 3 gaps: SessionRetro, rateLimit middleware, AgentEvents
+- Phase 4 alone: 267 backend tests across 5 cycles
+
+---
+
 ### Changed
 
 - Vite proxy target is now configurable via `SERVER_PORT` env var instead of hardcoded `:3001`
@@ -21,6 +101,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Gantt chart vertical alignment** — fixed SVG viewBox stretching, time axis overlap with first task row, and container height formula for small task counts
+- **Array sanitization in Community Playbooks** — secrets inside arrays now detected and stripped
+- **PredictionService expired accuracy** — expired predictions marked instead of removed, counted correctly in accuracy stats
 
 ### Removed
 
