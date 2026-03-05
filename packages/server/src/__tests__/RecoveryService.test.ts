@@ -54,7 +54,7 @@ describe('RecoveryService', () => {
         trigger: 'crash',
         currentTask: { id: 'task-1', title: 'API refactor', progress: '60% complete' },
         contextUsage: 92,
-      });
+      })!;
       expect(event.id).toMatch(/^recovery-/);
       expect(event.originalAgentId).toBe('agent-123');
       expect(event.trigger).toBe('crash');
@@ -70,14 +70,42 @@ describe('RecoveryService', () => {
         originalAgentId: 'agent-123',
         trigger: 'crash',
       });
-      expect(event.status).toBe('awaiting_review');
+      expect(event!.status).toBe('awaiting_review');
+    });
+
+    it('deduplicates — skips if active recovery exists for same agent', () => {
+      const first = service.startRecovery({ originalAgentId: 'agent-1', trigger: 'crash' });
+      expect(first).not.toBeNull();
+      const duplicate = service.startRecovery({ originalAgentId: 'agent-1', trigger: 'crash' });
+      expect(duplicate).toBeNull();
+      expect(service.getEvents()).toHaveLength(1);
+    });
+
+    it('allows new recovery after previous one completed', () => {
+      const first = service.startRecovery({ originalAgentId: 'agent-1', trigger: 'crash' });
+      service.approveRecovery(first!.id);
+      service.completeRecovery(first!.id);
+      const second = service.startRecovery({ originalAgentId: 'agent-1', trigger: 'crash' });
+      expect(second).not.toBeNull();
+      expect(service.getEvents()).toHaveLength(2);
+    });
+
+    it('skips auto-restart when budget is exhausted', () => {
+      const event = service.startRecovery({
+        originalAgentId: 'agent-1',
+        trigger: 'crash',
+        budgetExhausted: true,
+      });
+      expect(event).not.toBeNull();
+      expect(event!.status).toBe('failed');
+      expect(event!.briefing).toBeNull();
     });
 
     it('approves recovery and transitions to restarting', () => {
       const event = service.startRecovery({
         originalAgentId: 'agent-123',
         trigger: 'unresponsive',
-      });
+      })!;
       const approved = service.approveRecovery(event.id);
       expect(approved).not.toBeNull();
       expect(approved!.status).toBe('restarting');
@@ -87,7 +115,7 @@ describe('RecoveryService', () => {
       const event = service.startRecovery({
         originalAgentId: 'agent-123',
         trigger: 'crash',
-      });
+      })!;
       service.approveRecovery(event.id);
       const completed = service.completeRecovery(event.id, 'agent-456');
       expect(completed).not.toBeNull();
@@ -100,7 +128,7 @@ describe('RecoveryService', () => {
       const event = service.startRecovery({
         originalAgentId: 'agent-123',
         trigger: 'manual',
-      });
+      })!;
       const cancelled = service.cancelRecovery(event.id);
       expect(cancelled).not.toBeNull();
       expect(cancelled!.status).toBe('failed');
@@ -108,7 +136,7 @@ describe('RecoveryService', () => {
     });
 
     it('cannot cancel an already recovered event', () => {
-      const event = service.startRecovery({ originalAgentId: 'a', trigger: 'crash' });
+      const event = service.startRecovery({ originalAgentId: 'a', trigger: 'crash' })!;
       service.approveRecovery(event.id);
       service.completeRecovery(event.id);
       expect(service.cancelRecovery(event.id)).toBeNull();
@@ -116,7 +144,7 @@ describe('RecoveryService', () => {
 
     it('retries on failure up to maxAttempts', () => {
       service.updateSettings({ maxAttempts: 2 });
-      const event = service.startRecovery({ originalAgentId: 'a', trigger: 'crash' });
+      const event = service.startRecovery({ originalAgentId: 'a', trigger: 'crash' })!;
 
       // First failure → retry (attempt 2)
       const retry = service.failRecovery(event.id, 'timeout');
@@ -142,7 +170,7 @@ describe('RecoveryService', () => {
           { role: 'user', content: 'Please build the API' },
           { role: 'assistant', content: 'Working on it...' },
         ],
-      });
+      })!;
 
       expect(event.briefing!.narrative).toContain('Build API');
       expect(event.briefing!.narrative).toContain('95%');
@@ -151,7 +179,7 @@ describe('RecoveryService', () => {
     });
 
     it('allows editing briefing narrative', () => {
-      const event = service.startRecovery({ originalAgentId: 'a', trigger: 'crash' });
+      const event = service.startRecovery({ originalAgentId: 'a', trigger: 'crash' })!;
       const updated = service.updateBriefing(event.id, { narrative: 'Custom briefing text' });
       expect(updated!.briefing!.narrative).toBe('Custom briefing text');
     });
@@ -161,7 +189,7 @@ describe('RecoveryService', () => {
         originalAgentId: 'a',
         trigger: 'crash',
         lastMessages: [{ role: 'user', content: 'test' }],
-      });
+      })!;
       const updated = service.updateBriefing(event.id, {
         sections: { lastMessages: false, discoveries: false },
       });
@@ -174,7 +202,7 @@ describe('RecoveryService', () => {
         description: 'Auto-approve style from devs',
         enabled: true,
       });
-      const event = service.startRecovery({ originalAgentId: 'a', trigger: 'crash' });
+      const event = service.startRecovery({ originalAgentId: 'a', trigger: 'crash' })!;
       expect(event.briefing!.activeIntentRules).toContain('Auto-approve style from devs');
     });
   });
@@ -191,12 +219,12 @@ describe('RecoveryService', () => {
     it('tracks success rate', () => {
       // Create 2 successful recoveries
       for (let i = 0; i < 2; i++) {
-        const e = service.startRecovery({ originalAgentId: `a${i}`, trigger: 'crash' });
+        const e = service.startRecovery({ originalAgentId: `a${i}`, trigger: 'crash' })!;
         service.approveRecovery(e.id);
         service.completeRecovery(e.id);
       }
       // Create 1 failed recovery
-      const failed = service.startRecovery({ originalAgentId: 'b', trigger: 'crash' });
+      const failed = service.startRecovery({ originalAgentId: 'b', trigger: 'crash' })!;
       service.updateSettings({ maxAttempts: 1 });
       service.failRecovery(failed.id, 'nope');
 
@@ -231,7 +259,7 @@ describe('RecoveryService', () => {
     it('emits recovery:completed on completeRecovery', () => {
       const handler = vi.fn();
       service.on('recovery:completed', handler);
-      const event = service.startRecovery({ originalAgentId: 'a', trigger: 'crash' });
+      const event = service.startRecovery({ originalAgentId: 'a', trigger: 'crash' })!;
       service.approveRecovery(event.id);
       service.completeRecovery(event.id, 'b');
       expect(handler).toHaveBeenCalledWith(expect.objectContaining({
@@ -244,7 +272,7 @@ describe('RecoveryService', () => {
       const handler = vi.fn();
       service.on('recovery:failed', handler);
       service.updateSettings({ maxAttempts: 1 });
-      const event = service.startRecovery({ originalAgentId: 'a', trigger: 'crash' });
+      const event = service.startRecovery({ originalAgentId: 'a', trigger: 'crash' })!;
       service.failRecovery(event.id, 'timeout');
       expect(handler).toHaveBeenCalledWith(expect.objectContaining({ reason: 'timeout' }));
     });

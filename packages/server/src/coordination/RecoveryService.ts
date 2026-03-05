@@ -115,7 +115,43 @@ export class RecoveryService extends EventEmitter {
     lastMessages?: Array<{ role: string; content: string }>;
     currentTask?: { id: string; title: string; progress: string } | null;
     contextUsage?: number;
-  }): RecoveryEvent {
+    budgetExhausted?: boolean;
+  }): RecoveryEvent | null {
+    // Dedup: skip if an active recovery already exists for this agent
+    const activeRecovery = this.events.find(
+      e => e.originalAgentId === params.originalAgentId &&
+           (e.status !== 'recovered' && e.status !== 'failed'),
+    );
+    if (activeRecovery) {
+      logger.info('recovery', `Skipping duplicate recovery for ${params.originalAgentId.slice(0, 8)} — active recovery ${activeRecovery.id.slice(0, 12)} exists`);
+      return null;
+    }
+
+    // Budget gate: don't auto-restart if budget is exhausted
+    if (params.budgetExhausted && this.settings.autoRestart) {
+      logger.warn('recovery', `Skipping auto-restart for ${params.originalAgentId.slice(0, 8)} — budget exhausted`);
+      const id = `recovery-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const failedEvent: RecoveryEvent = {
+        id,
+        sessionId: params.sessionId ?? 'default',
+        originalAgentId: params.originalAgentId,
+        replacementAgentId: null,
+        trigger: params.trigger,
+        status: 'failed',
+        briefing: null,
+        attempts: 0,
+        startedAt: new Date().toISOString(),
+        recoveredAt: null,
+        failedAt: new Date().toISOString(),
+        preservedFiles: [],
+        transferredLocks: [],
+      };
+      this.events.push(failedEvent);
+      this.saveEvents();
+      this.emit('recovery:failed', { recoveryId: id, reason: 'Budget exhausted' });
+      return failedEvent;
+    }
+
     const id = `recovery-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const sessionId = params.sessionId ?? 'default';
 
