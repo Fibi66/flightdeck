@@ -1,5 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { apiFetch } from './useApi';
+import {
+  PLAYBACK_TICK_MS,
+  STATE_FETCH_DEBOUNCE_MS,
+  MIN_SESSION_DURATION_MS,
+} from '../constants/timing';
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -83,7 +88,7 @@ export function useSessionReplay(leadId: string | null): UseSessionReplayResult 
           const start = new Date(kf[0].timestamp).getTime();
           const end = new Date(kf[kf.length - 1].timestamp).getTime();
           sessionStartRef.current = start;
-          setDuration(Math.max(end - start, 1000));
+          setDuration(Math.max(end - start, MIN_SESSION_DURATION_MS));
         }
       } catch (err: any) {
         if (mountedRef.current) setError(err.message ?? 'Failed to load keyframes');
@@ -113,7 +118,7 @@ export function useSessionReplay(leadId: string | null): UseSessionReplayResult 
   // Playback loop
   useEffect(() => {
     if (playing) {
-      const tickMs = 100;
+      const tickMs = PLAYBACK_TICK_MS;
       playIntervalRef.current = setInterval(() => {
         setCurrentTime((prev) => {
           const next = prev + tickMs * speed;
@@ -134,7 +139,7 @@ export function useSessionReplay(leadId: string | null): UseSessionReplayResult 
   const lastFetchRef = useRef(0);
   useEffect(() => {
     const now = Date.now();
-    if (now - lastFetchRef.current < 300) return;
+    if (now - lastFetchRef.current < STATE_FETCH_DEBOUNCE_MS) return;
     lastFetchRef.current = now;
     fetchStateAt(currentTime);
   }, [currentTime, fetchStateAt]);

@@ -4,22 +4,9 @@ import { useAppStore } from '../../stores/appStore';
 import { useLeadStore } from '../../stores/leadStore';
 import { useToastStore } from '../Toast';
 import { apiFetch } from '../../hooks/useApi';
+import { categoryLabel } from '../../constants/categories';
+import { TEACH_ME_DELAY_MS } from '../../constants/timing';
 import type { Decision } from '../../types';
-
-// ── Category labels (classification comes from server via decision.category) ──
-
-const CATEGORY_LABELS: Record<string, string> = {
-  style: '🎨 Style & Formatting',
-  architecture: '🏗️ Architecture',
-  tool_access: '🔧 Tool Access',
-  dependency: '📦 Dependencies',
-  testing: '🧪 Testing',
-  general: '📋 General',
-};
-
-function categoryLabel(category: string): string {
-  return CATEGORY_LABELS[category] ?? `📋 ${category}`;
-}
 
 // ── Urgency helpers ──────────────────────────────────────────────────
 
@@ -219,7 +206,7 @@ export function ApprovalQueue() {
             count: suggestedRule!.count,
             matchPreview,
           });
-        }, 1000);
+        }, TEACH_ME_DELAY_MS);
       }
     } catch (err: any) {
       addToast('error', `Batch ${action} failed: ${err.message}`);

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { apiFetch } from './useApi';
+import { POLL_INTERVAL_MS } from '../constants/timing';
 import type { AgentInfo, Decision } from '../types';
 
 // ── Types ────────────────────────────────────────────────────────────
@@ -63,7 +64,7 @@ interface UseFocusAgentResult {
  */
 export function useFocusAgent(
   agentId: string | null,
-  { pollInterval = 10_000 }: { pollInterval?: number } = {},
+  { pollInterval = POLL_INTERVAL_MS }: { pollInterval?: number } = {},
 ): UseFocusAgentResult {
   const [data, setData] = useState<FocusAgentData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -112,7 +113,7 @@ export interface DiffSummaryResult {
 
 export function useDiffSummary(
   agentId: string | null,
-  { pollInterval = 10_000 }: { pollInterval?: number } = {},
+  { pollInterval = POLL_INTERVAL_MS }: { pollInterval?: number } = {},
 ): DiffSummaryResult {
   const [summary, setSummary] = useState<DiffSummary | null>(null);
   const [loading, setLoading] = useState(false);
