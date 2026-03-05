@@ -17,6 +17,7 @@ import { replayRoutes } from './replay.js';
 import { commsRoutes } from './comms.js';
 import { summaryRoutes } from './summary.js';
 import { playbookRoutes } from './playbooks.js';
+import { debateRoutes } from './debates.js';
 
 export function mountAllRoutes(router: Router, ctx: AppContext): void {
   router.use(agentsRoutes(ctx));
@@ -36,4 +37,5 @@ export function mountAllRoutes(router: Router, ctx: AppContext): void {
   router.use(commsRoutes(ctx));
   router.use(summaryRoutes(ctx));
   router.use(playbookRoutes(ctx));
+  router.use(debateRoutes(ctx));
 }

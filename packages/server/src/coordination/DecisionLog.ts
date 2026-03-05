@@ -28,11 +28,67 @@ export interface IntentRule {
   id: string;
   category: DecisionCategory;
   action: 'auto-approve';
-  source: 'manual' | 'teach_me';
+  source: 'manual' | 'teach_me' | 'preset';
   approvalCount: number;
   createdAt: string;
   lastMatchedAt: string | null;
+  // V2 fields
+  description?: string;        // NL description e.g. "Auto-approve style decisions from developers"
+  roleScopes?: string[];       // Only match if agent role is in this list (empty = all roles)
+  conditions?: IntentCondition[];  // Additional conditions for matching
+  priority?: number;           // Higher = checked first (default 0)
+  effectiveness?: IntentEffectiveness; // Tracking match quality
 }
+
+export interface IntentCondition {
+  field: 'title' | 'rationale' | 'agentRole';
+  operator: 'contains' | 'not_contains' | 'equals' | 'matches';
+  value: string;
+}
+
+export interface IntentEffectiveness {
+  totalMatches: number;
+  autoApproved: number;
+  overriddenByUser: number; // User rejected after auto-approve triggered
+  lastEvaluatedAt: string | null;
+  score: number | null;     // 0-100, null if < MIN_MATCHES_FOR_SCORE
+}
+
+export const MIN_MATCHES_FOR_SCORE = 5;
+
+export type TrustPreset = 'conservative' | 'moderate' | 'autonomous';
+
+export const TRUST_PRESETS: Record<TrustPreset, { name: string; description: string; rules: Array<{ category: DecisionCategory; roleScopes?: string[] }> }> = {
+  conservative: {
+    name: 'Conservative',
+    description: 'Only auto-approve style/formatting decisions. Everything else requires confirmation.',
+    rules: [
+      { category: 'style' },
+    ],
+  },
+  moderate: {
+    name: 'Moderate',
+    description: 'Auto-approve style, testing, and dependency decisions. Architecture requires confirmation.',
+    rules: [
+      { category: 'style' },
+      { category: 'testing' },
+      { category: 'dependency' },
+      { category: 'tool_access' },
+    ],
+  },
+  autonomous: {
+    name: 'Autonomous',
+    description: 'Auto-approve all categories. Full trust in agent decisions.',
+    rules: [
+      { category: 'style' },
+      { category: 'testing' },
+      { category: 'dependency' },
+      { category: 'tool_access' },
+      { category: 'architecture' },
+      { category: 'general' },
+    ],
+  },
+};
 
 export interface BatchResult {
   updated: number;
@@ -108,7 +164,12 @@ export class DecisionLog extends EventEmitter {
     return [...this.intentRules];
   }
 
-  addIntentRule(category: DecisionCategory, source: 'manual' | 'teach_me'): IntentRule {
+  addIntentRule(category: DecisionCategory, source: 'manual' | 'teach_me' | 'preset', options?: {
+    description?: string;
+    roleScopes?: string[];
+    conditions?: IntentCondition[];
+    priority?: number;
+  }): IntentRule {
     const rule: IntentRule = {
       id: `rule-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       category,
@@ -117,8 +178,15 @@ export class DecisionLog extends EventEmitter {
       approvalCount: 0,
       createdAt: new Date().toISOString(),
       lastMatchedAt: null,
+      description: options?.description,
+      roleScopes: options?.roleScopes,
+      conditions: options?.conditions,
+      priority: options?.priority ?? 0,
+      effectiveness: { totalMatches: 0, autoApproved: 0, overriddenByUser: 0, lastEvaluatedAt: null, score: null },
     };
     this.intentRules.push(rule);
+    // Sort by priority descending so higher-priority rules match first
+    this.intentRules.sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
     this.saveIntentRules();
     return rule;
   }
@@ -132,8 +200,87 @@ export class DecisionLog extends EventEmitter {
   }
 
   /** Check if a decision matches an intent rule. Returns the matching rule or undefined. */
-  matchIntentRule(category: DecisionCategory): IntentRule | undefined {
-    return this.intentRules.find(r => r.category === category && r.action === 'auto-approve');
+  matchIntentRule(category: DecisionCategory, context?: { agentRole?: string; title?: string; rationale?: string }): IntentRule | undefined {
+    // Rules are already sorted by priority (descending)
+    return this.intentRules.find(r => {
+      if (r.category !== category || r.action !== 'auto-approve') return false;
+      // Check role scopes
+      if (r.roleScopes && r.roleScopes.length > 0 && context?.agentRole) {
+        if (!r.roleScopes.some(scope => context.agentRole!.toLowerCase().includes(scope.toLowerCase()))) {
+          return false;
+        }
+      }
+      // Check conditions
+      if (r.conditions && r.conditions.length > 0 && context) {
+        for (const cond of r.conditions) {
+          const fieldValue = context[cond.field]?.toLowerCase() ?? '';
+          const condValue = cond.value.toLowerCase();
+          switch (cond.operator) {
+            case 'contains': if (!fieldValue.includes(condValue)) return false; break;
+            case 'not_contains': if (fieldValue.includes(condValue)) return false; break;
+            case 'equals': if (fieldValue !== condValue) return false; break;
+            case 'matches': if (!new RegExp(cond.value, 'i').test(fieldValue)) return false; break;
+          }
+        }
+      }
+      return true;
+    });
+  }
+
+  /** Record a match for effectiveness tracking */
+  recordMatch(ruleId: string, wasAutoApproved: boolean): void {
+    const rule = this.intentRules.find(r => r.id === ruleId);
+    if (!rule) return;
+    rule.lastMatchedAt = new Date().toISOString();
+    rule.approvalCount++;
+    if (!rule.effectiveness) {
+      rule.effectiveness = { totalMatches: 0, autoApproved: 0, overriddenByUser: 0, lastEvaluatedAt: null, score: null };
+    }
+    rule.effectiveness.totalMatches++;
+    if (wasAutoApproved) rule.effectiveness.autoApproved++;
+    rule.effectiveness.lastEvaluatedAt = new Date().toISOString();
+    // Compute score only after MIN_MATCHES_FOR_SCORE
+    if (rule.effectiveness.totalMatches >= MIN_MATCHES_FOR_SCORE) {
+      rule.effectiveness.score = Math.round(
+        (rule.effectiveness.autoApproved / rule.effectiveness.totalMatches) * 100,
+      );
+    }
+    this.saveIntentRules();
+  }
+
+  /** Record that a user overrode an auto-approved decision */
+  recordOverride(ruleId: string): void {
+    const rule = this.intentRules.find(r => r.id === ruleId);
+    if (!rule?.effectiveness) return;
+    rule.effectiveness.overriddenByUser++;
+    if (rule.effectiveness.totalMatches >= MIN_MATCHES_FOR_SCORE) {
+      const effectiveApprovals = rule.effectiveness.autoApproved - rule.effectiveness.overriddenByUser;
+      rule.effectiveness.score = Math.round(
+        Math.max(0, effectiveApprovals / rule.effectiveness.totalMatches) * 100,
+      );
+    }
+    this.saveIntentRules();
+  }
+
+  /** Apply a trust preset — replaces all rules with the preset's rules */
+  applyTrustPreset(preset: TrustPreset): IntentRule[] {
+    const config = TRUST_PRESETS[preset];
+    if (!config) throw new Error(`Unknown trust preset: ${preset}`);
+
+    // Remove existing preset rules but keep manual/teach_me rules
+    this.intentRules = this.intentRules.filter(r => r.source !== 'preset');
+
+    // Add preset rules
+    const newRules: IntentRule[] = [];
+    for (const ruleDef of config.rules) {
+      const rule = this.addIntentRule(ruleDef.category, 'preset', {
+        description: `${config.name} preset: auto-approve ${ruleDef.category}`,
+        roleScopes: ruleDef.roleScopes,
+        priority: -1, // Preset rules are lower priority than manual rules
+      });
+      newRules.push(rule);
+    }
+    return newRules;
   }
 
   add(agentId: string, agentRole: string, title: string, rationale: string, needsConfirmation = false, leadId?: string, projectId?: string): Decision {
@@ -159,11 +306,9 @@ export class DecisionLog extends EventEmitter {
 
     // Check intent rules for auto-approval (only for non-system decisions needing confirmation)
     if (needsConfirmation && !this.systemDecisionIds.has(id)) {
-      const matchedRule = this.matchIntentRule(category);
+      const matchedRule = this.matchIntentRule(category, { agentRole, title, rationale });
       if (matchedRule) {
-        matchedRule.approvalCount++;
-        matchedRule.lastMatchedAt = new Date().toISOString();
-        this.saveIntentRules();
+        this.recordMatch(matchedRule.id, true);
         return this.autoApprove(id) ?? decision;
       }
     }
