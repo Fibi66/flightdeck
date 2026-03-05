@@ -3,6 +3,7 @@ import { Users } from 'lucide-react';
 import { useAppStore } from '../../stores/appStore';
 import { agentStatusDot } from '../../utils/statusColors';
 import type { AgentInfo } from '../../types';
+import { EmptyState } from '../Shared';
 
 // ── Constants ────────────────────────────────────────────────────────
 
@@ -103,7 +104,7 @@ export function AgentFleet({ leadId }: AgentFleetProps) {
       </h3>
       <div className="flex-1 overflow-y-auto space-y-0.5 -mx-2">
         {teamAgents.length === 0 && (
-          <div className="text-xs text-th-text-muted px-2 py-4 text-center">No agents yet</div>
+          <EmptyState icon="👥" title="No agents yet" compact />
         )}
         {teamAgents.map((a) => <AgentRow key={a.id} agent={a} />)}
       </div>

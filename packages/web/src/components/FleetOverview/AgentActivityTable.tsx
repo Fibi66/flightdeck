@@ -4,6 +4,7 @@ import type { AgentInfo } from '../../types';
 import type { FileLock } from './FleetOverview';
 import { Square, RefreshCw, Terminal, Hand, Check, Play } from 'lucide-react';
 import { TokenSparkline } from './TokenSparkline';
+import { EmptyState } from '../Shared';
 
 function shortModelName(model?: string): string {
   if (!model) return '';
@@ -167,8 +168,8 @@ export function AgentActivityTable({ agents, locks, api, onSelectAgent }: Props)
 
   if (agents.length === 0) {
     return (
-      <div className="border border-th-border rounded-lg bg-surface-raised p-8 text-center text-th-text-muted">
-        <p>No agents to display</p>
+      <div className="border border-th-border rounded-lg bg-surface-raised p-8">
+        <EmptyState icon="👥" title="No agents to display" compact />
       </div>
     );
   }

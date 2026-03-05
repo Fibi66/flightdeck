@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { X, Info, ListChecks, MessageSquare, BarChart3, GitBranch } from 'lucide-react';
 import { useFocusAgent } from '../../hooks/useFocusAgent';
 import { DiffPreview } from '../DiffPreview';
+import { EmptyState, SkeletonCard } from '../Shared';
 
 interface FocusPanelProps {
   agentId: string;
@@ -76,7 +77,7 @@ export function FocusPanel({ agentId, onClose }: FocusPanelProps) {
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-4">
         {loading && !data && (
-          <p className="text-xs text-th-text-muted text-center py-8">Loading...</p>
+          <SkeletonCard lines={2} showHeader={false} className="mx-2" />
         )}
         {error && (
           <p className="text-xs text-red-400 text-center py-8">{error}</p>
@@ -118,7 +119,7 @@ export function FocusPanel({ agentId, onClose }: FocusPanelProps) {
         {activeTab === 'tasks' && data?.decisions && (
           <div className="space-y-2">
             {data.decisions.length === 0 ? (
-              <p className="text-xs text-th-text-muted text-center py-4">No decisions recorded</p>
+              <EmptyState icon="📋" title="No decisions recorded" compact />
             ) : (
               data.decisions.slice(0, 20).map((d) => (
                 <div key={d.id} className="text-[11px] border-b border-th-border/40 pb-1.5">
@@ -139,7 +140,7 @@ export function FocusPanel({ agentId, onClose }: FocusPanelProps) {
                 </div>
               ))
             ) : (
-              <p className="text-xs text-th-text-muted text-center py-4">No recent messages</p>
+              <EmptyState icon="💬" title="No recent messages" compact />
             )}
           </div>
         )}

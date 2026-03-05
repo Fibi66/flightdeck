@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from 'react';
 import { useAppStore } from '../../stores/appStore';
 import { useLeadStore, type AgentComm } from '../../stores/leadStore';
 import type { AgentInfo } from '../../types';
+import { EmptyState } from '../Shared';
 import { Network, MessageSquare, Grid3X3, Users, BarChart3 } from 'lucide-react';
 import { idColor } from '../../utils/markdown';
 import { CommHeatmap } from '../FleetOverview/CommHeatmap';
@@ -103,7 +104,7 @@ function HierarchyTree({ agents }: { agents: AgentInfo[] }) {
   };
 
   if (agents.length === 0) {
-    return <div className="text-th-text-muted text-sm text-center py-6">No agents running</div>;
+    return <EmptyState icon="👥" title="No agents running" description="Start a session to see your crew" compact />;
   }
 
   return (
