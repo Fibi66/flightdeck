@@ -2,7 +2,6 @@ import { useMemo, useState, useCallback } from 'react';
 import { useAppStore } from '../../stores/appStore';
 import { useLeadStore, type AgentComm } from '../../stores/leadStore';
 import type { AgentInfo } from '../../types';
-import type { AgentComm } from '../../stores/leadStore';
 
 const EMPTY_COMMS: AgentComm[] = [];
 

@@ -68,25 +68,27 @@ export function useFocusAgent(
   const [data, setData] = useState<FocusAgentData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const mountedRef = useRef(true);
+  // Incremented on each agent switch to discard stale in-flight responses
+  const requestIdRef = useRef(0);
 
   const fetchData = useCallback(async () => {
     if (!agentId) return;
+    const requestId = requestIdRef.current;
     setLoading(true);
     setError(null);
     try {
       const result = await apiFetch<FocusAgentData>(`/agents/${agentId}/focus`);
-      if (mountedRef.current) setData(result);
+      if (requestIdRef.current === requestId) setData(result);
     } catch (err: any) {
-      if (mountedRef.current) setError(err.message ?? 'Failed to load agent data');
+      if (requestIdRef.current === requestId) setError(err.message ?? 'Failed to load agent data');
     } finally {
-      if (mountedRef.current) setLoading(false);
+      if (requestIdRef.current === requestId) setLoading(false);
     }
   }, [agentId]);
 
-  // Initial fetch + polling
+  // Initial fetch + polling — bump requestId on agent switch to invalidate stale responses
   useEffect(() => {
-    mountedRef.current = true;
+    requestIdRef.current++;
     if (!agentId) {
       setData(null);
       return;
@@ -94,7 +96,6 @@ export function useFocusAgent(
     fetchData();
     const timer = setInterval(fetchData, pollInterval);
     return () => {
-      mountedRef.current = false;
       clearInterval(timer);
     };
   }, [agentId, pollInterval, fetchData]);
@@ -115,10 +116,11 @@ export function useDiffSummary(
 ): DiffSummaryResult {
   const [summary, setSummary] = useState<DiffSummary | null>(null);
   const [loading, setLoading] = useState(false);
-  const mountedRef = useRef(true);
+  const requestIdRef = useRef(0);
 
   useEffect(() => {
-    mountedRef.current = true;
+    requestIdRef.current++;
+    const currentId = requestIdRef.current;
     if (!agentId) {
       setSummary(null);
       return;
@@ -130,7 +132,7 @@ export function useDiffSummary(
         const result = await apiFetch<{ filesChanged: number; additions: number; deletions: number }>(
           `/agents/${agentId}/diff/summary`,
         );
-        if (mountedRef.current) {
+        if (requestIdRef.current === currentId) {
           setSummary({
             filesChanged: result.filesChanged,
             additions: result.additions,
@@ -140,14 +142,14 @@ export function useDiffSummary(
       } catch {
         // Silently ignore — badge just stays empty
       } finally {
-        if (mountedRef.current) setLoading(false);
+        if (requestIdRef.current === currentId) setLoading(false);
       }
     };
 
     fetch_();
     const timer = setInterval(fetch_, pollInterval);
     return () => {
-      mountedRef.current = false;
+      clearInterval(timer);
       clearInterval(timer);
     };
   }, [agentId, pollInterval]);
