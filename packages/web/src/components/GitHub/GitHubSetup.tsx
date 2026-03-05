@@ -114,6 +114,7 @@ export function GitHubSetup() {
                 value={token}
                 onChange={(e) => setToken(e.target.value)}
                 placeholder="ghp_xxxx..."
+                aria-label="Personal Access Token"
                 className="w-full text-xs bg-th-bg-alt border border-th-border rounded px-3 py-2 text-th-text placeholder-th-text-muted outline-none"
               />
             </div>
@@ -124,6 +125,7 @@ export function GitHubSetup() {
                   value={owner}
                   onChange={(e) => setOwner(e.target.value)}
                   placeholder="acme-corp"
+                  aria-label="Repository owner"
                   className="w-full text-xs bg-th-bg-alt border border-th-border rounded px-3 py-2 text-th-text placeholder-th-text-muted outline-none"
                 />
               </div>
@@ -133,6 +135,7 @@ export function GitHubSetup() {
                   value={repo}
                   onChange={(e) => setRepo(e.target.value)}
                   placeholder="api-service"
+                  aria-label="Repository name"
                   className="w-full text-xs bg-th-bg-alt border border-th-border rounded px-3 py-2 text-th-text placeholder-th-text-muted outline-none"
                 />
               </div>

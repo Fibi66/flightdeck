@@ -17,6 +17,7 @@ export function ConflictSettingsPanel() {
         <span className="text-xs text-th-text">Conflict detection</span>
         <button
           onClick={() => saveConfig({ enabled: !config.enabled })}
+          aria-label={config.enabled ? 'Disable conflict detection' : 'Enable conflict detection'}
           className={`w-10 h-5 rounded-full transition-colors ${config.enabled ? 'bg-accent' : 'bg-th-bg-muted'}`}
         >
           <div
@@ -54,6 +55,7 @@ export function ConflictSettingsPanel() {
                 type="checkbox"
                 checked={config[item.key]}
                 onChange={e => saveConfig({ [item.key]: e.target.checked })}
+                aria-label={item.label}
                 className="rounded border-th-border"
               />
               {item.label}

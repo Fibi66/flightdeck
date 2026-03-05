@@ -37,7 +37,7 @@ export function ApprovalSlideOver() {
       />
 
       {/* Slide-over panel */}
-      <div className="fixed right-0 top-0 bottom-0 z-50 w-full max-w-md flex flex-col bg-surface border-l border-th-border shadow-2xl animate-slide-in-right">
+      <div role="dialog" aria-modal="true" aria-label="Approval Queue" className="fixed right-0 top-0 bottom-0 z-50 w-full max-w-md flex flex-col bg-surface border-l border-th-border shadow-2xl animate-slide-in-right">
         {/* Header */}
         <div className="flex items-center gap-3 px-4 py-3 border-b border-th-border shrink-0">
           <ListChecks className="w-5 h-5 text-accent" />
@@ -49,6 +49,7 @@ export function ApprovalSlideOver() {
           </span>
           <button
             onClick={close}
+            aria-label="Close approval queue"
             className="p-1 rounded-md text-th-text-muted hover:text-th-text hover:bg-th-bg-alt transition-colors"
           >
             <X className="w-4 h-4" />
