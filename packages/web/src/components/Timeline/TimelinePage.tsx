@@ -13,6 +13,8 @@ import { useAccessibilityAnnouncements } from './useAccessibilityAnnouncements';
 import { useAppStore } from '../../stores/appStore';
 import { useTimelineStore } from '../../stores/timelineStore';
 import { ReplayScrubber, ShareDropdown } from '../SessionReplay';
+import { apiFetch } from '../../hooks/useApi';
+import type { Project } from '../../types';
 import './timeline-a11y.css';
 
 interface Props {
@@ -125,33 +127,51 @@ export function TimelinePage({ api, ws }: Props) {
   const getCachedData = useTimelineStore((s) => s.getCachedData);
   const clearCachedData = useTimelineStore((s) => s.clearCachedData);
 
-  // Lead selection
+  // Lead selection — live agents and historical projects
   const leads = storeAgents.filter(a => !a.parentId || a.role?.id === 'lead');
+
+  // Fetch historical projects from REST API when no live agents exist
+  const [projects, setProjects] = useState<Project[]>([]);
+  useEffect(() => {
+    apiFetch<Project[]>('/projects')
+      .then((ps) => {
+        if (Array.isArray(ps)) setProjects(ps.filter((p) => p.status !== 'archived'));
+      })
+      .catch(() => {});
+  }, []);
+
+  // Effective lead: live agents take priority, then project IDs
+  const effectiveLeadId = useMemo(() => {
+    if (selectedLead) return selectedLead;
+    if (leads.length > 0) return leads[0].id;
+    return projects.length > 0 ? projects[0].id : null;
+  }, [selectedLead, leads, projects]);
+
   // Auto-select first lead when agents arrive
   useEffect(() => {
     if (!selectedLead && leads.length > 0) {
       setSelectedLead(leads[0].id);
     }
   }, [leads, selectedLead, setSelectedLead]);
-  const { data: liveData, loading, error, refetch } = useTimelineData(selectedLead);
+  const { data: liveData, loading, error, refetch } = useTimelineData(effectiveLeadId);
 
   // Cache data in store for persistence across tab switches
   useEffect(() => {
-    if (liveData && selectedLead) {
-      setCachedData(selectedLead, liveData);
+    if (liveData && effectiveLeadId) {
+      setCachedData(effectiveLeadId, liveData);
     }
-  }, [liveData, selectedLead, setCachedData]);
+  }, [liveData, effectiveLeadId, setCachedData]);
 
   // Use live data if available, fall back to cached data from store
-  const data = liveData ?? (selectedLead ? getCachedData(selectedLead) : null);
+  const data = liveData ?? (effectiveLeadId ? getCachedData(effectiveLeadId) : null);
 
   // Clear cached data and refetch fresh from SSE
   const handleClearTimeline = useCallback(() => {
-    if (selectedLead) {
-      clearCachedData(selectedLead);
+    if (effectiveLeadId) {
+      clearCachedData(effectiveLeadId);
     }
     refetch();
-  }, [selectedLead, clearCachedData, refetch]);
+  }, [effectiveLeadId, clearCachedData, refetch]);
 
   // Announce errors via assertive live region
   useEffect(() => {
@@ -262,22 +282,36 @@ export function TimelinePage({ api, ws }: Props) {
         onErrorClick={handleStatusBarErrorClick}
       />
 
-      {/* Project tabs — always visible as top-level navigation */}
-      {leads.length > 0 && (
+      {/* Project tabs — live agents or historical projects */}
+      {(leads.length > 0 || projects.length > 0) && (
         <nav className="flex items-center gap-1 px-6 pt-2 overflow-x-auto border-b border-th-border-muted timeline-lead-selector" role="tablist" aria-label="Project selection">
-          {leads.map(lead => (
+          {leads.length > 0 ? leads.map(lead => (
             <button
               key={lead.id}
               onClick={() => setSelectedLead(lead.id)}
               role="tab"
-              aria-selected={selectedLead === lead.id}
+              aria-selected={effectiveLeadId === lead.id}
               className={`px-4 py-2 text-xs whitespace-nowrap transition-colors border-b-2 -mb-px ${
-                selectedLead === lead.id
+                effectiveLeadId === lead.id
                   ? 'border-accent text-accent font-medium bg-th-bg'
                   : 'border-transparent text-th-text-muted hover:text-th-text hover:border-th-border'
               }`}
             >
               {lead.projectName || lead.role?.name || lead.id.slice(0, 8)}
+            </button>
+          )) : projects.map(proj => (
+            <button
+              key={proj.id}
+              onClick={() => setSelectedLead(proj.id)}
+              role="tab"
+              aria-selected={effectiveLeadId === proj.id}
+              className={`px-4 py-2 text-xs whitespace-nowrap transition-colors border-b-2 -mb-px ${
+                effectiveLeadId === proj.id
+                  ? 'border-accent text-accent font-medium bg-th-bg'
+                  : 'border-transparent text-th-text-muted hover:text-th-text hover:border-th-border'
+              }`}
+            >
+              {proj.name || proj.id.slice(0, 8)}
             </button>
           ))}
         </nav>
@@ -378,14 +412,14 @@ export function TimelinePage({ api, ws }: Props) {
         </div>
       )}
 
-      {!selectedLead && !loading && (
+      {!effectiveLeadId && !loading && (
         <EmptyState
           title="No active projects"
           description="Start a project to see your AI agents collaborate in real time. The timeline will populate as agents are created and begin working."
         />
       )}
 
-      {loading && !data && selectedLead && (
+      {loading && !data && effectiveLeadId && (
         <div className="bg-th-bg rounded-lg border border-th-border-muted p-8 min-h-[400px] flex items-center justify-center" role="status" aria-label="Loading timeline data">
           <RefreshCw size={24} className="animate-spin motion-reduce:animate-none text-th-text-muted" aria-hidden="true" />
           <span className="sr-only">Loading timeline data…</span>
@@ -413,9 +447,9 @@ export function TimelinePage({ api, ws }: Props) {
       )}
 
       {/* Session Replay Scrubber + Share Controls */}
-      {selectedLead && !liveMode && (
+      {effectiveLeadId && !liveMode && (
         <div className="shrink-0 px-0 pb-2 space-y-1">
-          <ReplayScrubber leadId={selectedLead} />
+          <ReplayScrubber leadId={effectiveLeadId} />
           <div className="flex justify-end px-2">
             <ShareDropdown
               onShareLink={() => setShowShareDialog(true)}

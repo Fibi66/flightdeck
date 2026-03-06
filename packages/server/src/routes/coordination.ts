@@ -118,7 +118,21 @@ export function coordinationRoutes(ctx: AppContext): Router {
           teamAgentIds.add(agent.id);
         }
       }
-      events = events.filter(ev => teamAgentIds.has(ev.agentId));
+
+      // Historical fallback: when no live agents match, treat leadId as projectId
+      // and discover team members from the events themselves
+      const hasLiveTeam = teamAgentIds.size > 1 || events.some(ev => ev.agentId === leadId);
+      if (!hasLiveTeam) {
+        const projectEvents = events.filter(ev => ev.projectId === leadId);
+        if (projectEvents.length > 0) {
+          events = projectEvents;
+          for (const ev of projectEvents) teamAgentIds.add(ev.agentId);
+        }
+      }
+
+      if (teamAgentIds.size > 1) {
+        events = events.filter(ev => teamAgentIds.has(ev.agentId) || ev.projectId === leadId);
+      }
     }
 
     // Sort chronologically (oldest first)
@@ -241,9 +255,12 @@ export function coordinationRoutes(ctx: AppContext): Router {
     };
 
     // Find project context
+    // Find project context (live agent first, then infer from events)
     const resolvedLeadId = leadId || agentManager.getAll().find(a => a.role.id === 'lead' && !a.parentId)?.id;
     const leadAgent = resolvedLeadId ? agentManager.get(resolvedLeadId) : undefined;
-    const project = leadAgent ? { projectId: leadAgent.projectId, projectName: leadAgent.projectName, leadId: leadAgent.id } : undefined;
+    const project = leadAgent
+      ? { projectId: leadAgent.projectId, projectName: leadAgent.projectName, leadId: leadAgent.id }
+      : leadId ? { projectId: leadId, leadId } : undefined;
 
     const result = { agents, communications, locks, timeRange, project, teamAgentIds, ledgerVersion: activityLedger.version, dropCount: eventPipeline?.dropCount ?? 0 };
     _timelineCache = { key: cacheKey, data: result, ts: Date.now() };
