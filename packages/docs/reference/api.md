@@ -1,5 +1,9 @@
 # Flightdeck — REST API Reference
 
+::: info For Contributors
+This section is for project contributors and developers integrating with the Flightdeck API. If you're using Flightdeck to manage AI agent crews, see the [Guide](/guide/) instead.
+:::
+
 > **Base URL**: `http://localhost:3001/api`  
 > **Authentication**: Bearer token (auto-generated on server start, required on all routes)  
 > **Content-Type**: `application/json` for all request bodies  

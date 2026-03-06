@@ -10,7 +10,7 @@ export default defineConfig({
     nav: [
       { text: 'Guide', link: '/guide/' },
       { text: 'Features', link: '/guide/features' },
-      { text: 'Reference', link: '/reference/api' },
+      { text: 'Design', link: '/design/docker-sandboxing' },
       { text: 'Blog', link: '/blog/introducing-flightdeck' },
       { text: 'GitHub', link: 'https://github.com/justinchuby/flightdeck' },
     ],
@@ -82,6 +82,30 @@ export default defineConfig({
           items: [
             { text: 'Developer Guide', link: '/guide/developer-guide' },
             { text: 'Usage Tips & Use Cases', link: '/guide/usage-tips' },
+          ],
+        },
+        {
+          text: 'For Contributors',
+          collapsed: true,
+          items: [
+            { text: 'REST API', link: '/reference/api' },
+            { text: 'WebSocket Events', link: '/reference/websocket' },
+            { text: 'Timeline Components', link: '/reference/timeline-api' },
+            { text: 'Database Schema', link: '/reference/database' },
+            { text: 'NL Commands API', link: '/reference/nl-api' },
+            { text: 'GitHub & Conflicts API', link: '/reference/github-api' },
+            { text: 'Playbooks & Roles API', link: '/reference/playbooks-api' },
+            { text: 'Configuration', link: '/reference/configuration' },
+            { text: 'Architecture Decisions', link: '/reference/architecture-decisions' },
+            { text: 'Design Decisions', link: '/reference/design-decisions' },
+          ],
+        },
+      ],
+      '/design/': [
+        {
+          text: 'Design Documents',
+          items: [
+            { text: 'Docker Sandboxing', link: '/design/docker-sandboxing' },
           ],
         },
       ],
