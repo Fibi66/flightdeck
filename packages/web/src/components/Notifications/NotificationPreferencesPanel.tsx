@@ -76,16 +76,16 @@ export function NotificationPreferencesPanel() {
 
   return (
     <div className="space-y-6 opacity-60 pointer-events-none select-none" data-testid="notification-preferences">
-      <h2 className="text-sm font-semibold text-th-text-alt flex items-center gap-2">
+      <h3 className="text-sm font-semibold text-th-text flex items-center gap-2">
         🔔 Notification Settings
         <span className="px-2 py-0.5 text-[10px] font-medium rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/30">
           In Development
         </span>
-      </h2>
+      </h3>
 
       {/* Channels section */}
       <div>
-        <h3 className="text-xs font-medium text-th-text-muted uppercase tracking-wide mb-2">Channels</h3>
+        <h3 className="text-xs font-medium text-th-text-muted uppercase tracking-wider mb-2">Channels</h3>
         <div className="space-y-2">
           {channels.length === 0 ? (
             // Show default channel cards when none configured
@@ -124,7 +124,7 @@ export function NotificationPreferencesPanel() {
 
       {/* Event routing matrix */}
       <div>
-        <h3 className="text-xs font-medium text-th-text-muted uppercase tracking-wide mb-2">Event Routing</h3>
+        <h3 className="text-xs font-medium text-th-text-muted uppercase tracking-wider mb-2">Event Routing</h3>
         <p className="text-[10px] text-th-text-muted mb-3">Which events go where?</p>
 
         <div className="overflow-x-auto">
@@ -188,7 +188,7 @@ export function NotificationPreferencesPanel() {
 
       {/* Quiet hours */}
       <div>
-        <h3 className="text-xs font-medium text-th-text-muted uppercase tracking-wide mb-2">Quiet Hours</h3>
+        <h3 className="text-xs font-medium text-th-text-muted uppercase tracking-wider mb-2">Quiet Hours</h3>
         <label className="flex items-center gap-2 mb-2 cursor-pointer">
           <input
             type="checkbox"

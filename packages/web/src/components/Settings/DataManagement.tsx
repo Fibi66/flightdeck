@@ -110,7 +110,7 @@ export function DataManagement() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Database className="w-5 h-5 text-th-accent" />
-          <h2 className="text-sm font-semibold text-th-text">Data Management</h2>
+          <h3 className="text-sm font-semibold text-th-text">Data Management</h3>
         </div>
         <button
           onClick={fetchStats}
