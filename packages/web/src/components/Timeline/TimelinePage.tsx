@@ -231,10 +231,8 @@ export function TimelinePage({ api, ws }: Props) {
         .filter(c => new Date(c.timestamp).getTime() <= cutoffMs),
       locks: filteredData.locks
         .filter(l => new Date(l.acquiredAt).getTime() <= cutoffMs),
-      timeRange: {
-        start: filteredData.timeRange.start,
-        end: cutoff < filteredData.timeRange.end ? cutoff : filteredData.timeRange.end,
-      },
+      // Keep full time range — auto-panning in TimelineContainer handles the visible window
+      timeRange: filteredData.timeRange,
     };
   }, [filteredData, replay.keyframes, replay.playing, replay.currentTime, replay.duration, liveMode]);
 
@@ -454,7 +452,12 @@ export function TimelinePage({ api, ws }: Props) {
             errors={errorEntries}
             onScrollToError={handleScrollToError}
           />
-          <TimelineContainer data={displayData} liveMode={liveMode} onLiveModeChange={setLiveMode} />
+          <TimelineContainer
+            data={displayData}
+            liveMode={liveMode}
+            onLiveModeChange={setLiveMode}
+            replayProgress={!liveMode && replay.duration > 0 ? replay.currentTime / replay.duration : undefined}
+          />
         </div>
       )}
 

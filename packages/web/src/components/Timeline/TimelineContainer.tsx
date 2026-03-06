@@ -212,9 +212,11 @@ interface TimelineContainerProps {
   liveMode?: boolean;
   onLiveModeChange?: (live: boolean) => void;
   lastSeenTimestamp?: Date;
+  /** Replay progress as fraction 0-1 for auto-panning. Undefined = no auto-pan. */
+  replayProgress?: number;
 }
 
-function TimelineContent({ data, width: containerWidth, liveMode, onLiveModeChange, lastSeenTimestamp }: TimelineContainerProps & { width: number }) {
+function TimelineContent({ data, width: containerWidth, liveMode, onLiveModeChange, lastSeenTimestamp, replayProgress }: TimelineContainerProps & { width: number }) {
   // Persisted view state from Zustand store
   const selectedLeadId = useTimelineStore((s) => s.selectedLeadId);
   const expandedAgents = useTimelineStore((s) => s.expandedAgents[selectedLeadId ?? ''] ?? EMPTY_EXPANDED);
@@ -284,6 +286,14 @@ function TimelineContent({ data, width: containerWidth, liveMode, onLiveModeChan
   // Keep the start anchored and only extend the end.
   const stableRangeRef = useRef<{ start: Date; end: Date } | null>(null);
 
+  // Reset range refs when project changes
+  useEffect(() => {
+    stableRangeRef.current = null;
+    userZoomedRef.current = false;
+  }, [selectedLeadId]);
+
+  const userZoomedRef = useRef(false);
+
   const fullRange = useMemo(() => {
     const newStart = new Date(data.timeRange.start);
     const newEnd = new Date(data.timeRange.end);
@@ -295,20 +305,13 @@ function TimelineContent({ data, width: containerWidth, liveMode, onLiveModeChan
       return range;
     }
 
-    if (!liveMode) {
-      // During replay, follow the clipped time range from displayData
-      const range = { start: newStart, end: newEnd };
-      stableRangeRef.current = range;
-      return range;
-    }
-
-    // In live mode: keep earliest start, extend end only
+    // In both live and replay: keep earliest start, extend end
     const stableStart = newStart < prev.start ? newStart : prev.start;
     const stableEnd = newEnd > prev.end ? newEnd : prev.end;
     const range = { start: stableStart, end: stableEnd };
     stableRangeRef.current = range;
     return range;
-  }, [data.timeRange, liveMode]);
+  }, [data.timeRange]);
 
   // ── Zoom state ────────────────────────────────────────────────────
   const [zoomLevel, setZoomLevel] = useState(1); // 1 = full range, higher = zoomed in
@@ -334,10 +337,41 @@ function TimelineContent({ data, width: containerWidth, liveMode, onLiveModeChan
     return `${Math.round(ms / 1000)}s`;
   }, [visibleRange]);
 
+  // Auto-pan during replay: fixed ~5min window that follows replay progress
+  useEffect(() => {
+    if (replayProgress === undefined || liveMode) {
+      // Reset when leaving replay
+      if (userZoomedRef.current) userZoomedRef.current = false;
+      return;
+    }
+    // Don't auto-pan if user has manually zoomed
+    if (userZoomedRef.current) return;
+
+    const totalMs = fullRange.end.getTime() - fullRange.start.getTime();
+    if (totalMs <= 0) return;
+
+    // Target window: 5 minutes or 20% of session, whichever is larger
+    const targetWindowMs = Math.max(5 * 60_000, totalMs * 0.2);
+    const targetZoom = Math.max(1, totalMs / targetWindowMs);
+
+    setZoomLevel(targetZoom);
+    if (targetZoom > 1) {
+      // Pan so current replay position is at ~70% of visible window (leading space)
+      const visibleFraction = 1 / targetZoom;
+      const targetPan = Math.max(0, Math.min(1,
+        (replayProgress - visibleFraction * 0.7) / (1 - visibleFraction)
+      ));
+      setPanOffset(targetPan);
+    } else {
+      setPanOffset(0);
+    }
+  }, [replayProgress, fullRange, liveMode]);
+
   const handleWheel = useCallback((e: React.WheelEvent) => {
     // Ctrl+wheel or pinch = zoom (time axis)
     if (e.ctrlKey || e.metaKey) {
       e.preventDefault();
+      userZoomedRef.current = true;
       setZoomLevel((prev) => {
         const next = e.deltaY < 0 ? prev * 1.15 : prev / 1.15;
         return Math.max(1, Math.min(50, next));
@@ -350,6 +384,7 @@ function TimelineContent({ data, width: containerWidth, liveMode, onLiveModeChan
       const horizontalDelta = e.shiftKey ? e.deltaY : e.deltaX;
       if (horizontalDelta !== 0) {
         e.preventDefault();
+        userZoomedRef.current = true;
         setPanOffset((prev) => Math.max(0, Math.min(1, prev + horizontalDelta * 0.002)));
         return;
       }
@@ -741,11 +776,11 @@ function TimelineContent({ data, width: containerWidth, liveMode, onLiveModeChan
   );
 }
 
-export function TimelineContainer({ data, liveMode, onLiveModeChange, lastSeenTimestamp }: TimelineContainerProps) {
+export function TimelineContainer({ data, liveMode, onLiveModeChange, lastSeenTimestamp, replayProgress }: TimelineContainerProps) {
   return (
     <div className="bg-th-bg rounded-lg border border-th-border-muted min-h-[300px] flex flex-col flex-1 min-h-0">
       <ParentSize>
-        {({ width }) => width > 0 ? <TimelineContent data={data} width={width} liveMode={liveMode} onLiveModeChange={onLiveModeChange} lastSeenTimestamp={lastSeenTimestamp} /> : null}
+        {({ width }) => width > 0 ? <TimelineContent data={data} width={width} liveMode={liveMode} onLiveModeChange={onLiveModeChange} lastSeenTimestamp={lastSeenTimestamp} replayProgress={replayProgress} /> : null}
       </ParentSize>
     </div>
   );
