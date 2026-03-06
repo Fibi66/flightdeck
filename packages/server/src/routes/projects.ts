@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { logger } from '../utils/logger.js';
 import type { AppContext } from './context.js';
 import { KNOWN_MODEL_IDS, DEFAULT_MODEL_CONFIG, validateModelConfig, validateModelConfigShape } from '../projects/ModelConfigDefaults.js';
@@ -37,10 +37,11 @@ export function projectsRoutes(ctx: AppContext): Router {
       .where(eq(projectSessions.projectId, req.params.id))
       .all();
     if (leads.length === 0) return res.json({ tasks: [], summary: {} });
-    const leadIds = new Set(leads.map((l) => l.leadId));
-    // Fetch all DAG tasks for those leads
-    const allTasks = _db.drizzle.select().from(dagTasks).all()
-      .filter((t) => leadIds.has(t.leadId));
+    const leadIds = leads.map((l) => l.leadId);
+    // Fetch DAG tasks scoped to those leads
+    const allTasks = _db.drizzle.select().from(dagTasks)
+      .where(inArray(dagTasks.leadId, leadIds))
+      .all();
     // Build summary
     const summary: Record<string, number> = {};
     for (const t of allTasks) {

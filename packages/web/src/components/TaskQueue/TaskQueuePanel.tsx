@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAppStore } from '../../stores/appStore';
 import { useLeadStore } from '../../stores/leadStore';
+import { apiFetch } from '../../hooks/useApi';
 import { LayoutList, Network, Users, CheckCircle2, XCircle, Loader2, Play, Archive, Clock, BarChart2 } from 'lucide-react';
 import { EmptyState } from '../Shared';
 import { TaskDagPanelContent } from '../LeadDashboard/TaskDagPanel';
@@ -246,9 +247,8 @@ export function TaskQueuePanel({ api }: Props) {
 
   // Fetch persisted projects from API
   useEffect(() => {
-    fetch('/api/projects')
-      .then(r => r.json())
-      .then((data: Project[]) => setPersistedProjects(Array.isArray(data) ? data : []))
+    apiFetch<Project[]>('/projects')
+      .then((data) => setPersistedProjects(Array.isArray(data) ? data : []))
       .catch(() => {});
   }, [leads.length]); // re-fetch when leads change
 
@@ -280,10 +280,9 @@ export function TaskQueuePanel({ api }: Props) {
   // Fetch project details (with sessions) for persisted tabs
   useEffect(() => {
     if (currentTab?.type === 'persisted' && !currentTab.project.sessions) {
-      fetch(`/api/projects/${currentTab.project.id}`)
-        .then(r => r.json())
-        .then((data: Project) => {
-          setPersistedProjects(prev => prev.map(p => p.id === data.id ? data : p));
+      apiFetch<Project>(`/projects/${currentTab.project.id}`)
+        .then((data) => {
+          if (data) setPersistedProjects(prev => prev.map(p => p.id === data.id ? data : p));
         })
         .catch(() => {});
     }
@@ -295,9 +294,8 @@ export function TaskQueuePanel({ api }: Props) {
       setHistoricalDag(null);
       return;
     }
-    fetch(`/api/projects/${currentTab.project.id}/dag`)
-      .then(r => r.json())
-      .then((data: DagStatus) => {
+    apiFetch<DagStatus>(`/projects/${currentTab.project.id}/dag`)
+      .then((data) => {
         if (data?.tasks?.length > 0) setHistoricalDag(data);
       })
       .catch(() => {});
@@ -308,7 +306,7 @@ export function TaskQueuePanel({ api }: Props) {
     try {
       const [dagData, progressData] = await Promise.all([
         api.fetchDagStatus(leadId),
-        fetch(`/api/lead/${leadId}/progress`).then((r: Response) => r.json()),
+        apiFetch<LeadProgress>(`/lead/${leadId}/progress`),
       ]);
       if (dagData) useLeadStore.getState().setDagStatus(leadId, dagData);
       setProgress(progressData);
@@ -334,14 +332,12 @@ export function TaskQueuePanel({ api }: Props) {
   const handleResume = async (projectId: string) => {
     setResuming(projectId);
     try {
-      const res = await fetch(`/api/projects/${projectId}/resume`, {
+      const agent = await apiFetch<{ id: string }>(`/projects/${projectId}/resume`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
       });
-      if (res.ok) {
-        const agent = await res.json();
-        // Switch to the new lead tab after a brief delay for state to propagate
+      if (agent?.id) {
         setTimeout(() => setSelectedTab(agent.id), 500);
       }
     } catch { /* ignore */ }
