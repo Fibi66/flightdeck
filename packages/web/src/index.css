@@ -32,6 +32,11 @@
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
 }
 
+.font-mono {
+  font-feature-settings: 'liga' 1, 'calt' 1;
+  font-variant-ligatures: common-ligatures contextual;
+}
+
 /* ── Theme custom properties ──────────────────────────────────────────── */
 
 /* Light mode (default) */
