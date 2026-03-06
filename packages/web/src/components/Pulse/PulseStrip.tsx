@@ -121,10 +121,16 @@ export function PulseStrip() {
   return (
     <div className="h-10 border-b border-th-border bg-th-bg-alt/40 flex items-center px-4 gap-6 text-xs shrink-0 overflow-x-auto">
       {/* Session Cost */}
-      <div className="flex items-center gap-1.5 text-th-text-muted" title={`${formatTokensCompact(stats.totalTokens)} tokens total (${formatTokensCompact(stats.totalInput)} in / ${formatTokensCompact(stats.totalOutput)} out)`}>
+      <div className="flex items-center gap-1.5 text-th-text-muted" title={stats.totalTokens > 0 ? `${formatTokensCompact(stats.totalTokens)} tokens total (${formatTokensCompact(stats.totalInput)} in / ${formatTokensCompact(stats.totalOutput)} out)` : 'Token data not available — Copilot CLI does not expose token counts'}>
         <DollarSign className="w-3.5 h-3.5 text-emerald-400" />
-        <span className="font-mono font-medium text-th-text-alt">{formatCost(stats.cost)}</span>
-        <span className="text-th-text-muted hidden sm:inline">({formatTokensCompact(stats.totalTokens)})</span>
+        {stats.totalTokens > 0 ? (
+          <>
+            <span className="font-mono font-medium text-th-text-alt">{formatCost(stats.cost)}</span>
+            <span className="text-th-text-muted hidden sm:inline">({formatTokensCompact(stats.totalTokens)})</span>
+          </>
+        ) : (
+          <span className="text-th-text-muted text-[10px]">Tokens N/A</span>
+        )}
       </div>
 
       {/* Separator */}

@@ -77,7 +77,7 @@ export function TokenEconomics() {
   if (sorted.length === 0) {
     return (
       <div className="p-4 text-sm text-th-text-muted">
-        No token usage data yet.
+        Token data not available — Copilot CLI does not expose token counts.
       </div>
     );
   }

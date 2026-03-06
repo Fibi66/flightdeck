@@ -37,6 +37,7 @@ export function MobilePulse() {
 
     return {
       cost: estimateCostUsd(totalInput, totalOutput),
+      totalTokens: totalInput + totalOutput,
       running,
       idle,
       failed,
@@ -66,9 +67,13 @@ export function MobilePulse() {
       {stats.pendingCount > 0 && (
         <span className="text-accent shrink-0">{stats.pendingCount} pend</span>
       )}
-      <span className="text-emerald-400 shrink-0">
-        ${stats.cost < 1 ? stats.cost.toFixed(2) : stats.cost.toFixed(0)}
-      </span>
+      {stats.totalTokens > 0 ? (
+        <span className="text-emerald-400 shrink-0">
+          ${stats.cost < 1 ? stats.cost.toFixed(2) : stats.cost.toFixed(0)}
+        </span>
+      ) : (
+        <span className="text-th-text-muted shrink-0">Tokens N/A</span>
+      )}
       <span className="w-px h-3 bg-th-border/50" />
       <span
         className={`shrink-0 ${

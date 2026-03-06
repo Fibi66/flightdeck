@@ -43,14 +43,8 @@ const TIPS: CoachTip[] = [
     icon: '💡',
     cta: { label: 'Create Rule', action: '/settings' },
   },
-  {
-    id: 'coach-idle-agents',
-    trigger: ({ agents }) => agents.filter(a => a.status === 'idle').length >= 2,
-    title: 'Idle agents detected',
-    body: 'Some agents are waiting for work. Assign tasks or reduce crew size to save costs.',
-    icon: '💡',
-    cta: { label: 'View Agents', action: '/agents' },
-  },
+  // Idle agents tip removed — idle agents don't cost anything (per-token billing),
+  // and the Lead assigns tasks, not the user.
   {
     id: 'coach-canvas',
     trigger: () => !localStorage.getItem('tour-seen-canvas'),

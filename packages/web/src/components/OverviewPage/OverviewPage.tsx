@@ -135,8 +135,8 @@ export function OverviewPage(_props: Props) {
       {/* Stats row: Burndown + Cost + Key Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <TaskBurndown data={burndownData} totalTasks={totalTasks} />
-        <CostCurve data={costData} budget={15} />
-        <KeyStats agents={agents} totalCost={totalCost} budget={15} sessionStart={sessionStart} />
+        <CostCurve data={costData} />
+        <KeyStats agents={agents} totalCost={totalCost} sessionStart={sessionStart} />
       </div>
 
       {/* Agent Activity Heatmap */}

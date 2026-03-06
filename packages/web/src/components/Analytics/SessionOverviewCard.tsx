@@ -27,7 +27,7 @@ export function SessionOverviewCard({ overview }: SessionOverviewCardProps) {
     const olderAvg = older3.reduce((s, x) => s + x.estimatedCostUsd, 0) / older3.length;
     if (recentAvg < olderAvg * 0.9) {
       TrendIcon = TrendingDown;
-      trendColor = 'text-green-500';
+      trendColor = 'text-emerald-400';
     } else if (recentAvg > olderAvg * 1.1) {
       TrendIcon = TrendingUp;
       trendColor = 'text-red-400';

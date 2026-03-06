@@ -8,7 +8,7 @@ interface SessionComparisonViewProps {
 function deltaColor(delta: number, lowerIsBetter: boolean): string {
   if (delta === 0) return 'text-th-text-muted';
   const isGood = lowerIsBetter ? delta < 0 : delta > 0;
-  return isGood ? 'text-green-500' : 'text-red-400';
+  return isGood ? 'text-emerald-400' : 'text-red-400';
 }
 
 function formatDelta(v: number, suffix = ''): string {

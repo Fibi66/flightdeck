@@ -5,7 +5,7 @@ interface InsightCardProps {
 }
 
 const SEVERITY_STYLES: Record<string, { icon: string; border: string }> = {
-  info: { icon: '📈', border: 'border-l-blue-400' },
+  info: { icon: '📈', border: 'border-l-sky-400' },
   suggestion: { icon: '🔄', border: 'border-l-amber-400' },
   warning: { icon: '⚠️', border: 'border-l-red-400' },
 };

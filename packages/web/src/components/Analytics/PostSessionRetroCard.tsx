@@ -14,7 +14,7 @@ function DeltaIndicator({ current, average, lowerIsBetter, label, unit }: {
   const pctChange = ((current - average) / average) * 100;
   const isGood = lowerIsBetter ? pctChange < 0 : pctChange > 0;
   const arrow = pctChange < 0 ? '↘' : pctChange > 0 ? '↗' : '→';
-  const color = isGood ? 'text-green-500' : 'text-red-400';
+  const color = isGood ? 'text-emerald-400' : 'text-red-400';
 
   return (
     <div className="flex items-center justify-between text-[11px]">

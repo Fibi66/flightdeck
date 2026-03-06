@@ -28,6 +28,7 @@ export function KeyStats({ agents, totalCost, budget, sessionStart }: KeyStatsPr
       : 0;
     const elapsedStr = elapsed >= 60 ? `${Math.floor(elapsed / 60)}h ${elapsed % 60}m` : `${elapsed}m`;
 
+    const hasTokenData = agents.some((a) => (a.inputTokens ?? 0) > 0 || (a.outputTokens ?? 0) > 0);
     const costHealth = budget ? (totalCost / budget > 0.9 ? 'text-red-400' : totalCost / budget > 0.7 ? 'text-yellow-400' : 'text-green-400') : 'text-th-text-alt';
 
     return [
@@ -39,9 +40,11 @@ export function KeyStats({ agents, totalCost, budget, sessionStart }: KeyStatsPr
       },
       {
         label: 'Cost',
-        value: budget ? `$${totalCost.toFixed(2)} / $${budget}` : `$${totalCost.toFixed(2)}`,
+        value: hasTokenData
+          ? (budget ? `$${totalCost.toFixed(2)} / $${budget}` : `$${totalCost.toFixed(2)}`)
+          : 'N/A',
         icon: <DollarSign size={14} />,
-        color: costHealth,
+        color: hasTokenData ? costHealth : 'text-th-text-muted',
       },
       {
         label: 'Duration',

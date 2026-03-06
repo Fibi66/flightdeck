@@ -164,21 +164,8 @@ export function detectAlerts(
     }
   }
 
-  // 5. Idle agents with ready DAG tasks
-  if (dagStatus) {
-    const readyTasks = dagStatus.tasks.filter(t => t.dagStatus === 'ready');
-    const idleAgents = agents.filter(a => a.status === 'idle');
-    if (readyTasks.length > 0 && idleAgents.length > 0) {
-      alerts.push({
-        id: 'idle-with-ready',
-        severity: 'info',
-        icon: '💡',
-        title: `${readyTasks.length} tasks ready, ${idleAgents.length} agents idle`,
-        detail: 'Consider assigning ready tasks to idle agents.',
-        timestamp: now,
-      });
-    }
-  }
+  // 5. Idle agents alert removed — idle agents don't cost anything (cost is per token),
+  // and the Lead assigns tasks, not the human user. This alert was noise.
 
   // 6. Blocked tasks
   if (dagStatus) {
