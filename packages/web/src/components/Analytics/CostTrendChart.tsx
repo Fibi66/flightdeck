@@ -107,14 +107,14 @@ export function CostTrendChart({ overview }: CostTrendChartProps) {
                 top={innerH}
                 stroke="var(--th-border)"
                 tickStroke="var(--th-border)"
-                tickLabelProps={{ fill: 'var(--th-text-muted)', fontSize: 9, textAnchor: 'middle' }}
+                tickLabelProps={() => ({ fill: 'var(--th-text-muted)', fontSize: 9, textAnchor: 'middle' as const })}
                 numTicks={Math.min(costTrend.length, 6)}
               />
               <AxisLeft
                 scale={yScale}
                 stroke="var(--th-border)"
                 tickStroke="var(--th-border)"
-                tickLabelProps={{ fill: 'var(--th-text-muted)', fontSize: 9, textAnchor: 'end' }}
+                tickLabelProps={() => ({ fill: 'var(--th-text-muted)', fontSize: 9, textAnchor: 'end' as const })}
                 tickFormat={(v) => `$${Number(v).toFixed(0)}`}
                 numTicks={4}
               />

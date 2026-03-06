@@ -136,7 +136,9 @@ export function FocusPanel({ agentId, onClose }: FocusPanelProps) {
             {data?.activities && data.activities.length > 0 ? (
               data.activities.slice(0, 20).map((a, i) => (
                 <div key={i} className="text-[11px] text-th-text-muted border-b border-th-border/40 pb-1.5">
-                  {a.details ?? a.action}
+                  {typeof (a.details ?? a.action) === 'object'
+                    ? JSON.stringify(a.details ?? a.action)
+                    : (a.details ?? a.action)}
                 </div>
               ))
             ) : (

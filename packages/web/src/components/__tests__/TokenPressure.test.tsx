@@ -74,12 +74,12 @@ describe('TokenEconomics — burn rate display', () => {
   });
 });
 
-describe('detectAlerts — actionable alerts', () => {
-  it('adds actions to context pressure alerts', () => {
+describe('detectAlerts — context pressure (informational)', () => {
+  it('shows info alert at 95%+ context (no action buttons)', () => {
     const agents = [
       makeAgent({
         contextWindowSize: 200_000,
-        contextWindowUsed: 180_000,
+        contextWindowUsed: 192_000, // 96%
         contextBurnRate: 100,
         estimatedExhaustionMinutes: 3,
       }),
@@ -87,54 +87,51 @@ describe('detectAlerts — actionable alerts', () => {
     const alerts = detectAlerts(agents, [], null);
     const ctxAlert = alerts.find((a) => a.id.startsWith('ctx-'));
     expect(ctxAlert).toBeDefined();
-    expect(ctxAlert!.actions).toBeDefined();
-    expect(ctxAlert!.actions!.length).toBeGreaterThanOrEqual(2);
-    expect(ctxAlert!.actions!.some((a) => a.label === 'Compress context')).toBe(true);
-    expect(ctxAlert!.actions!.some((a) => a.label === 'Switch model')).toBe(true);
+    expect(ctxAlert!.severity).toBe('info');
+    expect(ctxAlert!.actions).toBeUndefined();
+    expect(ctxAlert!.detail).toContain('compact automatically');
   });
 
-  it('fires proactive burn-rate alert when <10 min remaining but context <70%', () => {
+  it('does NOT alert at 85% — threshold raised to 95%', () => {
     const agents = [
       makeAgent({
         contextWindowSize: 200_000,
-        contextWindowUsed: 100_000, // 50% — below 70% threshold
-        contextBurnRate: 200,
-        estimatedExhaustionMinutes: 8,
+        contextWindowUsed: 180_000, // 90%
+        contextBurnRate: 100,
+        estimatedExhaustionMinutes: 7,
       }),
     ];
     const alerts = detectAlerts(agents, [], null);
-    const burnAlert = alerts.find((a) => a.id.startsWith('burn-'));
-    expect(burnAlert).toBeDefined();
-    expect(burnAlert!.severity).toBe('warning');
-    expect(burnAlert!.icon).toBe('🔥');
+    const ctxAlert = alerts.find((a) => a.id.startsWith('ctx-'));
+    expect(ctxAlert).toBeUndefined();
   });
 
-  it('fires critical burn-rate alert when <5 min remaining', () => {
+  it('does NOT fire burn-rate alerts — Copilot handles context automatically', () => {
     const agents = [
       makeAgent({
         contextWindowSize: 200_000,
-        contextWindowUsed: 100_000,
+        contextWindowUsed: 100_000, // 50%
         contextBurnRate: 500,
         estimatedExhaustionMinutes: 3,
       }),
     ];
     const alerts = detectAlerts(agents, [], null);
     const burnAlert = alerts.find((a) => a.id.startsWith('burn-'));
-    expect(burnAlert).toBeDefined();
-    expect(burnAlert!.severity).toBe('critical');
+    expect(burnAlert).toBeUndefined();
   });
 
-  it('includes burn rate info in alert detail', () => {
+  it('includes burn rate info when alert fires', () => {
     const agents = [
       makeAgent({
         contextWindowSize: 200_000,
-        contextWindowUsed: 180_000,
+        contextWindowUsed: 196_000, // 98%
         contextBurnRate: 50,
         estimatedExhaustionMinutes: 7,
       }),
     ];
     const alerts = detectAlerts(agents, [], null);
     const ctxAlert = alerts.find((a) => a.id.startsWith('ctx-'));
+    expect(ctxAlert).toBeDefined();
     expect(ctxAlert!.detail).toContain('tok/min');
     expect(ctxAlert!.detail).toContain('min remaining');
   });

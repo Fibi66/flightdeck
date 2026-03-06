@@ -99,3 +99,13 @@
   --chart-tooltip-text: 243 244 246; /* gray-100 */
   --chart-tooltip-border: 55 65 81;  /* gray-700 */
 }
+
+/* ── visx axis text override ─────────────────────────────────────────
+ * visx renders duplicate <text> elements with default fill="rgb(0,0,0)".
+ * This rule ensures all SVG text in chart containers uses theme colors.
+ * ──────────────────────────────────────────────────────────────────── */
+[data-testid*="chart"] text,
+[data-testid*="cost-curve"] text,
+[data-testid*="cost-trend"] text {
+  fill: var(--th-text-muted) !important;
+}

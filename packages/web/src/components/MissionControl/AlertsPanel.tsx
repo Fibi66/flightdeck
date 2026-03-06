@@ -43,7 +43,8 @@ export function detectAlerts(
   const alerts: Alert[] = [];
   const now = Date.now();
 
-  // 1. Context pressure (>85% critical, >70% warning) — with actionable options
+  // 1. Context pressure — informational only, no action buttons.
+  // Copilot manages context compaction automatically.
   for (const agent of agents) {
     if (agent.contextWindowSize && agent.contextWindowUsed) {
       const pct = agent.contextWindowUsed / agent.contextWindowSize;
@@ -56,59 +57,16 @@ export function detectAlerts(
         ? ` • ~${Math.round(agent.estimatedExhaustionMinutes)} min remaining`
         : '';
 
-      const actions: AlertAction[] = [
-        {
-          label: 'Compress context',
-          description: 'Restart agent with context handoff',
-          actionType: 'api_call',
-          endpoint: `/agents/${agent.id}/restart`,
-          method: 'POST',
-        },
-        {
-          label: 'Switch model',
-          description: 'Change to a model with larger context window',
-          actionType: 'api_call',
-          endpoint: `/agents/${agent.id}`,
-          method: 'POST',
-          body: { model: 'claude-opus-4.6-1m' },
-        },
-      ];
-
-      if (pct > 0.85) {
+      // Only show at 95%+ (critical) — Copilot handles context management automatically
+      if (pct > 0.95) {
         alerts.push({
           id: `ctx-${agent.id}`,
-          severity: 'critical',
+          severity: 'info',
           icon: '🧠',
           title: `${roleName} at ${Math.round(pct * 100)}% context`,
-          detail: `Agent ${shortId} may produce lower quality output.${burnLabel}${timeLabel}`,
+          detail: `Agent ${shortId} nearing context limit — Copilot will compact automatically.${burnLabel}${timeLabel}`,
           agentId: agent.id,
           timestamp: now,
-          actions,
-        });
-      } else if (pct > 0.70) {
-        alerts.push({
-          id: `ctx-warn-${agent.id}`,
-          severity: 'warning',
-          icon: '🧠',
-          title: `${roleName} at ${Math.round(pct * 100)}% context`,
-          detail: `Agent ${shortId} approaching context limit.${burnLabel}${timeLabel}`,
-          agentId: agent.id,
-          timestamp: now,
-          actions,
-        });
-      }
-
-      // Proactive burn-rate alert: <10 min remaining but not yet >70% context
-      if (pct <= 0.70 && agent.estimatedExhaustionMinutes != null && agent.estimatedExhaustionMinutes <= 10) {
-        alerts.push({
-          id: `burn-${agent.id}`,
-          severity: agent.estimatedExhaustionMinutes <= 5 ? 'critical' : 'warning',
-          icon: '🔥',
-          title: `${roleName} burning context fast`,
-          detail: `Agent ${shortId}: ~${Math.round(agent.estimatedExhaustionMinutes)} min until exhaustion at current rate.`,
-          agentId: agent.id,
-          timestamp: now,
-          actions,
         });
       }
     }
