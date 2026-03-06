@@ -120,7 +120,7 @@ export class Agent {
   private config: ServerConfig;
   private pendingMessages: PromptContent[] = [];
   private pendingPriorityCount = 0;
-  private static readonly MAX_PENDING_MESSAGES = 50;
+  private static readonly MAX_PENDING_MESSAGES = 200;
   private peers: AgentContextInfo[];
   private readonly events = new AgentEventEmitter();
 
@@ -403,7 +403,8 @@ When you discover something important about the codebase, a pattern, a gotcha, o
    * Queue a message for delivery after the agent finishes its current prompt.
    * If `opts.priority` is true, the message is inserted after existing priority
    * messages but before normal messages (FIFO within priority class).
-   * Queue is capped at MAX_PENDING_MESSAGES — excess messages are dropped with a warning.
+   * Queue is capped at MAX_PENDING_MESSAGES — excess non-priority messages are dropped with a warning.
+   * Priority messages (e.g. user messages) are NEVER dropped.
    */
   queueMessage(message: PromptContent, opts?: { priority?: boolean }): void {
     if (this.systemPaused) {
@@ -419,8 +420,8 @@ When you discover something important about the codebase, a pattern, a gotcha, o
 
   /** Internal: insert message into pendingMessages with FIFO priority ordering and rate limiting */
   private enqueueMessage(message: PromptContent, priority?: boolean): void {
-    if (this.pendingMessages.length >= Agent.MAX_PENDING_MESSAGES) {
-      logger.warn('agent', `Message queue full (${Agent.MAX_PENDING_MESSAGES}) for ${this.role.name} (${this.id.slice(0, 8)}) — dropping message`);
+    if (!priority && this.pendingMessages.length >= Agent.MAX_PENDING_MESSAGES) {
+      logger.warn('agent', `Message queue full (${Agent.MAX_PENDING_MESSAGES}) for ${this.role.name} (${this.id.slice(0, 8)}) — dropping non-priority message`);
       return;
     }
     if (priority) {

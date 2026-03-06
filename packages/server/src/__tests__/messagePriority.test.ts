@@ -175,39 +175,42 @@ describe('User message priority', () => {
   });
 
   describe('rate limiting', () => {
-    it('drops messages when queue is full', () => {
+    it('drops non-priority messages when queue is full', () => {
       const agent = createTestAgent();
       (agent as any).status = 'running';
 
-      // Fill queue to MAX_PENDING_MESSAGES (50)
-      for (let i = 0; i < 50; i++) {
+      // Fill queue to MAX_PENDING_MESSAGES (200)
+      for (let i = 0; i < 200; i++) {
         agent.queueMessage(`msg-${i}`);
       }
-      expect(agent.getPendingMessageSummaries().length).toBe(50);
+      expect(agent.getPendingMessageSummaries().length).toBe(200);
 
-      // Next message should be dropped
+      // Next non-priority message should be dropped
       agent.queueMessage('overflow-msg');
-      expect(agent.getPendingMessageSummaries().length).toBe(50);
+      expect(agent.getPendingMessageSummaries().length).toBe(200);
       expect(agent.getPendingMessageSummaries()).not.toContain('overflow-msg');
     });
 
-    it('drops priority messages when queue is full', () => {
+    it('never drops priority messages even when queue is full', () => {
       const agent = createTestAgent();
       (agent as any).status = 'running';
 
-      for (let i = 0; i < 50; i++) {
+      for (let i = 0; i < 200; i++) {
         agent.queueMessage(`msg-${i}`);
       }
+      expect(agent.getPendingMessageSummaries().length).toBe(200);
 
+      // Priority message must always get through
       agent.queueMessage('priority-overflow', { priority: true });
-      expect(agent.getPendingMessageSummaries().length).toBe(50);
+      expect(agent.getPendingMessageSummaries().length).toBe(201);
+      expect(agent.getPendingMessageSummaries()[0]).toBe('priority-overflow');
     });
 
     it('allows messages again after queue drains', () => {
       const agent = createTestAgent();
       (agent as any).status = 'running';
 
-      for (let i = 0; i < 50; i++) {
+      for (let i = 0; i < 200; i++) {
         agent.queueMessage(`msg-${i}`);
       }
 
