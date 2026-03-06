@@ -36,7 +36,7 @@ Instead of one AI agent doing everything sequentially, Flightdeck runs multiple 
 
 | Timeline | Overview |
 |:-:|:-:|
-| <img src="docs/images/09-timeline.png" alt="Timeline with 6 swim lanes and 39 comms" width="400" /> | <img src="docs/images/02-overview.png" alt="Overview dashboard" width="400" /> |
+| <img src="packages/docs/public/screenshots/timeline.png" alt="Timeline with session replay playing" width="400" /> | <img src="docs/images/02-overview.png" alt="Overview dashboard" width="400" /> |
 
 | Batch Approval | New Project |
 |:-:|:-:|
