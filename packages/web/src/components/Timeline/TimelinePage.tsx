@@ -410,7 +410,7 @@ export function TimelinePage({ api, ws }: Props) {
       )}
 
       {filteredData && filteredData.agents.length > 0 && (
-        <div className="flex-1 min-h-0 relative" id="timeline-main" ref={timelineMainRef}>
+        <div className="flex-1 min-h-0 relative overflow-y-auto" id="timeline-main" ref={timelineMainRef}>
           <ErrorBanner
             errors={errorEntries}
             onScrollToError={handleScrollToError}
@@ -419,9 +419,11 @@ export function TimelinePage({ api, ws }: Props) {
         </div>
       )}
 
-      {/* Session Replay Scrubber + Share Controls */}
+      </div>
+
+      {/* Session Replay Scrubber — sticky bottom, outside scrollable area */}
       {effectiveLeadId && !liveMode && (
-        <div className="shrink-0 px-0 pb-2 space-y-1">
+        <div className="shrink-0 border-t border-th-border-muted bg-th-bg px-4 py-2 space-y-1">
           <ReplayScrubber leadId={effectiveLeadId} />
           <div className="flex justify-end px-2">
             <ShareDropdown
@@ -433,7 +435,6 @@ export function TimelinePage({ api, ws }: Props) {
           </div>
         </div>
       )}
-      </div>
     </div>
   );
 }
