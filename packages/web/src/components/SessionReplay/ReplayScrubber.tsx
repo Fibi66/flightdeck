@@ -176,10 +176,10 @@ export function ReplayScrubber({ leadId, replay: externalReplay, liveMode, onExi
             {onGoLive && (
               <button
                 onClick={() => { pause(); onGoLive(); }}
-                className="flex items-center gap-1 px-2 py-0.5 text-[10px] rounded bg-green-600/20 text-green-400 hover:bg-green-600/30 transition-colors"
+                className="flex items-center gap-1 px-2 py-0.5 text-[10px] rounded bg-th-text-muted/10 text-th-text-muted hover:bg-green-600/20 hover:text-green-400 transition-colors"
                 title="Return to live view"
               >
-                <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
+                <span className="w-1.5 h-1.5 rounded-full bg-th-text-muted" />
                 Live
               </button>
             )}
