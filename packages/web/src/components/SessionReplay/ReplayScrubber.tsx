@@ -13,12 +13,14 @@ function formatTime(ms: number): string {
 }
 
 const KEYFRAME_COLORS: Record<ReplayKeyframe['type'], string> = {
-  agent_spawned: 'bg-green-400',
+  spawn: 'bg-green-400',
   agent_exit: 'bg-gray-400',
   decision: 'bg-amber-400',
   delegation: 'bg-blue-400',
+  task: 'bg-cyan-400',
   milestone: 'bg-purple-400',
   error: 'bg-red-400',
+  commit: 'bg-emerald-400',
 };
 
 const SPEED_OPTIONS = [0.5, 1, 2, 4, 8];

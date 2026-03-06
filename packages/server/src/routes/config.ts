@@ -50,20 +50,24 @@ export function configRoutes(ctx: AppContext): Router {
   });
 
   // --- Budget ---
-  router.get('/budget', (_req, res) => {
+  router.get('/budget', (req, res) => {
+    const projectId = req.query.projectId as string | undefined;
+    if (projectId) budgetEnforcer.setProject(projectId);
     res.json(budgetEnforcer.getStatus());
   });
 
   router.post('/budget', (req, res) => {
-    const { limit, thresholds } = req.body;
+    const { limit, thresholds, projectId } = req.body;
     if (limit !== undefined && limit !== null && (typeof limit !== 'number' || limit < 0)) {
-      return res.status(400).json({ error: 'limit must be a positive number or null' });
+      return res.status(400).json({ error: 'limit must be a positive number, 0 (disabled), or null (unlimited)' });
     }
-    budgetEnforcer.setConfig({ limit, thresholds });
+    budgetEnforcer.setConfig({ limit, thresholds }, projectId);
     res.json({ updated: true, ...budgetEnforcer.getStatus() });
   });
 
-  router.post('/budget/check', (_req, res) => {
+  router.post('/budget/check', (req, res) => {
+    const projectId = (req.body?.projectId ?? req.query.projectId) as string | undefined;
+    if (projectId) budgetEnforcer.setProject(projectId);
     const result = budgetEnforcer.check();
     if (result.level === 'pause') {
       agentManager.pauseSystem();

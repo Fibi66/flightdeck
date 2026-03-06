@@ -222,9 +222,9 @@ describe('SessionReplay', () => {
       const replay = new SessionReplay(mocks.activityLedger, mocks.taskDAG, mocks.decisionLog, mocks.lockRegistry);
 
       const keyframes = replay.getKeyframes('lead-1');
-      expect(keyframes).toHaveLength(3); // spawn, task, error — not file_edit
+      expect(keyframes).toHaveLength(3); // spawn, milestone, error — not file_edit
       expect(keyframes[0].type).toBe('spawn');
-      expect(keyframes[1].type).toBe('task');
+      expect(keyframes[1].type).toBe('milestone');
       expect(keyframes[2].type).toBe('error');
     });
   });

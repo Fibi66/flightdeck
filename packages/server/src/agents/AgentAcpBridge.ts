@@ -81,6 +81,8 @@ function wireAcpEvents(agent: Agent, conn: AcpConnection): void {
     if (agent.messages.length > agent._maxMessages) {
       agent.messages = agent.messages.slice(-agent._maxMessages);
     }
+    // Estimate tokens from content length when ACP doesn't provide usage events
+    agent.estimateTokensFromContent(text);
     agent._notifyData(text);
   });
 
@@ -126,6 +128,7 @@ function wireAcpEvents(agent: Agent, conn: AcpConnection): void {
   conn.on('usage', (usage: { inputTokens: number; outputTokens: number }) => {
     agent.inputTokens = usage.inputTokens;
     agent.outputTokens = usage.outputTokens;
+    agent.hasRealUsageData = true;
     agent._notifyUsage({ agentId: agent.id, inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, dagTaskId: agent.dagTaskId });
   });
 

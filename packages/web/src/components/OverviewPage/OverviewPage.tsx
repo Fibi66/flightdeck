@@ -68,13 +68,13 @@ export function OverviewPage(_props: Props) {
           for (const frame of kf) {
             const t = new Date(frame.timestamp).getTime();
 
-            if (frame.type === 'agent_spawned') {
+            if (frame.type === 'spawn') {
               agentCount++;
               hBuckets.push({ agentId: frame.label.split(' ')[0] ?? 'unknown', time: t, intensity: 0.8 });
             }
             if (frame.type === 'agent_exit') agentCount = Math.max(0, agentCount - 1);
             if (frame.type === 'delegation') { taskTotal++; inProgress++; }
-            if (frame.type === 'milestone') { completed++; inProgress = Math.max(0, inProgress - 1); }
+            if (frame.type === 'milestone' || frame.type === 'task') { completed++; inProgress = Math.max(0, inProgress - 1); }
 
             cost += 0.15; // Estimate per-event cost (real data from cost API when available)
 

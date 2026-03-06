@@ -30,10 +30,16 @@ export interface BudgetStatus {
 
 const SETTINGS_KEY = 'budget_config';
 
+/** Construct a per-project or global settings key */
+function budgetKey(projectId?: string): string {
+  return projectId ? `${SETTINGS_KEY}:${projectId}` : SETTINGS_KEY;
+}
+
 export class BudgetEnforcer extends EventEmitter {
   private config: BudgetConfig;
   private pauseTriggered = false;
   private lastEmittedLevel: 'ok' | 'warn' | 'alert' | 'pause' = 'ok';
+  private activeProjectId?: string;
 
   constructor(
     private db: Database,
@@ -43,16 +49,21 @@ export class BudgetEnforcer extends EventEmitter {
     this.config = this.loadConfig();
   }
 
-  private loadConfig(): BudgetConfig {
+  private loadConfig(projectId?: string): BudgetConfig {
     try {
-      const raw = this.db.getSetting(SETTINGS_KEY);
+      // Try project-specific first, then global fallback
+      const raw = this.db.getSetting(budgetKey(projectId));
       if (raw) return JSON.parse(raw);
+      if (projectId) {
+        const global = this.db.getSetting(budgetKey());
+        if (global) return JSON.parse(global);
+      }
     } catch { /* use defaults */ }
     return { limit: null, thresholds: { warn: 0.70, alert: 0.90, pause: 1.00 } };
   }
 
-  private saveConfig(): void {
-    this.db.setSetting(SETTINGS_KEY, JSON.stringify(this.config));
+  private saveConfig(projectId?: string): void {
+    this.db.setSetting(budgetKey(projectId), JSON.stringify(this.config));
   }
 
   /** Get current budget configuration */
@@ -60,15 +71,30 @@ export class BudgetEnforcer extends EventEmitter {
     return { ...this.config, thresholds: { ...this.config.thresholds } };
   }
 
+  /** Set the active project for budget operations */
+  setProject(projectId?: string): void {
+    if (this.activeProjectId !== projectId) {
+      this.activeProjectId = projectId;
+      this.config = this.loadConfig(projectId);
+      this.pauseTriggered = false;
+      this.lastEmittedLevel = 'ok';
+    }
+  }
+
   /** Update budget configuration */
-  setConfig(updates: { limit?: number | null; thresholds?: Partial<BudgetConfig['thresholds']> }): void {
+  setConfig(updates: { limit?: number | null; thresholds?: Partial<BudgetConfig['thresholds']> }, projectId?: string): void {
+    // Load project-specific config if switching context
+    if (projectId && projectId !== this.activeProjectId) {
+      this.config = this.loadConfig(projectId);
+      this.activeProjectId = projectId;
+    }
     if (updates.limit !== undefined) this.config.limit = updates.limit;
     if (updates.thresholds) {
       Object.assign(this.config.thresholds, updates.thresholds);
     }
-    this.pauseTriggered = false; // Reset pause trigger on config change
-    this.lastEmittedLevel = 'ok'; // Reset dedup tracking
-    this.saveConfig();
+    this.pauseTriggered = false;
+    this.lastEmittedLevel = 'ok';
+    this.saveConfig(projectId ?? this.activeProjectId);
   }
 
   /** Calculate current total spend in USD from CostTracker data */
