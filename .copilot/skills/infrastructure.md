@@ -1,3 +1,10 @@
+---
+name: infrastructure
+description: >
+  Flightdeck infrastructure reference. Covers monorepo structure, build system,
+  database setup, environment config, and deployment.
+---
+
 # Flightdeck Infrastructure
 
 ## Monorepo Structure

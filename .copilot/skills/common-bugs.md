@@ -1,3 +1,10 @@
+---
+name: common-bugs
+description: >
+  Known bugs and root causes encountered during Flightdeck development.
+  Check this list before debugging — you may be hitting a known issue.
+---
+
 # Common Bugs and Root Causes
 
 Bugs encountered during Flightdeck development. Check this list before debugging — you may be hitting a known issue.

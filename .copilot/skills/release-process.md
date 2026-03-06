@@ -1,3 +1,10 @@
+---
+name: release-process
+description: >
+  Step-by-step release process for Flightdeck, based on v0.3.0.
+  Covers code cleanup, versioning, changelog, testing, and publishing.
+---
+
 # Flightdeck Release Process
 
 Step-by-step process for shipping a release, based on v0.3.0.

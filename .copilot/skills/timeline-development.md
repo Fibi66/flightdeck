@@ -1,3 +1,10 @@
+---
+name: timeline-development
+description: >
+  Comprehensive reference for the Timeline component — the most complex UI in Flightdeck.
+  Covers scroll/zoom, layout, session replay, SVG theming, React patterns, and testing.
+---
+
 # Timeline Component Development
 
 The Timeline is the most complex UI component in Flightdeck. This document captures every lesson learned during its development — scroll behavior, layout, replay, SVG theming, and testing patterns.

@@ -1,3 +1,10 @@
+---
+name: flightdeck-dev-patterns
+description: >
+  Frontend development patterns for Flightdeck. Covers API calls, routing,
+  component conventions, state management, and testing practices.
+---
+
 # Flightdeck Frontend Development Patterns
 
 ## API Calls
