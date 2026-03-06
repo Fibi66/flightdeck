@@ -1,50 +1,44 @@
 import { useMemo } from 'react';
 import { Group } from '@visx/group';
-import { LinePath } from '@visx/shape';
+import { AreaClosed, LinePath } from '@visx/shape';
 import { scaleLinear, scaleTime } from '@visx/scale';
 import { AxisBottom, AxisLeft } from '@visx/axis';
+import { curveMonotoneX } from '@visx/curve';
 
-export interface BurndownPoint {
+export interface FlowPoint {
   time: number;
-  remaining: number;
+  created: number;    // cumulative tasks created
+  inProgress: number; // cumulative in-progress
+  completed: number;  // cumulative completed
 }
 
-interface TaskBurndownProps {
-  data: BurndownPoint[];
-  totalTasks: number;
+interface CumulativeFlowProps {
+  data: FlowPoint[];
   width?: number;
   height?: number;
 }
 
 const MARGIN = { top: 12, right: 12, bottom: 28, left: 36 };
 
-export function TaskBurndown({ data, totalTasks, width = 260, height = 180 }: TaskBurndownProps) {
+export function CumulativeFlow({ data, width = 260, height = 180 }: CumulativeFlowProps) {
   const innerW = width - MARGIN.left - MARGIN.right;
   const innerH = height - MARGIN.top - MARGIN.bottom;
 
-  const { xScale, yScale, idealLine } = useMemo(() => {
+  const { xScale, yScale } = useMemo(() => {
     if (data.length === 0) {
       return {
         xScale: scaleTime({ domain: [new Date(), new Date()], range: [0, innerW] }),
         yScale: scaleLinear({ domain: [0, 1], range: [innerH, 0] }),
-        idealLine: [],
       };
     }
     const times = data.map((d) => d.time);
-    const tMin = Math.min(...times);
-    const tMax = Math.max(...times);
+    const maxVal = Math.max(...data.map((d) => d.created), 1);
 
-    const xs = scaleTime({ domain: [new Date(tMin), new Date(tMax)], range: [0, innerW] });
-    const ys = scaleLinear({ domain: [0, totalTasks || 1], range: [innerH, 0], nice: true });
-
-    // Ideal burndown: straight line from totalTasks to 0
-    const ideal = [
-      { time: tMin, remaining: totalTasks },
-      { time: tMax, remaining: 0 },
-    ];
-
-    return { xScale: xs, yScale: ys, idealLine: ideal };
-  }, [data, totalTasks, innerW, innerH]);
+    return {
+      xScale: scaleTime({ domain: [new Date(Math.min(...times)), new Date(Math.max(...times))], range: [0, innerW] }),
+      yScale: scaleLinear({ domain: [0, maxVal], range: [innerH, 0], nice: true }),
+    };
+  }, [data, innerW, innerH]);
 
   if (data.length === 0) {
     return (
@@ -56,29 +50,54 @@ export function TaskBurndown({ data, totalTasks, width = 260, height = 180 }: Ta
 
   return (
     <div className="bg-surface-raised border border-th-border rounded-lg p-4 h-[180px]" data-testid="task-burndown">
-      <h3 className="text-[11px] font-medium text-th-text-muted uppercase tracking-wider mb-1">
-        Task Burndown
-      </h3>
-      <svg width={width} height={height - 32}>
+      <div className="flex items-center justify-between mb-1">
+        <h3 className="text-[11px] font-medium text-th-text-muted uppercase tracking-wider">
+          Task Flow
+        </h3>
+        <div className="flex items-center gap-2">
+          <span className="flex items-center gap-1 text-[9px] text-th-text-muted">
+            <span className="w-2 h-2 rounded-sm" style={{ backgroundColor: 'rgba(239, 68, 68, 0.5)' }} /> Created
+          </span>
+          <span className="flex items-center gap-1 text-[9px] text-th-text-muted">
+            <span className="w-2 h-2 rounded-sm" style={{ backgroundColor: 'rgba(234, 179, 8, 0.5)' }} /> Active
+          </span>
+          <span className="flex items-center gap-1 text-[9px] text-th-text-muted">
+            <span className="w-2 h-2 rounded-sm" style={{ backgroundColor: 'rgba(34, 197, 94, 0.5)' }} /> Done
+          </span>
+        </div>
+      </div>
+      <svg width={width} height={height - 40}>
         <Group left={MARGIN.left} top={MARGIN.top}>
-          {/* Ideal line (dashed) */}
-          <LinePath
-            data={idealLine}
-            x={(d) => xScale(new Date(d.time)) ?? 0}
-            y={(d) => yScale(d.remaining) ?? 0}
-            stroke="rgb(var(--chart-neutral))"
-            strokeWidth={1}
-            strokeDasharray="4 3"
-            strokeOpacity={0.5}
-          />
-
-          {/* Actual line */}
-          <LinePath
+          {/* Stacked areas: created (top) → in-progress (middle) → completed (bottom) */}
+          <AreaClosed
             data={data}
             x={(d) => xScale(new Date(d.time)) ?? 0}
-            y={(d) => yScale(d.remaining) ?? 0}
-            stroke="rgb(var(--chart-success))"
-            strokeWidth={2}
+            y={(d) => yScale(d.created) ?? 0}
+            yScale={yScale}
+            fill="rgba(239, 68, 68, 0.15)"
+            stroke="rgba(239, 68, 68, 0.5)"
+            strokeWidth={1.5}
+            curve={curveMonotoneX}
+          />
+          <AreaClosed
+            data={data}
+            x={(d) => xScale(new Date(d.time)) ?? 0}
+            y={(d) => yScale(d.inProgress + d.completed) ?? 0}
+            yScale={yScale}
+            fill="rgba(234, 179, 8, 0.15)"
+            stroke="rgba(234, 179, 8, 0.5)"
+            strokeWidth={1.5}
+            curve={curveMonotoneX}
+          />
+          <AreaClosed
+            data={data}
+            x={(d) => xScale(new Date(d.time)) ?? 0}
+            y={(d) => yScale(d.completed) ?? 0}
+            yScale={yScale}
+            fill="rgba(34, 197, 94, 0.2)"
+            stroke="rgba(34, 197, 94, 0.6)"
+            strokeWidth={1.5}
+            curve={curveMonotoneX}
           />
 
           <AxisBottom

@@ -5,13 +5,13 @@ import { apiFetch } from '../../hooks/useApi';
 import { deriveAgentsFromKeyframes } from '../../hooks/useHistoricalAgents';
 import { POLL_INTERVAL_MS } from '../../constants/timing';
 import { ProgressTimeline } from './ProgressTimeline';
-import { TaskBurndown } from './TaskBurndown';
+import { CumulativeFlow } from './TaskBurndown';
 import { CostCurve } from './CostCurve';
 import { KeyStats } from './KeyStats';
 import { AgentHeatmap } from './AgentHeatmap';
 import { MilestoneTimeline } from './MilestoneTimeline';
 import type { TimelineDataPoint } from './ProgressTimeline';
-import type { BurndownPoint } from './TaskBurndown';
+import type { FlowPoint } from './TaskBurndown';
 import type { CostPoint } from './CostCurve';
 import type { HeatmapBucket } from './AgentHeatmap';
 import type { ReplayKeyframe } from '../../hooks/useSessionReplay';
@@ -60,7 +60,7 @@ export function OverviewPage(_props: Props) {
 
   // ── Data state ─────────────────────────────────────────────────
   const [timelineData, setTimelineData] = useState<TimelineDataPoint[]>([]);
-  const [burndownData, setBurndownData] = useState<BurndownPoint[]>([]);
+  const [flowData, setFlowData] = useState<FlowPoint[]>([]);
   const [costData, setCostData] = useState<CostPoint[]>([]);
   const [heatmapBuckets, setHeatmapBuckets] = useState<HeatmapBucket[]>([]);
   const [keyframes, setKeyframes] = useState<ReplayKeyframe[]>([]);
@@ -111,7 +111,7 @@ export function OverviewPage(_props: Props) {
         if (kf.length > 0) {
           let completed = 0, inProgress = 0, agentCount = 0;
           const tPoints: TimelineDataPoint[] = [];
-          const bPoints: BurndownPoint[] = [];
+          const fPoints: FlowPoint[] = [];
           const cPoints: CostPoint[] = [];
           const hBuckets: HeatmapBucket[] = [];
           let taskTotal = 0;
@@ -148,11 +148,11 @@ export function OverviewPage(_props: Props) {
               remaining: Math.max(0, taskTotal - completed - inProgress),
               agentCount,
             });
-            bPoints.push({ time: t, remaining: Math.max(0, taskTotal - completed) });
+            fPoints.push({ time: t, created: taskTotal, inProgress, completed });
           }
 
           setTimelineData(tPoints);
-          setBurndownData(bPoints);
+          setFlowData(fPoints);
           setCostData(cPoints);
           setHeatmapBuckets(hBuckets);
           setTotalTokens(realTokens);
@@ -160,7 +160,7 @@ export function OverviewPage(_props: Props) {
         } else {
           // No keyframes — clear stale data
           setTimelineData([]);
-          setBurndownData([]);
+          setFlowData([]);
           setCostData([]);
           setHeatmapBuckets([]);
           setTotalTokens(0);
@@ -234,7 +234,7 @@ export function OverviewPage(_props: Props) {
 
       {/* Stats row: Burndown + Cost + Key Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <TaskBurndown data={burndownData} totalTasks={totalTasks} />
+        <CumulativeFlow data={flowData} />
         <CostCurve data={costData} />
         <KeyStats agents={displayAgents} totalTokens={totalTokens} sessionStart={sessionStart} />
       </div>
