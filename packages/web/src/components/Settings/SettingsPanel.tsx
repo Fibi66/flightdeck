@@ -388,6 +388,14 @@ export function SettingsPanel({ api }: Props) {
           })}
         </div>
       </section>
+
+      <footer className="mt-8 pb-4 text-center text-xs text-th-text-muted">
+        Made with care by{' '}
+        <a href="https://github.com/justinchuby" target="_blank" rel="noopener noreferrer" className="underline hover:text-th-text-alt transition-colors">
+          @justinchuby
+        </a>{' '}
+        and a team of AIs
+      </footer>
     </div>
   );
 }
