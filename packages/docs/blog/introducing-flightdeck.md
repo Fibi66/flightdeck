@@ -1,82 +1,90 @@
-# Mission Control for Your AI Agent Crews
+# What If Your AI Agents Could Actually Work as a Team?
 
-**Here's the meta part: this product was built by a crew of AI agents, monitored through the product itself.**
+One AI agent is useful. Ten AI agents working in parallel is chaos — unless they can communicate, coordinate tasks, and follow a hierarchy.
 
-A product manager agent wrote the specs. A designer agent created the UX. Developer agents wrote the code. A QA agent tested everything with Playwright. The tool quite literally built itself — and we watched it happen on the dashboard.
+**Flightdeck gives your AI agents the infrastructure to collaborate.** Messaging, task management, role-based delegation — the same things that make human teams work, built for AI crews.
 
-That's what Flightdeck is: **a real-time dashboard for seeing what your AI agents are actually doing.**
-
----
-
-## The Problem
-
-You kick off a multi-agent session — 5, 7, 10 AI agents coding, reviewing, and coordinating in parallel. Then you wait. And wonder:
-
-- Who's talking to whom?
-- Did two agents just edit the same file?
-- Why has one agent been idle for 10 minutes?
-- Is this session burning through context faster than expected?
-- What actually happened while you were away?
-
-Multi-agent AI tools exist. But none of them show you what's happening inside. **You're flying blind.**
-
-## The Solution
-
-Flightdeck gives you mission control.
-
-![Lead Dashboard — track every project, agent, and task at a glance](/screenshots/lead-dashboard.png)
-
-One command to launch. No config, no API keys, no cloud dependency. Your data stays on your machine.
-
-```bash
-npm install -g @flightdeck-ai/flightdeck
-flightdeck
-```
+And here's the meta part: **Flightdeck was built by a team of AI agents, orchestrated through Flightdeck itself.** A PM agent wrote specs. A designer agent created the UX. Developer agents wrote code. A QA agent tested with Playwright. The tool coordinated its own construction.
 
 ---
 
-## What You Get
+## The Problem: Multi-Agent = Chaos Without Coordination
 
-### 🎯 Canvas View
-See your agent crew as an interactive graph with real-time communication edges flowing between nodes. Click any agent to see their tasks, messages, and file locks. Spot conflicts before they happen.
+You tell an AI to "build a feature." It spawns 8 agents. They all start coding. Two of them edit the same file. A third rewrites what the fourth just finished. The architect and the developer spend 15 messages debating an approach nobody asked for. Meanwhile, a critical task sits unstarted because no one picked it up.
 
-![Canvas View — agents as nodes, communication as edges](/screenshots/canvas.png)
+**More agents doesn't mean more output — not without coordination.**
 
-### ⏪ Session Replay
-The **Timeline** page shows a swim-lane Gantt chart of exactly what each agent did and when. **Session Replay** lets you scrub through any past session at up to 32× speed — like a flight recorder for AI work. Hit Play and watch agents appear, task bars grow, and messages fire between them, all synchronized to a scrubber you can drag to any point.
+## The Solution: Give Your Agents Communication, Tasks, and Hierarchy
 
-![Timeline page with Session Replay — Gantt chart with swim lanes for every agent](/screenshots/timeline.png)
-
-### 📊 Overview Dashboard
-Cumulative flow diagrams, agent activity heatmaps, and context usage tracking give you the full picture at a glance. See which projects are on track and which need attention.
-
-### 🔎 Context Awareness
-Monitor per-agent context window usage and cumulative token consumption across the crew. Spot agents approaching their context limit before they stall — and intervene early.
-
-### 🛡️ Context & Health Alerts
-See which agents are running low on context before they stall. Monitor active task counts, error rates, and idle time across the crew. Approve queued decisions from a single batch-approval panel — no terminal switching.
-
-### 🔍 Historical Data Browser
-Browse any past session, search agent output, review conversations. Per-project tabs keep everything organized. Nothing is lost.
-
-### 🧩 Open Source
-MIT licensed. Zero-infrastructure SQLite backend. Runs locally. Extensible architecture. No telemetry, no cloud, no lock-in.
+Flightdeck is an orchestration layer for multi-agent AI systems. It provides three things agents need to work as a team:
 
 ---
 
-## Who It's For
+### 💬 Communication & Messaging
 
-- **Developers using GitHub Copilot** who run multi-agent sessions and want visibility into what's happening
-- **AI engineers** building and debugging agent systems who need observability
-- **Engineering managers** who want to understand how AI-assisted development actually works
+Agents need to talk to each other — not just to you.
 
-> **Real scenario:** Agent #3 gets stuck in a retry loop, burning through its context window on the same failing approach. Without Flightdeck, you find out when the session fails. With the Timeline page, you spot the loop in 2 minutes, interrupt, and redirect the agent.
+- **Direct messages** — agent-to-agent communication, queued so it doesn't interrupt ongoing work
+- **Group chats** — agents form topic-specific groups to coordinate on shared concerns (API design, naming conventions, architecture decisions)
+- **Broadcasts** — one agent can announce to the entire crew
+- **Priority routing** — your messages always go to the front of the queue
 
-## The Competitive Gap
+![Canvas View — see agent relationships and real-time message flow](/screenshots/canvas.png)
 
-Most AI coding tools are single-agent. The few multi-agent frameworks that exist have no visual dashboard. **Flightdeck is the first purpose-built observability layer for AI agent crews.**
+When the architect needs to align with three developers on an interface, they create a group chat. Everyone sees the same context. No telephone game, no duplicated conversations.
 
-This isn't an AI tool. It's a tool *for* AI.
+### 📋 Task DAG
+
+A flat to-do list doesn't work when tasks have dependencies. Flightdeck uses a **directed acyclic graph (DAG)** — tasks know what they depend on and what's blocking them.
+
+- **Auto-created** — when a lead delegates work, DAG items appear automatically
+- **Dependency tracking** — Task B waits until Task A completes
+- **Critical path** — see which tasks are blocking the most downstream work
+- **Status flow** — ready → running → done/failed, visible to the entire crew
+
+![Tasks view — DAG with dependencies and status](/screenshots/tasks.png)
+
+The lead says "build the settings page." Flightdeck creates tasks for the component, the API endpoint, the tests, and the docs — with the right dependency order. The developer can't start integration tests until the API is built. The DAG enforces that.
+
+### 👥 Collaboration Hierarchy
+
+Not every agent should do everything. Flightdeck provides role-based structure:
+
+- **Project Lead** — analyzes the goal, creates the plan, delegates to specialists, reviews results
+- **Specialized roles** — Developer, Architect, Code Reviewer, Designer, QA Tester, Technical Writer, and more
+- **Right model for the right job** — use fast/cheap models for exploration, powerful models for architecture decisions
+- **Report-back flow** — agents complete tasks and report to the lead, who synthesizes the result
+
+![Lead Dashboard — the orchestrator's view of every project and agent](/screenshots/lead-dashboard.png)
+
+This isn't one AI doing everything. It's a structured team where the architect designs, the developers build, the reviewer catches bugs, and the QA tester runs the code end-to-end.
+
+---
+
+## See It All Unfold
+
+Orchestration produces a natural side effect: **visibility**. When agents communicate through Flightdeck, you can see every message, every task transition, every delegation.
+
+- **Timeline** — swim-lane Gantt chart showing what each agent did and when
+- **Session Replay** — scrub through past sessions at up to 32× to review how the team coordinated
+- **Overview** — cumulative flow, agent activity heatmaps, and context usage at a glance
+
+![Timeline — watch the orchestration unfold over time](/screenshots/timeline.png)
+
+---
+
+## The Proof: We Built This With This
+
+Flightdeck v0.3.0 was built by a crew of 10+ AI agents orchestrated through Flightdeck:
+
+- The **Product Manager** agent defined feature specs and wrote launch copy
+- The **Architect** agent designed the component hierarchy and data flow
+- **Developer** agents implemented features in parallel, coordinating via group chats
+- The **Code Reviewer** agent caught bugs before they shipped
+- The **QA Tester** agent ran Playwright tests against the live UI
+- The **Technical Writer** agent wrote the docs you're reading right now
+
+They messaged each other. They formed groups to debate design decisions. They tracked tasks in a DAG. They filed issues, reviewed each other's work, and shipped — all coordinated through the same tool they were building.
 
 ---
 
@@ -87,7 +95,7 @@ npm install -g @flightdeck-ai/flightdeck
 flightdeck
 ```
 
-That's it. The dashboard opens, detects your agent sessions, and starts streaming. No config files, no API keys.
+That's it. No config files, no API keys. Runs locally on SQLite — your data stays on your machine.
 
 ⭐ **Star on GitHub**: [github.com/justinchuby/flightdeck](https://github.com/justinchuby/flightdeck)
 
@@ -95,4 +103,4 @@ That's it. The dashboard opens, detects your agent sessions, and starts streamin
 
 ---
 
-*Built with React, TypeScript, Express, and SQLite. MIT License.*
+*Open source · MIT License · Built with React, TypeScript, Express, and SQLite.*
