@@ -205,7 +205,10 @@ describe('SessionReplay', () => {
     const s1 = replay.getWorldStateAt('lead-1', T2);
     const s2 = replay.getWorldStateAt('lead-1', T2);
     expect(s1).toBe(s2); // same reference = cached
-    expect(mocks.activityLedger.getUntil).toHaveBeenCalledTimes(1);
+    // First call: projectId-filtered fetch (empty) + unfiltered fallback = 2 calls
+    // Second call: served from cache = 0 additional calls
+    const callCount = (mocks.activityLedger.getUntil as ReturnType<typeof vi.fn>).mock.calls.length;
+    expect(callCount).toBe(2);
   });
 
   describe('getKeyframes', () => {
