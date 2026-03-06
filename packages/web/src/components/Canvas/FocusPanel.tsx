@@ -4,6 +4,14 @@ import { useFocusAgent } from '../../hooks/useFocusAgent';
 import { DiffPreview } from '../DiffPreview';
 import { EmptyState, SkeletonCard } from '../Shared';
 
+/** Safely convert any API value to a renderable string */
+function safeText(val: unknown): string {
+  if (val == null) return '';
+  if (typeof val === 'string') return val;
+  if (typeof val === 'number' || typeof val === 'boolean') return String(val);
+  return JSON.stringify(val);
+}
+
 interface FocusPanelProps {
   agentId: string;
   onClose: () => void;
@@ -123,8 +131,8 @@ export function FocusPanel({ agentId, onClose }: FocusPanelProps) {
             ) : (
               data.decisions.slice(0, 20).map((d) => (
                 <div key={d.id} className="text-[11px] border-b border-th-border/40 pb-1.5">
-                  <span className="font-medium text-th-text-alt">{d.title}</span>
-                  <p className="text-th-text-muted truncate">{d.rationale}</p>
+                  <span className="font-medium text-th-text-alt">{safeText(d.title)}</span>
+                  <p className="text-th-text-muted truncate">{safeText(d.rationale)}</p>
                 </div>
               ))
             )}
@@ -136,9 +144,7 @@ export function FocusPanel({ agentId, onClose }: FocusPanelProps) {
             {data?.activities && data.activities.length > 0 ? (
               data.activities.slice(0, 20).map((a, i) => (
                 <div key={i} className="text-[11px] text-th-text-muted border-b border-th-border/40 pb-1.5">
-                  {typeof (a.details ?? a.action) === 'object'
-                    ? JSON.stringify(a.details ?? a.action)
-                    : (a.details ?? a.action)}
+                  {safeText(a.details ?? a.action)}
                 </div>
               ))
             ) : (
