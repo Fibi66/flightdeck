@@ -1,4 +1,4 @@
-import { useMemo, useEffect, useRef, useCallback, useState } from 'react';
+import { useMemo, useEffect, useRef, useCallback } from 'react';
 import { RefreshCw, Filter, Trash2 } from 'lucide-react';
 import { useTimelineData } from './useTimelineData';
 import type { TimelineData, CommType, TimelineStatus } from './useTimelineData';
@@ -12,7 +12,7 @@ import { AccessibilityAnnouncer } from './AccessibilityAnnouncer';
 import { useAccessibilityAnnouncements } from './useAccessibilityAnnouncements';
 import { useAppStore } from '../../stores/appStore';
 import { useTimelineStore } from '../../stores/timelineStore';
-import { ReplayScrubber, ShareDropdown } from '../SessionReplay';
+import { ReplayScrubber } from '../SessionReplay';
 import { useProjects } from '../../hooks/useProjects';
 import { ProjectTabs } from '../ProjectTabs';
 import './timeline-a11y.css';
@@ -121,9 +121,6 @@ export function TimelinePage({ api, ws }: Props) {
   const setHiddenStatuses = useTimelineStore((s) => s.setHiddenStatuses);
   const setCachedData = useTimelineStore((s) => s.setCachedData);
 
-  // Share/highlights dialog state
-  const [showShareDialog, setShowShareDialog] = useState(false);
-  const [showHighlights, setShowHighlights] = useState(false);
   const getCachedData = useTimelineStore((s) => s.getCachedData);
   const clearCachedData = useTimelineStore((s) => s.clearCachedData);
 
@@ -423,16 +420,8 @@ export function TimelinePage({ api, ws }: Props) {
 
       {/* Session Replay Scrubber — sticky bottom, outside scrollable area */}
       {effectiveLeadId && !liveMode && (
-        <div className="shrink-0 border-t border-th-border-muted bg-th-bg px-4 py-2 space-y-1">
+        <div className="shrink-0 border-t border-th-border-muted bg-th-bg px-4 py-2">
           <ReplayScrubber leadId={effectiveLeadId} />
-          <div className="flex justify-end px-2">
-            <ShareDropdown
-              onShareLink={() => setShowShareDialog(true)}
-              onExportHTML={() => {}}
-              onExportJSON={() => {}}
-              onHighlightsReel={() => setShowHighlights(true)}
-            />
-          </div>
         </div>
       )}
     </div>
