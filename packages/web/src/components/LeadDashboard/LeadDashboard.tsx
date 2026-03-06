@@ -245,7 +245,12 @@ export function LeadDashboard({ api, ws }: Props) {
     // Load persisted message history if we don't have any messages yet
     const proj = useLeadStore.getState().projects[selectedLeadId];
     if (!proj || proj.messages.length === 0) {
-      fetch(`/api/agents/${selectedLeadId}/messages?limit=200`)
+      // For historical projects (project:XYZ), use project messages endpoint
+      const isHistorical = selectedLeadId.startsWith('project:');
+      const url = isHistorical
+        ? `/api/projects/${selectedLeadId.slice(8)}/messages?limit=200`
+        : `/api/agents/${selectedLeadId}/messages?limit=200`;
+      fetch(url)
         .then((r) => r.json())
         .then((data: any) => {
           if (Array.isArray(data.messages) && data.messages.length > 0) {

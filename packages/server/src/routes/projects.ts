@@ -1,9 +1,9 @@
 import { Router } from 'express';
-import { eq, inArray } from 'drizzle-orm';
+import { eq, inArray, desc } from 'drizzle-orm';
 import { logger } from '../utils/logger.js';
 import type { AppContext } from './context.js';
 import { KNOWN_MODEL_IDS, DEFAULT_MODEL_CONFIG, validateModelConfig, validateModelConfigShape } from '../projects/ModelConfigDefaults.js';
-import { dagTasks, projectSessions, chatGroups, chatGroupMessages, chatGroupMembers } from '../db/schema.js';
+import { dagTasks, projectSessions, chatGroups, chatGroupMessages, chatGroupMembers, conversations, messages } from '../db/schema.js';
 
 export function projectsRoutes(ctx: AppContext): Router {
   const { agentManager, roleRegistry, projectRegistry, db: _db } = ctx;
@@ -136,6 +136,37 @@ export function projectsRoutes(ctx: AppContext): Router {
       reactions: JSON.parse(m.reactions ?? '{}'),
       timestamp: m.timestamp,
     })));
+  });
+
+  // Historical chat messages for a project (from lead conversations)
+  router.get('/projects/:id/messages', (req, res) => {
+    if (!_db) return res.json({ messages: [] });
+    const limit = Math.min(parseInt(String(req.query.limit) || '200', 10) || 200, 1000);
+    // Find all lead IDs for this project
+    const leads = _db.drizzle
+      .select({ leadId: projectSessions.leadId })
+      .from(projectSessions)
+      .where(eq(projectSessions.projectId, req.params.id))
+      .all();
+    if (leads.length === 0) return res.json({ messages: [] });
+    const leadIds = leads.map((l) => l.leadId);
+    // Query messages from all lead conversations
+    const rows = _db.drizzle
+      .select({
+        id: messages.id,
+        conversationId: messages.conversationId,
+        sender: messages.sender,
+        content: messages.content,
+        timestamp: messages.timestamp,
+      })
+      .from(messages)
+      .innerJoin(conversations, eq(messages.conversationId, conversations.id))
+      .where(inArray(conversations.agentId, leadIds))
+      .orderBy(desc(messages.timestamp))
+      .limit(limit)
+      .all()
+      .reverse(); // chronological order
+    res.json({ messages: rows });
   });
 
   router.post('/projects', (req, res) => {
