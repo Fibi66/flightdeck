@@ -13,6 +13,7 @@ import { useAccessibilityAnnouncements } from './useAccessibilityAnnouncements';
 import { useAppStore } from '../../stores/appStore';
 import { useTimelineStore } from '../../stores/timelineStore';
 import { ReplayScrubber } from '../SessionReplay';
+import { useSessionReplay } from '../../hooks/useSessionReplay';
 import { useProjects } from '../../hooks/useProjects';
 import { ProjectTabs } from '../ProjectTabs';
 import './timeline-a11y.css';
@@ -163,6 +164,10 @@ export function TimelinePage({ api, ws }: Props) {
   // Use live data if available, fall back to cached data from store
   const data = liveData ?? (effectiveLeadId ? getCachedData(effectiveLeadId) : null);
 
+  // Session replay — lift state so we can filter timeline data during playback
+  const replayLeadId = (!liveMode && effectiveLeadId) ? effectiveLeadId : null;
+  const replay = useSessionReplay(replayLeadId);
+
   // Clear cached data and refetch fresh from SSE
   const handleClearTimeline = useCallback(() => {
     if (effectiveLeadId) {
@@ -195,6 +200,43 @@ export function TimelinePage({ api, ws }: Props) {
     if (!data) return null;
     return applyFilters(data, roleFilter, commFilter, hiddenStatuses);
   }, [data, roleFilter, commFilter, hiddenStatuses]);
+
+  // Clip timeline data to replay currentTime during playback
+  const displayData = useMemo(() => {
+    if (!filteredData) return null;
+    // Only clip when replay is active (has keyframes loaded) and not in live mode
+    if (!replay.keyframes.length || liveMode) return filteredData;
+    // When paused at the end (currentTime >= duration), show everything
+    if (!replay.playing && replay.currentTime >= replay.duration && replay.duration > 0) return filteredData;
+    // Calculate the absolute cutoff time
+    const sessionStart = new Date(replay.keyframes[0].timestamp).getTime();
+    const cutoffMs = sessionStart + replay.currentTime;
+    const cutoff = new Date(cutoffMs).toISOString();
+
+    return {
+      ...filteredData,
+      agents: filteredData.agents
+        .filter(a => new Date(a.createdAt).getTime() <= cutoffMs)
+        .map(a => ({
+          ...a,
+          segments: a.segments
+            .filter(s => new Date(s.startAt).getTime() <= cutoffMs)
+            .map(s => ({
+              ...s,
+              // Clip segment end to cutoff if it extends beyond
+              endAt: s.endAt && new Date(s.endAt).getTime() > cutoffMs ? cutoff : s.endAt,
+            })),
+        })),
+      communications: filteredData.communications
+        .filter(c => new Date(c.timestamp).getTime() <= cutoffMs),
+      locks: filteredData.locks
+        .filter(l => new Date(l.acquiredAt).getTime() <= cutoffMs),
+      timeRange: {
+        start: filteredData.timeRange.start,
+        end: cutoff < filteredData.timeRange.end ? cutoff : filteredData.timeRange.end,
+      },
+    };
+  }, [filteredData, replay.keyframes, replay.playing, replay.currentTime, replay.duration, liveMode]);
 
   const activeFilterCount =
     (ALL_ROLES.length - roleFilter.size) +
@@ -402,17 +444,17 @@ export function TimelinePage({ api, ws }: Props) {
         </div>
       )}
 
-      {filteredData && filteredData.agents.length === 0 && !loading && (
+      {displayData && displayData.agents.length === 0 && !loading && (
         <EmptyState />
       )}
 
-      {filteredData && filteredData.agents.length > 0 && (
+      {displayData && displayData.agents.length > 0 && (
         <div className="flex-1 min-h-0 relative overflow-y-auto" id="timeline-main" ref={timelineMainRef}>
           <ErrorBanner
             errors={errorEntries}
             onScrollToError={handleScrollToError}
           />
-          <TimelineContainer data={filteredData} liveMode={liveMode} onLiveModeChange={setLiveMode} />
+          <TimelineContainer data={displayData} liveMode={liveMode} onLiveModeChange={setLiveMode} />
         </div>
       )}
 
@@ -421,7 +463,7 @@ export function TimelinePage({ api, ws }: Props) {
       {/* Session Replay Scrubber — sticky bottom, outside scrollable area */}
       {effectiveLeadId && !liveMode && (
         <div className="shrink-0 border-t border-th-border-muted bg-th-bg px-4 py-2">
-          <ReplayScrubber leadId={effectiveLeadId} />
+          <ReplayScrubber leadId={effectiveLeadId} replay={replay} />
         </div>
       )}
     </div>

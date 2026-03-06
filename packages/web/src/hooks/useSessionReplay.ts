@@ -29,7 +29,7 @@ export interface ReplayWorldState {
   totalTasks: number;
 }
 
-interface UseSessionReplayResult {
+export interface UseSessionReplayResult {
   keyframes: ReplayKeyframe[];
   worldState: ReplayWorldState | null;
   playing: boolean;

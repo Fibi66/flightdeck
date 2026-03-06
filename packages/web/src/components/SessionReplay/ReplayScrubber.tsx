@@ -1,7 +1,7 @@
 import { useMemo, useCallback } from 'react';
 import { Play, Pause, SkipBack, SkipForward, Zap, Users, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { useSessionReplay } from '../../hooks/useSessionReplay';
-import type { ReplayKeyframe } from '../../hooks/useSessionReplay';
+import type { ReplayKeyframe, UseSessionReplayResult } from '../../hooks/useSessionReplay';
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -30,13 +30,16 @@ const SPEED_OPTIONS = [0.5, 1, 2, 4, 8];
 
 interface ReplayScrubberProps {
   leadId: string;
+  /** Pre-created replay state — avoids duplicate hook calls when parent also needs replay state */
+  replay?: UseSessionReplayResult;
 }
 
-export function ReplayScrubber({ leadId }: ReplayScrubberProps) {
+export function ReplayScrubber({ leadId, replay: externalReplay }: ReplayScrubberProps) {
+  const internalReplay = useSessionReplay(externalReplay ? null : leadId);
   const {
     keyframes, worldState, playing, currentTime, duration,
     loading, error, play, pause, seek, setSpeed, speed,
-  } = useSessionReplay(leadId);
+  } = externalReplay ?? internalReplay;
 
   // Map keyframes to positions on the scrubber
   const keyframeMarkers = useMemo(() => {
