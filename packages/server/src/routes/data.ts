@@ -96,19 +96,27 @@ export function dataRoutes(ctx: AppContext): Router {
   router.post('/data/cleanup', (req, res) => {
     try {
       const { olderThanDays, dryRun = false } = req.body ?? {};
-      if (!olderThanDays || typeof olderThanDays !== 'number' || olderThanDays < 1) {
-        return res.status(400).json({ error: 'olderThanDays must be a positive number' });
+      if (olderThanDays === undefined || typeof olderThanDays !== 'number' || olderThanDays < 0) {
+        return res.status(400).json({ error: 'olderThanDays must be a non-negative number (0 = all data)' });
       }
 
-      // Calculate cutoff date as ISO 8601
-      const cutoff = new Date(Date.now() - olderThanDays * 86_400_000).toISOString();
+      // Calculate cutoff date — 0 means purge everything
+      const cutoff = olderThanDays === 0
+        ? new Date(Date.now() + 86_400_000).toISOString() // future date = catch everything
+        : new Date(Date.now() - olderThanDays * 86_400_000).toISOString();
 
       // Find old project sessions (ended before cutoff, not active)
-      const oldSessions = _db.drizzle
-        .select({ id: projectSessions.id, leadId: projectSessions.leadId, projectId: projectSessions.projectId })
-        .from(projectSessions)
-        .where(sql`${projectSessions.endedAt} IS NOT NULL AND ${projectSessions.endedAt} < ${cutoff}`)
-        .all();
+      // For purge-all (olderThanDays=0), also include active sessions
+      const oldSessions = olderThanDays === 0
+        ? _db.drizzle
+            .select({ id: projectSessions.id, leadId: projectSessions.leadId, projectId: projectSessions.projectId })
+            .from(projectSessions)
+            .all()
+        : _db.drizzle
+            .select({ id: projectSessions.id, leadId: projectSessions.leadId, projectId: projectSessions.projectId })
+            .from(projectSessions)
+            .where(sql`${projectSessions.endedAt} IS NOT NULL AND ${projectSessions.endedAt} < ${cutoff}`)
+            .all();
 
       if (oldSessions.length === 0) {
         return res.json({ deleted: {}, totalDeleted: 0, sessionsDeleted: 0, dryRun, cutoffDate: cutoff });

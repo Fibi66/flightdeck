@@ -22,6 +22,7 @@ const PERIOD_OPTIONS = [
   { label: '30 days', days: 30 },
   { label: '90 days', days: 90 },
   { label: '1 year', days: 365 },
+  { label: 'All data', days: 0 },
 ];
 
 function formatBytes(bytes: number): string {
@@ -189,7 +190,9 @@ export function DataManagement() {
         <h3 className="text-xs font-medium text-th-text-muted uppercase tracking-wider">Purge Old Data</h3>
 
         <div className="flex items-center gap-3">
-          <label className="text-xs text-th-text-alt">Delete data older than:</label>
+          <label className="text-xs text-th-text-alt">
+            {selectedDays === 0 ? 'Delete:' : 'Delete data older than:'}
+          </label>
           <select
             value={selectedDays}
             onChange={(e) => { setSelectedDays(Number(e.target.value)); setPreview(null); setPurgeResult(null); }}
@@ -208,6 +211,13 @@ export function DataManagement() {
           </button>
         </div>
 
+        {selectedDays === 0 && !preview && !purgeResult && (
+          <div className="text-[11px] text-red-400 flex items-center gap-1.5">
+            <AlertTriangle className="w-3 h-3 shrink-0" />
+            This will delete ALL session data. This cannot be undone.
+          </div>
+        )}
+
         {/* Dry-run preview */}
         {preview && (
           <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 space-y-2">
@@ -221,7 +231,7 @@ export function DataManagement() {
             {preview.sessionsDeleted > 0 && (
               <>
                 <div className="text-[10px] text-th-text-muted">
-                  Cutoff: {formatDate(preview.cutoffDate)} • Only completed sessions are affected.
+                  {selectedDays === 0 ? 'All data will be purged' : `Cutoff: ${formatDate(preview.cutoffDate)}`} • Only completed sessions are affected.
                 </div>
                 <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[11px]">
                   {Object.entries(preview.deleted)
