@@ -1,5 +1,7 @@
 import { useMemo } from 'react';
 import { useAppStore } from '../../stores/appStore';
+import { useLeadStore } from '../../stores/leadStore';
+import { useHistoricalAgents } from '../../hooks/useHistoricalAgents';
 import type { AgentInfo } from '../../types';
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -79,7 +81,13 @@ interface TokenEconomicsProps {
 
 export function TokenEconomics({ agents: agentsProp }: TokenEconomicsProps) {
   const storeAgents = useAppStore((s) => s.agents);
-  const agents = agentsProp && agentsProp.length > 0 ? agentsProp : storeAgents;
+  const selectedLeadId = useLeadStore((s) => s.selectedLeadId);
+  const { agents: historicalAgents } = useHistoricalAgents(storeAgents.length, selectedLeadId);
+  const agents = agentsProp && agentsProp.length > 0
+    ? agentsProp
+    : storeAgents.length > 0
+      ? storeAgents
+      : (historicalAgents as any[]);
 
   const { sorted, totalIn, totalOut, anyEstimated } = useMemo(() => {
     const data: AgentTokenData[] = [];

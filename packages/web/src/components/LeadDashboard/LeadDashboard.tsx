@@ -1912,7 +1912,7 @@ export function LeadDashboard({ api, ws }: Props) {
                         No project selected
                       </div>
                     )}
-                    {sidebarTab === 'tokens' && <TokenEconomics />}
+                    {sidebarTab === 'tokens' && <TokenEconomics agents={teamAgents as any} />}
                     {sidebarTab === 'costs' && <CostBreakdown />}
                     {sidebarTab === 'timers' && <TimerDisplay />}
                   </div>
