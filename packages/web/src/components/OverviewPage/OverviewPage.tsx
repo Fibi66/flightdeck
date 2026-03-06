@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useAppStore } from '../../stores/appStore';
 import { useLeadStore } from '../../stores/leadStore';
+import { useShallow } from 'zustand/react/shallow';
 import { apiFetch } from '../../hooks/useApi';
 import { POLL_INTERVAL_MS } from '../../constants/timing';
 import { ProgressTimeline } from './ProgressTimeline';
@@ -27,7 +28,7 @@ interface Props {
 export function OverviewPage(_props: Props) {
   const agents = useAppStore((s) => s.agents);
   const selectedLeadId = useLeadStore((s) => s.selectedLeadId);
-  const projectIds = useLeadStore((s) => Object.keys(s.projects));
+  const projectIds = useLeadStore(useShallow((s) => Object.keys(s.projects)));
 
   // Derive leadId — prefer selected, then active lead agent, then most recent project
   const leadId = useMemo(() => {
