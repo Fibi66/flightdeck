@@ -85,10 +85,13 @@ Quick reference for all APIs, hooks, components, and design tokens available in 
 ### Intent Rules
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/intents` | List rules |
+| GET | `/intents` | List all rules |
 | POST | `/intents` | Create rule |
-| POST | `/intents/:id` | Update rule |
+| PATCH | `/intents/:id` | Update rule |
 | DELETE | `/intents/:id` | Delete rule |
+| POST | `/intents/reorder` | Reorder rules by priority |
+| GET | `/intents/presets` | Get available presets |
+| POST | `/intents/presets/:preset` | Apply trust preset |
 | POST | `/intents/presets/:preset` | Apply trust preset |
 
 ### Recovery

@@ -62,6 +62,7 @@ export default defineConfig({
           text: 'Features',
           items: [
             { text: 'Command Palette', link: '/guide/command-palette' },
+            { text: 'Intent Rules', link: '/guide/intent-rules' },
             { text: 'Data Management', link: '/guide/data-management' },
             { text: 'GitHub Integration', link: '/guide/github-integration' },
             { text: 'Playbooks & Roles', link: '/guide/playbooks' },

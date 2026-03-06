@@ -175,6 +175,32 @@ The **Canvas** shows your agent crew as an interactive node graph.
 
 ---
 
+## Automating Decisions with Intent Rules
+
+Instead of manually approving every agent decision, set up **Intent Rules** to handle routine approvals automatically.
+
+### Getting Started
+
+1. Go to **Settings → Intent Rules**
+2. Apply a **trust preset** (Conservative, Moderate, or Autonomous) as a starting point
+3. Customize by creating rules for specific categories and roles
+
+### Recommended Approach
+
+| Phase | Strategy |
+|-------|----------|
+| **First session** | Use **Conservative** — review everything to build trust |
+| **After a few sessions** | Switch to **Moderate** — auto-approve style and testing, review architecture |
+| **Established workflow** | Go **Autonomous** for trusted roles, keep review for new ones |
+
+::: tip
+Watch the effectiveness scores on your rules. If a rule drops below 50%, you're rejecting what it auto-approves — time to tighten the scope.
+:::
+
+For full documentation, see the [Intent Rules guide](/guide/intent-rules).
+
+---
+
 ## Data Management
 
 Keep your Flightdeck installation clean by managing old session data.
