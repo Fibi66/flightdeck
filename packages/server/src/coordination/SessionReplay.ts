@@ -88,8 +88,9 @@ export class SessionReplay {
       return cached.state;
     }
 
-    // All queries are synchronous SQLite — run them sequentially (no await needed)
-    const activities = this.activityLedger.getUntil(timestamp, leadId);
+    // Note: leadId is NOT a projectId — don't filter activities by it.
+    // Instead, fetch all activities and let downstream consumers scope as needed.
+    const activities = this.activityLedger.getUntil(timestamp, undefined, 10_000);
     const dagTasks = this.taskDAG.getTasksAt(leadId, timestamp);
     const decisions = this.decisionLog.getDecisionsAt(leadId, timestamp);
     const locks = this.lockRegistry.getLocksAt(timestamp);
@@ -105,8 +106,9 @@ export class SessionReplay {
 
   /** Get significant moments for scrubber markers */
   getKeyframes(leadId: string): Keyframe[] {
+    // Fetch all recent activity (not filtered by projectId — leadId ≠ projectId)
     const activities = this.activityLedger.getUntil(
-      new Date().toISOString(), leadId, 10_000,
+      new Date().toISOString(), undefined, 10_000,
     );
 
     const keyframes: Keyframe[] = [];
@@ -125,7 +127,7 @@ export class SessionReplay {
 
   /** Get events in a time range, optionally filtered by type */
   getEventsInRange(leadId: string, from: string, to: string, types?: string[]): ActivityEntry[] {
-    const allActivities = this.activityLedger.getUntil(to, leadId, 10_000);
+    const allActivities = this.activityLedger.getUntil(to, undefined, 10_000);
     let filtered = allActivities.filter(a => a.timestamp >= from);
     if (types && types.length > 0) {
       filtered = filtered.filter(a => types.includes(a.actionType));

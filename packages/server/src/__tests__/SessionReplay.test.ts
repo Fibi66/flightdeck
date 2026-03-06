@@ -120,7 +120,7 @@ describe('SessionReplay', () => {
 
     replay.getWorldStateAt('lead-1', T2);
 
-    expect(mocks.activityLedger.getUntil).toHaveBeenCalledWith(T2, 'lead-1');
+    expect(mocks.activityLedger.getUntil).toHaveBeenCalledWith(T2, undefined, 10_000);
     expect(mocks.taskDAG.getTasksAt).toHaveBeenCalledWith('lead-1', T2);
     expect(mocks.decisionLog.getDecisionsAt).toHaveBeenCalledWith('lead-1', T2);
     expect(mocks.lockRegistry.getLocksAt).toHaveBeenCalledWith(T2);
