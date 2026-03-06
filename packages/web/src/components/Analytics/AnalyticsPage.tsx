@@ -17,12 +17,9 @@ import {
 
 const EMPTY_OVERVIEW: AnalyticsOverview = {
   totalSessions: 0,
-  totalCostUsd: 0,
-  avgCostPerSession: 0,
   totalInputTokens: 0,
   totalOutputTokens: 0,
   sessions: [],
-  costTrend: [],
   roleContributions: [],
 };
 
@@ -64,16 +61,10 @@ export function AnalyticsPage() {
     const filtered = overview.sessions.filter(
       (s) => new Date(s.startedAt).getTime() >= cutoff,
     );
-    const totalCost = filtered.reduce((s, x) => s + x.estimatedCostUsd, 0);
     return {
       ...overview,
       sessions: filtered,
       totalSessions: filtered.length,
-      totalCostUsd: totalCost,
-      avgCostPerSession: filtered.length > 0 ? totalCost / filtered.length : 0,
-      costTrend: overview.costTrend.filter(
-        (d) => new Date(d.date).getTime() >= cutoff,
-      ),
     };
   }, [overview, timeWindow]);
 
@@ -128,7 +119,7 @@ export function AnalyticsPage() {
           <h2 className="text-lg font-semibold text-th-text-alt mb-1">Analytics</h2>
           <p className="text-sm text-th-text-muted max-w-xs">
             Complete a few sessions to start seeing analytics.
-            Cost trends, model effectiveness, and insights will appear here.
+            Token trends, model effectiveness, and insights will appear here.
           </p>
         </div>
       </div>
@@ -156,7 +147,7 @@ export function AnalyticsPage() {
         </div>
       )}
 
-      {/* Top row: Overview + Cost Trend */}
+      {/* Top row: Overview + Token Trend */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <SessionOverviewCard overview={filteredOverview} />
         <CostTrendChart overview={filteredOverview} />
@@ -185,7 +176,6 @@ export function AnalyticsPage() {
       {/* Session History */}
       <SessionHistoryTable
         sessions={filteredOverview.sessions}
-        avgCost={filteredOverview.avgCostPerSession}
         selectedIds={compareIds}
         onToggleCompare={toggleCompare}
       />

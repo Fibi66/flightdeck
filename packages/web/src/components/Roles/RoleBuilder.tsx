@@ -65,9 +65,9 @@ const PROMPT_TEMPLATES: Record<string, { label: string; prompt: string }> = {
 };
 
 const MODELS = [
-  { id: 'opus', name: 'Opus', quality: 5, cost: '~$0.03/task', speed: 'Best quality' },
-  { id: 'sonnet', name: 'Sonnet', quality: 4, cost: '~$0.01/task', speed: 'Balanced' },
-  { id: 'haiku', name: 'Haiku', quality: 3, cost: '~$0.003/task', speed: 'Fastest' },
+  { id: 'opus', name: 'Opus', quality: 5, speed: 'Best quality' },
+  { id: 'sonnet', name: 'Sonnet', quality: 4, speed: 'Balanced' },
+  { id: 'haiku', name: 'Haiku', quality: 3, speed: 'Fastest' },
 ];
 
 export function RoleBuilder({ initial, onSave, onCancel, onDelete }: Props) {
@@ -238,7 +238,6 @@ export function RoleBuilder({ initial, onSave, onCancel, onDelete }: Props) {
                 {model === m.id ? '◉' : '○'} {m.name}
               </div>
               <div className="text-[10px] text-th-text-muted">{m.speed}</div>
-              <div className="text-[10px] text-th-text-muted">{m.cost}</div>
               <div className="text-[10px] text-yellow-400">
                 {'⭐'.repeat(m.quality)}
               </div>

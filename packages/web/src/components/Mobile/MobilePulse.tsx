@@ -1,6 +1,5 @@
 import { useMemo } from 'react';
 import { useAppStore } from '../../stores/appStore';
-import { estimateCostUsd } from '../../constants/pricing';
 import type { AgentInfo } from '../../types';
 
 function contextPercent(agent: AgentInfo): number {
@@ -36,7 +35,6 @@ export function MobilePulse() {
     }
 
     return {
-      cost: estimateCostUsd(totalInput, totalOutput),
       totalTokens: totalInput + totalOutput,
       running,
       idle,

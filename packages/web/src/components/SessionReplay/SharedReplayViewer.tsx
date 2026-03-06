@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
-import { Users, Clock, DollarSign, Play, Pause, SkipBack, SkipForward, MapPin } from 'lucide-react';
+import { Users, Clock, Play, Pause, SkipBack, SkipForward, MapPin } from 'lucide-react';
 import type { ShareableReplay, ReplayAnnotation, ReplayHighlight } from './types';
 import { AnnotationPin } from './AnnotationPin';
 
@@ -77,11 +77,6 @@ export function SharedReplayViewer() {
           <span className="text-xs text-th-text-muted flex items-center gap-1">
             <Users className="w-3 h-3" /> {replay.stats.agentCount} agents
           </span>
-          {replay.stats.totalCost > 0 && (
-            <span className="text-xs text-th-text-muted flex items-center gap-1">
-              <DollarSign className="w-3 h-3" /> ${replay.stats.totalCost.toFixed(2)}
-            </span>
-          )}
         </div>
       </header>
 

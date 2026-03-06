@@ -261,14 +261,14 @@ describe('MobilePulse', () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it('shows running count and cost', () => {
+  it('shows running count and token count', () => {
     mockAgents = [makeAgent({ status: 'running' }), makeAgent({ id: 'a2', status: 'idle' })];
     const { container } = render(<MobilePulse />);
-    // running count and cost are split across text nodes; check container text
+    // running count and tokens are split across text nodes; check container text
     const text = container.textContent || '';
     expect(text).toContain('1●');
-    // estimateCostUsd returns 2.47 → cost >= 1 → toFixed(0) → "$2"
-    expect(text).toMatch(/\$2/);
+    // Token count display (no dollar signs)
+    expect(text).toContain('tok');
   });
 
   it('shows max context pressure percentage', () => {
@@ -512,11 +512,11 @@ describe('RolePreview', () => {
     expect(screen.getByText(/Opus/)).toBeInTheDocument();
   });
 
-  it('shows cost estimate for the model', () => {
+  it('shows model info without cost', () => {
     render(
       <RolePreview icon="🔒" name="Expert" model="haiku" color="#333" description="" />,
     );
-    expect(screen.getByText(/~\$0\.003\/task/)).toBeInTheDocument();
+    expect(screen.getByText(/Haiku/)).toBeInTheDocument();
   });
 });
 

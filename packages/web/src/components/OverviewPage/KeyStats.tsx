@@ -1,11 +1,10 @@
 import { useMemo } from 'react';
-import { CheckCircle2, Users, GitCommit, DollarSign, Clock, Star } from 'lucide-react';
+import { CheckCircle2, Users, Hash, Clock } from 'lucide-react';
 import type { AgentInfo } from '../../types';
 
 interface KeyStatsProps {
   agents: AgentInfo[];
-  totalCost: number;
-  budget?: number;
+  totalTokens?: number;
   sessionStart?: string;
 }
 
@@ -16,7 +15,7 @@ interface StatItem {
   color: string;
 }
 
-export function KeyStats({ agents, totalCost, budget, sessionStart }: KeyStatsProps) {
+export function KeyStats({ agents, totalTokens, sessionStart }: KeyStatsProps) {
   const stats = useMemo((): StatItem[] => {
     const running = agents.filter((a) => a.status === 'running').length;
     const idle = agents.filter((a) => a.status === 'idle').length;
@@ -29,7 +28,8 @@ export function KeyStats({ agents, totalCost, budget, sessionStart }: KeyStatsPr
     const elapsedStr = elapsed >= 60 ? `${Math.floor(elapsed / 60)}h ${elapsed % 60}m` : `${elapsed}m`;
 
     const hasTokenData = agents.some((a) => (a.inputTokens ?? 0) > 0 || (a.outputTokens ?? 0) > 0);
-    const costHealth = budget ? (totalCost / budget > 0.9 ? 'text-red-400' : totalCost / budget > 0.7 ? 'text-yellow-400' : 'text-green-400') : 'text-th-text-alt';
+    const tokenCount = totalTokens ?? agents.reduce((s, a) => s + (a.inputTokens ?? 0) + (a.outputTokens ?? 0), 0);
+    const tokenStr = tokenCount >= 1_000_000 ? `${(tokenCount / 1_000_000).toFixed(1)}M` : tokenCount >= 1_000 ? `${(tokenCount / 1_000).toFixed(0)}k` : String(tokenCount);
 
     return [
       {
@@ -39,12 +39,10 @@ export function KeyStats({ agents, totalCost, budget, sessionStart }: KeyStatsPr
         color: running > 0 ? 'text-blue-400' : 'text-th-text-muted',
       },
       {
-        label: 'Cost',
-        value: hasTokenData
-          ? (budget ? `$${totalCost.toFixed(2)} / $${budget}` : `$${totalCost.toFixed(2)}`)
-          : 'N/A',
-        icon: <DollarSign size={14} />,
-        color: hasTokenData ? costHealth : 'text-th-text-muted',
+        label: 'Tokens',
+        value: hasTokenData ? `${tokenStr} total` : 'N/A',
+        icon: <Hash size={14} />,
+        color: hasTokenData ? 'text-th-text-alt' : 'text-th-text-muted',
       },
       {
         label: 'Duration',
@@ -59,7 +57,7 @@ export function KeyStats({ agents, totalCost, budget, sessionStart }: KeyStatsPr
         color: completed > 0 ? 'text-green-400' : 'text-th-text-muted',
       },
     ];
-  }, [agents, totalCost, budget, sessionStart]);
+  }, [agents, totalTokens, sessionStart]);
 
   return (
     <div className="bg-surface-raised border border-th-border rounded-lg p-4 h-[180px]" data-testid="key-stats">

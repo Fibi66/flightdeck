@@ -6,19 +6,18 @@ import { AxisBottom, AxisLeft } from '@visx/axis';
 
 export interface CostPoint {
   time: number;
-  cumulativeCost: number;
+  cumulativeCost: number; // actually cumulative tokens (kept for interface compat)
 }
 
 interface CostCurveProps {
   data: CostPoint[];
-  budget?: number;
   width?: number;
   height?: number;
 }
 
 const MARGIN = { top: 12, right: 12, bottom: 28, left: 40 };
 
-export function CostCurve({ data, budget, width = 260, height = 180 }: CostCurveProps) {
+export function CostCurve({ data, width = 260, height = 180 }: CostCurveProps) {
   const innerW = width - MARGIN.left - MARGIN.right;
   const innerH = height - MARGIN.top - MARGIN.bottom;
 
@@ -30,7 +29,7 @@ export function CostCurve({ data, budget, width = 260, height = 180 }: CostCurve
       };
     }
     const times = data.map((d) => d.time);
-    const maxCost = Math.max(...data.map((d) => d.cumulativeCost), budget ?? 0, 1);
+    const maxTokens = Math.max(...data.map((d) => d.cumulativeCost), 1);
 
     return {
       xScale: scaleTime({
@@ -38,30 +37,34 @@ export function CostCurve({ data, budget, width = 260, height = 180 }: CostCurve
         range: [0, innerW],
       }),
       yScale: scaleLinear({
-        domain: [0, maxCost * 1.1],
+        domain: [0, maxTokens * 1.1],
         range: [innerH, 0],
         nice: true,
       }),
     };
-  }, [data, budget, innerW, innerH]);
+  }, [data, innerW, innerH]);
 
   if (data.length === 0) {
     return (
       <div className="bg-surface-raised border border-th-border rounded-lg p-4 h-[180px] flex items-center justify-center" data-testid="cost-curve">
-        <p className="text-xs text-th-text-muted opacity-60">No cost data</p>
+        <p className="text-xs text-th-text-muted opacity-60">No token data</p>
       </div>
     );
   }
 
-  // Determine fill color based on current spend vs budget
-  const currentCost = data[data.length - 1]?.cumulativeCost ?? 0;
-  const ratio = budget ? currentCost / budget : 0;
-  const areaColor = ratio > 0.9 ? 'rgb(var(--chart-danger))' : ratio > 0.7 ? 'rgb(var(--chart-warning))' : 'rgb(var(--chart-success))';
+  const areaColor = 'rgb(var(--chart-success))';
+
+  const formatTokenAxis = (v: number | { valueOf(): number }) => {
+    const n = typeof v === 'number' ? v : v.valueOf();
+    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+    if (n >= 1_000) return `${(n / 1_000).toFixed(0)}k`;
+    return String(n);
+  };
 
   return (
     <div className="bg-surface-raised border border-th-border rounded-lg p-4 h-[180px]" data-testid="cost-curve">
       <h3 className="text-[11px] font-medium text-th-text-muted uppercase tracking-wider mb-1">
-        Cost Accumulation
+        Token Usage
       </h3>
       <svg width={width} height={height - 32}>
         <defs>
@@ -89,20 +92,6 @@ export function CostCurve({ data, budget, width = 260, height = 180 }: CostCurve
             strokeWidth={2}
           />
 
-          {/* Budget line */}
-          {budget != null && (
-            <line
-              x1={0}
-              x2={innerW}
-              y1={yScale(budget) ?? 0}
-              y2={yScale(budget) ?? 0}
-              stroke="rgb(var(--chart-danger))"
-              strokeWidth={1}
-              strokeDasharray="6 3"
-              strokeOpacity={0.7}
-            />
-          )}
-
           <AxisBottom
             top={innerH}
             scale={xScale}
@@ -122,7 +111,7 @@ export function CostCurve({ data, budget, width = 260, height = 180 }: CostCurve
           <AxisLeft
             scale={yScale}
             numTicks={3}
-            tickFormat={(v) => `$${v}`}
+            tickFormat={(v) => formatTokenAxis(v)}
             stroke="var(--th-border, #374151)"
             tickStroke="var(--th-border, #374151)"
             tickLabelProps={() => ({

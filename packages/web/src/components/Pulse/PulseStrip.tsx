@@ -1,19 +1,11 @@
 import { useMemo } from 'react';
-import { DollarSign, Users, AlertCircle, Brain } from 'lucide-react';
+import { Hash, Users, AlertCircle, Brain } from 'lucide-react';
 import { useAppStore } from '../../stores/appStore';
 import type { AgentInfo } from '../../types';
-import { estimateCostUsd } from '../../constants/pricing';
 import { PulseRecoveryIndicator } from '../Recovery';
 import { PulsePredictionIndicator } from '../Predictions';
 import { PulsePRIndicator } from '../GitHub';
 import { PulseConflictIndicator } from '../Conflicts';
-
-function formatCost(usd: number): string {
-  if (usd < 0.01) return '<$0.01';
-  if (usd < 1) return `$${usd.toFixed(2)}`;
-  if (usd < 100) return `$${usd.toFixed(2)}`;
-  return `$${usd.toFixed(0)}`;
-}
 
 function formatTokensCompact(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -76,7 +68,6 @@ export function PulseStrip() {
       }
     }
 
-    const cost = estimateCostUsd(totalInput, totalOutput);
     const totalTokens = totalInput + totalOutput;
 
     // Pending decisions: from appStore (tracked via WebSocket events)
@@ -100,7 +91,6 @@ export function PulseStrip() {
       totalInput,
       totalOutput,
       totalTokens,
-      cost,
       running,
       idle,
       failed,
@@ -120,14 +110,11 @@ export function PulseStrip() {
 
   return (
     <div className="h-10 border-b border-th-border bg-th-bg-alt/40 flex items-center px-4 gap-6 text-xs shrink-0 overflow-x-auto">
-      {/* Session Cost */}
+      {/* Session Tokens */}
       <div className="flex items-center gap-1.5 text-th-text-muted" title={stats.totalTokens > 0 ? `${formatTokensCompact(stats.totalTokens)} tokens total (${formatTokensCompact(stats.totalInput)} in / ${formatTokensCompact(stats.totalOutput)} out)` : 'Token data not available — Copilot CLI does not expose token counts'}>
-        <DollarSign className="w-3.5 h-3.5 text-emerald-400" />
+        <Hash className="w-3.5 h-3.5 text-blue-400" />
         {stats.totalTokens > 0 ? (
-          <>
-            <span className="font-mono font-medium text-th-text-alt">{formatCost(stats.cost)}</span>
-            <span className="text-th-text-muted hidden sm:inline">({formatTokensCompact(stats.totalTokens)})</span>
-          </>
+          <span className="font-mono font-medium text-th-text-alt">{formatTokensCompact(stats.totalTokens)}<span className="text-th-text-muted ml-1 hidden sm:inline">tokens</span></span>
         ) : (
           <span className="text-th-text-muted text-[10px]">Tokens N/A</span>
         )}

@@ -1,4 +1,3 @@
-import { TrendingDown, TrendingUp, Minus } from 'lucide-react';
 import type { AnalyticsOverview } from './types';
 
 interface SessionOverviewCardProps {
@@ -6,7 +5,7 @@ interface SessionOverviewCardProps {
 }
 
 export function SessionOverviewCard({ overview }: SessionOverviewCardProps) {
-  const { totalSessions, totalCostUsd, avgCostPerSession, sessions } = overview;
+  const { totalSessions, sessions } = overview;
 
   // Total duration from sessions
   const totalDurationMs = sessions.reduce((sum, s) => {
@@ -16,23 +15,13 @@ export function SessionOverviewCard({ overview }: SessionOverviewCardProps) {
   const totalHours = totalDurationMs / 3_600_000;
 
   const totalTasks = sessions.reduce((s, x) => s + x.taskCount, 0);
+  const totalTokens = sessions.reduce((s, x) => s + x.totalInputTokens + x.totalOutputTokens, 0);
 
-  // Cost trend arrow
-  const recent3 = sessions.slice(0, 3);
-  const older3 = sessions.slice(3, 6);
-  let TrendIcon = Minus;
-  let trendColor = 'text-th-text-muted';
-  if (recent3.length >= 2 && older3.length >= 2) {
-    const recentAvg = recent3.reduce((s, x) => s + x.estimatedCostUsd, 0) / recent3.length;
-    const olderAvg = older3.reduce((s, x) => s + x.estimatedCostUsd, 0) / older3.length;
-    if (recentAvg < olderAvg * 0.9) {
-      TrendIcon = TrendingDown;
-      trendColor = 'text-emerald-400';
-    } else if (recentAvg > olderAvg * 1.1) {
-      TrendIcon = TrendingUp;
-      trendColor = 'text-red-400';
-    }
-  }
+  const formatTokens = (n: number): string => {
+    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+    if (n >= 1_000) return `${(n / 1_000).toFixed(0)}k`;
+    return String(n);
+  };
 
   return (
     <div className="bg-surface-raised border border-th-border rounded-lg p-4" data-testid="session-overview-card">
@@ -41,16 +30,10 @@ export function SessionOverviewCard({ overview }: SessionOverviewCardProps) {
         <Stat label="Total sessions" value={String(totalSessions)} />
         <Stat label="Total time" value={`${totalHours.toFixed(1)}h`} />
         <Stat label="Tasks completed" value={String(totalTasks)} />
-        <div>
-          <p className="text-[10px] text-th-text-muted">Total cost</p>
-          <div className="flex items-center gap-1">
-            <span className="text-lg font-bold text-th-text-alt">${totalCostUsd.toFixed(2)}</span>
-            <TrendIcon size={14} className={trendColor} />
-          </div>
-        </div>
+        <Stat label="Total tokens" value={formatTokens(totalTokens)} />
       </div>
       <p className="text-[10px] text-th-text-muted mt-2">
-        Avg: ${avgCostPerSession.toFixed(2)}/session
+        Avg: {formatTokens(totalSessions > 0 ? Math.round(totalTokens / totalSessions) : 0)} tokens/session
       </p>
     </div>
   );

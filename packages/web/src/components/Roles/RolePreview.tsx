@@ -6,12 +6,6 @@ interface Props {
   description: string;
 }
 
-const MODEL_COSTS: Record<string, string> = {
-  opus: '~$0.03/task',
-  sonnet: '~$0.01/task',
-  haiku: '~$0.003/task',
-};
-
 export function RolePreview({ icon, name, model, color, description }: Props) {
   return (
     <div
@@ -37,8 +31,7 @@ export function RolePreview({ icon, name, model, color, description }: Props) {
         />
       </div>
       <div className="text-[10px] text-th-text-muted">
-        Model: {model.charAt(0).toUpperCase() + model.slice(1)} • Est. cost:{' '}
-        {MODEL_COSTS[model] || 'unknown'}
+        Model: {model.charAt(0).toUpperCase() + model.slice(1)}
       </div>
     </div>
   );

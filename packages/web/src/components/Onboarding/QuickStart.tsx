@@ -5,7 +5,6 @@ interface Playbook {
   name: string;
   icon: string;
   roles: { name: string; count: number }[];
-  costRange: string;
   timeRange: string;
   recommended?: boolean;
 }
@@ -16,7 +15,6 @@ const PLAYBOOKS: Playbook[] = [
     name: 'Code Review',
     icon: '🔍',
     roles: [{ name: 'Lead', count: 1 }, { name: 'Developer', count: 2 }, { name: 'Reviewer', count: 1 }],
-    costRange: '$5–15',
     timeRange: '30–60 min',
   },
   {
@@ -24,7 +22,6 @@ const PLAYBOOKS: Playbook[] = [
     name: 'Bug Fix',
     icon: '🐛',
     roles: [{ name: 'Architect', count: 1 }, { name: 'Developer', count: 2 }, { name: 'QA', count: 1 }],
-    costRange: '$8–20',
     timeRange: '30–90 min',
   },
   {
@@ -32,7 +29,6 @@ const PLAYBOOKS: Playbook[] = [
     name: 'Quick Fix',
     icon: '📝',
     roles: [{ name: 'Lead', count: 1 }, { name: 'Developer', count: 1 }],
-    costRange: '$2–5',
     timeRange: '15–30 min',
     recommended: true,
   },
@@ -41,7 +37,6 @@ const PLAYBOOKS: Playbook[] = [
     name: 'Docs Blitz',
     icon: '📚',
     roles: [{ name: 'Writer', count: 1 }, { name: 'Developer', count: 1 }],
-    costRange: '$3–8',
     timeRange: '20–45 min',
   },
   {
@@ -49,7 +44,6 @@ const PLAYBOOKS: Playbook[] = [
     name: 'Full Build',
     icon: '🏗',
     roles: [{ name: 'Lead', count: 1 }, { name: 'Architect', count: 1 }, { name: 'Developer', count: 3 }, { name: 'Reviewer', count: 1 }, { name: 'QA', count: 1 }],
-    costRange: '$15–40',
     timeRange: '60–180 min',
   },
 ];
@@ -107,7 +101,6 @@ export function QuickStart({ onSelectPlaybook, onStartFromScratch, onBrowseProje
               </div>
 
               <div className="flex gap-3 text-xs text-th-text-muted mt-auto">
-                <span>~{pb.costRange}</span>
                 <span>{pb.timeRange}</span>
               </div>
 

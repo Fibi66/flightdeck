@@ -21,7 +21,7 @@ export function PulsePredictionIndicator() {
     urgent.type === 'context_exhaustion'
       ? `ctx ~${urgent.timeHorizon}m`
       : urgent.type === 'cost_overrun'
-        ? `cost ~${urgent.timeHorizon}m`
+        ? `tokens ~${urgent.timeHorizon}m`
         : urgent.type === 'agent_stall'
           ? `stall ${urgent.timeHorizon}m`
           : urgent.type === 'file_conflict'

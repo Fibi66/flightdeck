@@ -135,7 +135,7 @@ describe('Cross-Session Analytics', () => {
       ]);
       render(<SessionOverviewCard overview={overview} />);
       expect(screen.getByText('2')).toBeInTheDocument(); // total sessions
-      expect(screen.getByText('$25.00')).toBeInTheDocument(); // total cost
+      expect(screen.getByText('240k')).toBeInTheDocument(); // total tokens (2 sessions × 120k each)
     });
   });
 

@@ -10,24 +10,19 @@ export interface SessionSummary {
   taskCount: number;
   totalInputTokens: number;
   totalOutputTokens: number;
-  estimatedCostUsd: number;
 }
 
 export interface AnalyticsOverview {
   totalSessions: number;
-  totalCostUsd: number;
-  avgCostPerSession: number;
   totalInputTokens: number;
   totalOutputTokens: number;
   sessions: SessionSummary[];
-  costTrend: Array<{ date: string; costUsd: number }>;
   roleContributions: Array<{ role: string; taskCount: number; tokenUsage: number }>;
 }
 
 export interface SessionComparison {
   sessions: SessionSummary[];
   deltas: {
-    costDelta: number;
     tokenDelta: number;
     agentCountDelta: number;
   } | null;
@@ -50,26 +45,26 @@ export function generateInsights(overview: AnalyticsOverview): AnalyticsInsight[
   const sessions = overview.sessions;
   if (sessions.length < 2) return insights;
 
-  // Cost trend
+  // Token usage trend
   const recent = sessions.slice(0, 5);
   const older = sessions.slice(5, 10);
   if (recent.length >= 3 && older.length >= 2) {
-    const recentAvg = recent.reduce((s, x) => s + x.estimatedCostUsd, 0) / recent.length;
-    const olderAvg = older.reduce((s, x) => s + x.estimatedCostUsd, 0) / older.length;
+    const recentAvg = recent.reduce((s, x) => s + x.totalInputTokens + x.totalOutputTokens, 0) / recent.length;
+    const olderAvg = older.reduce((s, x) => s + x.totalInputTokens + x.totalOutputTokens, 0) / older.length;
     const pctChange = ((recentAvg - olderAvg) / olderAvg) * 100;
     if (pctChange < -10) {
       insights.push({
         type: 'cost',
         severity: 'info',
-        title: 'Sessions getting cheaper',
-        description: `Cost down ${Math.abs(Math.round(pctChange))}% over recent sessions.`,
+        title: 'Sessions using fewer tokens',
+        description: `Token usage down ${Math.abs(Math.round(pctChange))}% over recent sessions.`,
       });
     } else if (pctChange > 20) {
       insights.push({
         type: 'cost',
         severity: 'warning',
-        title: 'Cost increasing',
-        description: `Sessions cost ${Math.round(pctChange)}% more than earlier. Review agent count and models.`,
+        title: 'Token usage increasing',
+        description: `Sessions use ${Math.round(pctChange)}% more tokens than earlier. Review agent count and models.`,
       });
     }
   }
@@ -107,11 +102,8 @@ export function generateInsights(overview: AnalyticsOverview): AnalyticsInsight[
 
 // ── Session scoring (1-5 stars) ─────────────────────────────────
 
-export function sessionScore(session: SessionSummary, avgCost: number): number {
+export function sessionScore(session: SessionSummary): number {
   let score = 3;
-  // Cost efficiency
-  if (session.estimatedCostUsd < avgCost * 0.7) score += 1;
-  else if (session.estimatedCostUsd > avgCost * 1.5) score -= 1;
   // Task count
   if (session.taskCount >= 10) score += 1;
   else if (session.taskCount <= 1) score -= 1;

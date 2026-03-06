@@ -70,16 +70,6 @@ export function PlaybookUpdatePrompt({
               </span>
             </div>
           )}
-          {costDelta != null && costDelta !== 0 && (
-            <div className="flex items-center gap-2 text-xs">
-              <span className={costDelta > 0 ? 'text-red-400 font-mono' : 'text-green-400 font-mono'}>
-                {costDelta > 0 ? '↑' : '↓'}
-              </span>
-              <span className="text-th-text-alt">
-                Cost {costDelta > 0 ? 'increased' : 'decreased'} by ${Math.abs(costDelta).toFixed(2)}
-              </span>
-            </div>
-          )}
         </div>
 
         {/* Actions */}

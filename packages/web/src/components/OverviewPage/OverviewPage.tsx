@@ -3,7 +3,6 @@ import { useAppStore } from '../../stores/appStore';
 import { useLeadStore } from '../../stores/leadStore';
 import { useShallow } from 'zustand/react/shallow';
 import { apiFetch } from '../../hooks/useApi';
-import { estimateCostUsd } from '../../constants/pricing';
 import { POLL_INTERVAL_MS } from '../../constants/timing';
 import { ProgressTimeline } from './ProgressTimeline';
 import { TaskBurndown } from './TaskBurndown';
@@ -46,7 +45,7 @@ export function OverviewPage(_props: Props) {
   const [costData, setCostData] = useState<CostPoint[]>([]);
   const [heatmapBuckets, setHeatmapBuckets] = useState<HeatmapBucket[]>([]);
   const [keyframes, setKeyframes] = useState<ReplayKeyframe[]>([]);
-  const [totalCost, setTotalCost] = useState(0);
+  const [totalTokens, setTotalTokens] = useState(0);
   const [totalTasks, setTotalTasks] = useState(0);
   const mountedRef = useRef(true);
 
@@ -70,10 +69,10 @@ export function OverviewPage(_props: Props) {
           const hBuckets: HeatmapBucket[] = [];
           let taskTotal = 0;
 
-          // Use real token-based cost from agents (same source as PulseStrip)
+          // Use real token counts from agents (same source as PulseStrip)
           const totalInput = agents.reduce((s, a) => s + (a.inputTokens ?? 0), 0);
           const totalOutput = agents.reduce((s, a) => s + (a.outputTokens ?? 0), 0);
-          const realCost = estimateCostUsd(totalInput, totalOutput);
+          const realTokens = totalInput + totalOutput;
 
           for (const frame of kf) {
             const t = new Date(frame.timestamp).getTime();
@@ -86,9 +85,9 @@ export function OverviewPage(_props: Props) {
             if (frame.type === 'delegation') { taskTotal++; inProgress++; }
             if (frame.type === 'milestone' || frame.type === 'task') { completed++; inProgress = Math.max(0, inProgress - 1); }
 
-            // Distribute real cost proportionally across keyframes for the curve
+            // Distribute real token usage proportionally across keyframes for the curve
             const progress = (tPoints.length + 1) / kf.length;
-            cPoints.push({ time: t, cumulativeCost: realCost * progress });
+            cPoints.push({ time: t, cumulativeCost: realTokens * progress });
 
             tPoints.push({
               time: t,
@@ -104,7 +103,7 @@ export function OverviewPage(_props: Props) {
           setBurndownData(bPoints);
           setCostData(cPoints);
           setHeatmapBuckets(hBuckets);
-          setTotalCost(realCost);
+          setTotalTokens(realTokens);
           setTotalTasks(taskTotal);
         }
       }
@@ -147,7 +146,7 @@ export function OverviewPage(_props: Props) {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <TaskBurndown data={burndownData} totalTasks={totalTasks} />
         <CostCurve data={costData} />
-        <KeyStats agents={agents} totalCost={totalCost} sessionStart={sessionStart} />
+        <KeyStats agents={agents} totalTokens={totalTokens} sessionStart={sessionStart} />
       </div>
 
       {/* Agent Activity Heatmap */}

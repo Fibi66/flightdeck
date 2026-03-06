@@ -1821,7 +1821,7 @@ export function LeadDashboard({ api, ws }: Props) {
                         dag: { icon: <Network className="w-3 h-3" />, label: 'DAG', badge: dagStatus?.tasks.length },
                         models: { icon: <Wrench className="w-3 h-3" />, label: 'Models' },
                         tokens: { icon: <BarChart3 className="w-3 h-3" />, label: 'Tokens' },
-                        costs: { icon: <BarChart3 className="w-3 h-3" />, label: 'Costs' },
+                        costs: { icon: <BarChart3 className="w-3 h-3" />, label: 'Attribution' },
                         timers: { icon: <Clock className="w-3 h-3" />, label: 'Timers', badge: activeTimerCount || undefined },
                       };
                       const orderedIds = tabOrder.filter((id) => id in allTabs && !hiddenTabs.has(id));

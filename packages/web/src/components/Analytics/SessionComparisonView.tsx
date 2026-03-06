@@ -20,10 +20,6 @@ export function SessionComparisonView({ comparison, onClose }: SessionComparison
   const [a, b] = comparison.sessions;
   if (!a || !b) return null;
 
-  const costA = a.estimatedCostUsd;
-  const costB = b.estimatedCostUsd;
-  const costDelta = costB > 0 ? ((costA - costB) / costB) * 100 : 0;
-
   const tokenA = a.totalInputTokens + a.totalOutputTokens;
   const tokenB = b.totalInputTokens + b.totalOutputTokens;
   const tokenDelta = tokenB > 0 ? ((tokenA - tokenB) / tokenB) * 100 : 0;
@@ -32,14 +28,6 @@ export function SessionComparisonView({ comparison, onClose }: SessionComparison
   const taskDelta = a.taskCount - b.taskCount;
 
   const rows: Array<{ label: string; valA: string; valB: string; delta: string; lowerIsBetter: boolean; numDelta: number }> = [
-    {
-      label: 'Cost',
-      valA: `$${costA.toFixed(2)}`,
-      valB: `$${costB.toFixed(2)}`,
-      delta: formatDelta(costDelta, '%'),
-      lowerIsBetter: true,
-      numDelta: costDelta,
-    },
     {
       label: 'Tokens',
       valA: tokenA.toLocaleString(),

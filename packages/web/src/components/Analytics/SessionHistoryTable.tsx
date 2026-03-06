@@ -5,17 +5,15 @@ import type { SessionSummary } from './types';
 
 interface SessionHistoryTableProps {
   sessions: SessionSummary[];
-  avgCost: number;
   onSelect?: (leadId: string) => void;
   selectedIds?: string[];
   onToggleCompare?: (leadId: string) => void;
 }
 
-type SortField = 'date' | 'cost' | 'tasks' | 'agents';
+type SortField = 'date' | 'tokens' | 'tasks' | 'agents';
 
 export function SessionHistoryTable({
   sessions,
-  avgCost,
   onSelect,
   selectedIds = [],
   onToggleCompare,
@@ -31,7 +29,7 @@ export function SessionHistoryTable({
       let cmp = 0;
       switch (sortField) {
         case 'date': cmp = new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime(); break;
-        case 'cost': cmp = a.estimatedCostUsd - b.estimatedCostUsd; break;
+        case 'tokens': cmp = (a.totalInputTokens + a.totalOutputTokens) - (b.totalInputTokens + b.totalOutputTokens); break;
         case 'tasks': cmp = a.taskCount - b.taskCount; break;
         case 'agents': cmp = a.agentCount - b.agentCount; break;
       }
@@ -84,8 +82,8 @@ export function SessionHistoryTable({
               </th>
               <th className="pb-2 text-left">Project</th>
               <th className="pb-2 text-left">Duration</th>
-              <th className="pb-2 text-right cursor-pointer select-none" onClick={() => toggleSort('cost')}>
-                <span className="inline-flex items-center gap-0.5">Cost <SortIcon field="cost" /></span>
+              <th className="pb-2 text-right cursor-pointer select-none" onClick={() => toggleSort('tokens')}>
+                <span className="inline-flex items-center gap-0.5">Tokens <SortIcon field="tokens" /></span>
               </th>
               <th className="pb-2 text-right cursor-pointer select-none" onClick={() => toggleSort('tasks')}>
                 <span className="inline-flex items-center gap-0.5">Tasks <SortIcon field="tasks" /></span>
@@ -119,11 +117,11 @@ export function SessionHistoryTable({
                 <td className="py-2 text-th-text-alt">{formatDate(s.startedAt)}</td>
                 <td className="py-2 text-th-text-muted truncate max-w-[120px]">{s.projectId ?? s.leadId.slice(0, 8)}</td>
                 <td className="py-2 text-th-text-muted">{formatDuration(s)}</td>
-                <td className="py-2 text-right text-th-text-alt">${s.estimatedCostUsd.toFixed(2)}</td>
+                <td className="py-2 text-right text-th-text-alt">{((s.totalInputTokens + s.totalOutputTokens) / 1000).toFixed(0)}k</td>
                 <td className="py-2 text-right text-th-text-alt">{s.taskCount}</td>
                 <td className="py-2 text-right text-th-text-alt">{s.agentCount}</td>
                 <td className="py-2 text-center">
-                  <SessionScoreBadge session={s} avgCost={avgCost} />
+                  <SessionScoreBadge session={s} />
                 </td>
               </tr>
             ))}

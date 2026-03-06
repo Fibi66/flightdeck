@@ -38,28 +38,28 @@ const mockAgents: AgentInfo[] = [
 
 describe('KeyStats', () => {
   it('renders stats card', () => {
-    render(<KeyStats agents={mockAgents} totalCost={5.50} budget={15} />);
+    render(<KeyStats agents={mockAgents} />);
     expect(screen.getByTestId('key-stats')).toBeTruthy();
     expect(screen.getByText('Key Stats')).toBeTruthy();
     expect(screen.getByText('1 active / 3 total')).toBeTruthy();
-    // No token data on mock agents → cost shows N/A
+    // No token data on mock agents → tokens shows N/A
     expect(screen.getByText('N/A')).toBeTruthy();
   });
 
-  it('shows cost when token data available', () => {
+  it('shows tokens when token data available', () => {
     const agentsWithTokens = mockAgents.map((a, i) =>
       i === 0 ? { ...a, inputTokens: 1000, outputTokens: 500 } : a,
     );
-    render(<KeyStats agents={agentsWithTokens} totalCost={3.20} />);
-    expect(screen.getByText('$3.20')).toBeTruthy();
+    render(<KeyStats agents={agentsWithTokens} totalTokens={1500} />);
+    expect(screen.getByText('2k total')).toBeTruthy();
   });
 
-  it('shows cost with budget when token data available', () => {
+  it('shows token count when token data available', () => {
     const agentsWithTokens = mockAgents.map((a, i) =>
       i === 0 ? { ...a, inputTokens: 1000, outputTokens: 500 } : a,
     );
-    render(<KeyStats agents={agentsWithTokens} totalCost={5.50} budget={15} />);
-    expect(screen.getByText('$5.50 / $15')).toBeTruthy();
+    render(<KeyStats agents={agentsWithTokens} totalTokens={150000} />);
+    expect(screen.getByText('150k total')).toBeTruthy();
   });
 });
 

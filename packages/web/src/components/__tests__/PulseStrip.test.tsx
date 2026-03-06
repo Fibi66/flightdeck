@@ -46,16 +46,14 @@ describe('PulseStrip', () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it('shows session cost and token count when agents exist', () => {
+  it('shows token count when agents exist', () => {
     setAgents([
       makeAgent({ inputTokens: 50_000, outputTokens: 10_000, status: 'running' }),
       makeAgent({ inputTokens: 30_000, outputTokens: 5_000, status: 'idle' }),
     ]);
     render(<PulseStrip />);
-    // Cost: (80k * 0.000003) + (15k * 0.000015) = 0.24 + 0.225 = $0.47
-    expect(screen.getByText('$0.47')).toBeDefined();
-    // Token count
-    expect(screen.getByText('(95k)')).toBeDefined();
+    // Token count: 50k + 10k + 30k + 5k = 95k
+    expect(screen.getByText('95k')).toBeDefined();
   });
 
   it('shows pending decisions count from appStore', () => {
