@@ -47,9 +47,11 @@ Step-by-step process for shipping a release, based on v0.3.0.
 
 ## Release
 
-### 8. Tag & Push
+### 8. Tagging
 
-> **⛔ HARD RULE: NEVER touch git tags — no create, no delete, no push. Tags are 100% user-managed. Only do version bumps in package.json and CHANGELOG. No exceptions.**
+> **⛔ HARD RULE: NEVER touch git tags — no create, no delete, no push. Tags are 100% user-managed. Only prepare version bumps in package.json and CHANGELOG updates. This caused an issue when v0.3.0 tag was pushed by an agent — user had to bump to 0.3.1. No exceptions.**
+
+Your job ends at version bump + CHANGELOG. User handles tagging.
 
 ## CHANGELOG Format
 
@@ -77,10 +79,9 @@ When multiple agents are working on release prep:
 3. QA runs comprehensive page sweep with screenshots
 4. Tech writer reviews documentation
 5. Use a group chat (e.g., `v030-team`) to coordinate
-6. Tag is pushed only after QA gives explicit GO sign-off
+6. Your job ends at version bump + CHANGELOG — user handles tagging
 
 ## Post-Release
 
-- [ ] Verify tag appears on GitHub
 - [ ] Update any external documentation or announcements
 - [ ] Create `## Unreleased` section in CHANGELOG.md for next cycle

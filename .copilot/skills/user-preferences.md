@@ -67,4 +67,4 @@ Documented preferences from user feedback. Follow these when building new featur
 
 ## Release Process
 
-- **NEVER touch git tags** — no create, no delete, no push. Tags are 100% user-managed. Only do version bumps in package.json and CHANGELOG. This is a HARD RULE.
+- **NEVER touch git tags** — no create, no delete, no push. Tags are 100% user-managed. Only prepare version bumps in package.json and CHANGELOG updates. This caused an issue when v0.3.0 tag was pushed by an agent — user had to bump to 0.3.1. HARD RULE, no exceptions.
