@@ -51,18 +51,20 @@ export function useHistoricalAgents(liveAgentCount: number, projectId?: string |
 
     (async () => {
       try {
-        // Try /api/agents first — it's authoritative when populated
-        const apiAgents = await apiFetch<any[]>('/agents').catch(() => []);
-        const arr = Array.isArray(apiAgents) ? apiAgents : [];
-        if (arr.length > 0) {
-          if (!cancelled && mountedRef.current) {
-            setAgents(arr.map(normalize));
-            setLoading(false);
+        // When no specific project requested, try /api/agents for global data
+        if (!projectId) {
+          const apiAgents = await apiFetch<any[]>('/agents').catch(() => []);
+          const arr = Array.isArray(apiAgents) ? apiAgents : [];
+          if (arr.length > 0) {
+            if (!cancelled && mountedRef.current) {
+              setAgents(arr.map(normalize));
+              setLoading(false);
+            }
+            return;
           }
-          return;
         }
 
-        // Fall back to deriving from keyframes
+        // Derive from per-project keyframes
         const id = projectId ?? await getFirstProjectId();
         if (!id) { setLoading(false); return; }
 

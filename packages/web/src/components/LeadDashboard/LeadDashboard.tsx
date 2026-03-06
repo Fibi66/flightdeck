@@ -42,7 +42,18 @@ export function LeadDashboard({ api, ws }: Props) {
     useShallow((s) => ({ projects: s.projects, selectedLeadId: s.selectedLeadId, drafts: s.drafts }))
   );
   const agents = useAppStore((s) => s.agents);
-  const { agents: derivedAgents } = useHistoricalAgents(agents.length, selectedLeadId);
+
+  // Resolve project ID for historical agent derivation:
+  // - "project:xxx" → strip prefix to get the project UUID
+  // - Live lead UUID → use the lead's projectId, or the lead UUID itself as fallback
+  const historicalProjectId = useMemo(() => {
+    if (!selectedLeadId) return null;
+    if (selectedLeadId.startsWith('project:')) return selectedLeadId.slice(8);
+    const lead = agents.find((a) => a.id === selectedLeadId);
+    return lead?.projectId ?? selectedLeadId;
+  }, [selectedLeadId, agents]);
+
+  const { agents: derivedAgents } = useHistoricalAgents(agents.length, historicalProjectId);
   const activeTimerCount = useTimerStore(selectActiveTimerCount);
   const input = selectedLeadId ? (drafts[selectedLeadId] ?? '') : '';
   const setInput = useCallback((text: string) => {
