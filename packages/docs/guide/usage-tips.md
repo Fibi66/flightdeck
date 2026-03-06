@@ -6,27 +6,7 @@ Practical tips for getting the most out of Flightdeck — whether you're debuggi
 
 ## Debugging Frontend with Playwright MCP Server
 
-Flightdeck's web UI can be inspected and debugged using a Playwright MCP server, letting AI agents interact with the running dashboard directly.
-
-### Connecting Playwright MCP
-
-1. Start Flightdeck normally (`flightdeck` or `npm run dev`)
-2. Configure your Copilot agent with the Playwright MCP server
-3. Navigate to `http://localhost:5173` (dev) or the port shown in terminal
-
-### What You Can Do
-
-- **Take screenshots** of any page — useful for verifying UI changes or capturing the current state
-- **Navigate pages** — click through Lead Dashboard, Canvas, Timeline, Settings
-- **Inspect elements** — check accessibility snapshots, verify text content, find interactive elements
-- **Fill forms** — test the Command Palette, Settings panels, or New Project dialog
-- **Run JavaScript** — evaluate expressions in the browser context for debugging
-
-### Tips
-
-- Use `browser_snapshot` (accessibility tree) over screenshots for understanding page structure — it's faster and more reliable for automation
-- When debugging a visual issue, take a screenshot first, then use the snapshot to find the element reference
-- The Playwright MCP works well for self-improvement workflows: explore your own UI, find rough edges, file tasks to fix them
+You can set up the [Playwright MCP server](https://github.com/microsoft/playwright-mcp) to give your AI agents the ability to interact with the Flightdeck UI directly — taking screenshots, clicking through pages, inspecting elements, and verifying changes. Once configured, just ask your agent to "use Playwright to check the Settings page" or "take a screenshot of the Timeline." The agent handles all the Playwright commands; you don't need to know the API.
 
 ---
 
@@ -60,12 +40,11 @@ The **Radical Thinker** agent role is designed for first-principles brainstormin
 
 ## Monitoring Group Discussions
 
-When multiple agents need to coordinate on a shared concern (API design, naming conventions, architecture), they use **group chats**.
+When multiple agents need to coordinate on a shared concern (API design, naming conventions, architecture), they form **group chats** automatically.
 
 ### How Groups Work
 
-- Groups are created when 3+ agents are delegated the same feature, or manually via `CREATE_GROUP`
-- Any agent can query existing groups with `QUERY_GROUPS`
+- Groups are created automatically when 3+ agents are working on the same feature
 - Messages in groups are visible to all members
 - The **Group Chats** page in the dashboard shows all active and past discussions
 
@@ -78,9 +57,8 @@ When multiple agents need to coordinate on a shared concern (API design, naming 
 
 ### Tips
 
-- Check groups before creating new ones — duplicate groups fragment the conversation
 - Groups auto-archive when the related task completes
-- Use groups for design debates instead of long chains of direct messages
+- If agents seem to be working in silos, check whether groups formed — lack of groups may indicate a coordination gap
 
 ---
 
