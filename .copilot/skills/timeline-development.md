@@ -272,7 +272,68 @@ The replay scrubber must ALWAYS be visible at the bottom. It's placed OUTSIDE th
 
 ### Speed Options
 
-Default speed is **4×** (commit 6eaed3a) — 1× was too slow for reviewing sessions. Available speeds: 1×, 2×, 4× (default), 8×, 16×, 32×.
+Default speed is **4×** (commit 8e70c6b) — 1× was too slow for reviewing sessions. Available speeds use logarithmic progression: **4×, 8×, 16×, 32×, 64×, 120×, 240×, 720×**.
+
+### Always-Visible Scrub Bar (commit e3a2ff4)
+
+The replay scrub bar is always visible — in both live and replay modes. This makes replay discoverable:
+
+- **Live mode**: Green fill, "● LIVE" badge, playhead at 100%
+- **Replay mode**: Play/skip/speed controls + muted "Live" button to return
+- **Auto-switch**: Clicking/dragging the scrub bar in live mode auto-switches to replay via `onExitLive()`
+- **Keyframes always fetched**: `useSessionReplay` receives `effectiveLeadId` regardless of `liveMode`, not gated by `!liveMode`
+
+### Drag-to-Scrub (commit d9c20dd)
+
+Uses Pointer Events API for unified mouse + touch support:
+
+```tsx
+onPointerDown → setPointerCapture(id) → start drag
+onPointerMove → compute position, update currentTime
+onPointerUp → releasePointerCapture, resume if was playing
+```
+
+- `setPointerCapture(pointerId)` ensures tracking continues when cursor leaves the scrub bar
+- `wasPlayingRef` stores playback state; pause during drag, resume on release
+- `touch-none` CSS class prevents browser scroll interference
+- Progress fill `transition` disabled during drag for smooth updates
+
+### Fixed-Resolution Panning (commit 650386c)
+
+During replay, the view auto-zooms to a fixed time window and pans to follow progress:
+
+- **Window size**: 5 minutes or 20% of session duration, whichever is larger
+- **Camera position**: Current replay time sits at ~70% of the visible window
+- **Auto-computes** `zoomLevel` and `panOffset` from `replayProgress` (0-1 fraction)
+- **User override**: Manual zoom/pan sets `userZoomedRef=true`, disabling auto-pan
+- **Full time range preserved**: `displayData.timeRange` keeps the full session range; only agents/comms/segments are clipped to the replay cutoff
+
+### stableRangeRef Fix (commit 6b3e8f1)
+
+**Bug**: `stableRangeRef` froze the chart X-axis during replay, preventing Gantt bar animation.
+
+**Root cause**: The `!liveMode` branch returned the previous range value, freezing the scale.
+
+**Fix**: During replay, `fullRange` uses the same stable-only-extend logic as live mode. The auto-panning effect handles windowing separately via `zoomLevel`/`panOffset`.
+
+### Per-Project State Reset (commit 12826db)
+
+When `leadId` changes (project switch), `useSessionReplay` must reset:
+
+```tsx
+setCurrentTime(0);
+setPlaying(false);
+setWorldState(null);
+sessionStartRef.current = 0;
+```
+
+Also reset `stableRangeRef.current = null` and `userZoomedRef.current = false` in `TimelineContainer` when `selectedLeadId` changes.
+
+### Live Indicator Styling (commit f56c48e)
+
+The "Live" button in the scrub bar must NOT use green during replay mode:
+- **Live mode**: Green dot + "LIVE" text (bg-green-400, animate-pulse)
+- **Replay mode**: Muted grey dot/text for the "return to live" button, green on hover
 
 ### Auto-Switch to Replay Mode
 
@@ -418,9 +479,15 @@ Run with: `cd packages/web && npx vitest run src/components/Timeline/`
 | 314905f | Drag-to-pan with pointer events |
 | bc503bd | **Scroll axis decoupling** — the most impactful UX fix |
 | a95dfc0 | Sticky scrubber bar (moved outside scrollable container) |
-| 6eaed3a | Default replay speed changed from 1× to 4× |
+| 8e70c6b | Speed options: 4×–720× logarithmic progression |
 | 7b71bdb | Horizontal overflow for 10+ agent sessions |
 | 28d7d9d | Auto-switch to replay mode for historical sessions |
 | 74f57f4 | Keyframe scoping by projectId (P2 bug fix) |
-| 0483145 | Animation timing fix |
-| 18045d1 | Replay progressive reveal — the breakthrough that made replay animate |
+| 0483145 | Removed dead ShareDropdown |
+| 18045d1 | **Replay progressive reveal** — the breakthrough that made replay animate |
+| 12826db | Per-project state reset on leadId change |
+| d9c20dd | Drag-to-scrub with Pointer Events API |
+| 6b3e8f1 | stableRangeRef unfreeze for Gantt bar animation |
+| e3a2ff4 | Always-visible scrub bar with auto-switch UX |
+| 650386c | Fixed-resolution panning during replay |
+| f56c48e | Live indicator muted color during replay |
