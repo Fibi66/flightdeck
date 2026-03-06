@@ -99,7 +99,7 @@ export function ReplayScrubber({ leadId, replay: externalReplay, liveMode, onExi
   const skipBack = useCallback(() => seek(Math.max(0, currentTime - 5000)), [seek, currentTime]);
   const skipForward = useCallback(() => seek(Math.min(duration, currentTime + 5000)), [seek, currentTime, duration]);
 
-  if (loading) {
+  if (loading && !liveMode) {
     return (
       <div className="bg-surface border border-th-border rounded-lg p-4">
         <div className="flex items-center gap-2 text-th-text-muted text-sm">
@@ -110,7 +110,7 @@ export function ReplayScrubber({ leadId, replay: externalReplay, liveMode, onExi
     );
   }
 
-  if (error) {
+  if (error && !liveMode) {
     return (
       <div className="bg-surface border border-th-border rounded-lg p-4">
         <p className="text-xs text-red-400">Replay unavailable: {error}</p>
@@ -118,7 +118,7 @@ export function ReplayScrubber({ leadId, replay: externalReplay, liveMode, onExi
     );
   }
 
-  if (keyframes.length === 0) {
+  if (keyframes.length === 0 && !liveMode) {
     return (
       <div className="bg-surface border border-th-border rounded-lg p-4 text-center">
         <p className="text-xs text-th-text-muted">No replay data available for this session.</p>

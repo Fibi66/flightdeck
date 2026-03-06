@@ -112,12 +112,21 @@ describe('ReplayScrubber', () => {
     });
   });
 
-  it('shows empty state when no keyframes', async () => {
+  it('shows empty state when no keyframes in replay mode', async () => {
     mockApiFetch.mockResolvedValue({ keyframes: [] });
     render(<ReplayScrubber leadId="lead-1" />);
     await waitFor(() => {
       expect(screen.getByText(/No replay data available/)).toBeDefined();
     });
+  });
+
+  it('shows live scrub bar even with no keyframes in live mode', async () => {
+    mockApiFetch.mockResolvedValue({ keyframes: [] });
+    render(<ReplayScrubber leadId="lead-1" liveMode={true} />);
+    await waitFor(() => {
+      expect(screen.getByTestId('replay-scrubber')).toBeDefined();
+    });
+    expect(screen.getByText('LIVE')).toBeDefined();
   });
 
   it('renders scrubber with controls when keyframes exist', async () => {
