@@ -57,6 +57,7 @@ export class AcpConnection extends EventEmitter {
   private _isPrompting = false;
   private _promptingStartedAt: number | null = null;
   private promptQueue: PromptContent[] = [];
+  private promptQueuePriorityCount = 0;
   private autopilot: boolean;
   private agentCapabilities: acp.AgentCapabilities | null = null;
   private pendingPermission: {
@@ -269,6 +270,11 @@ export class AcpConnection extends EventEmitter {
     this.agentCapabilities = initResult.agentCapabilities ?? null;
   }
 
+  /**
+   * Queue a prompt for delivery. If `opts.priority` is true, the prompt is
+   * inserted after existing priority messages (FIFO within priority class)
+   * but before all normal messages.
+   */
   async prompt(content: PromptContent, opts?: { priority?: boolean }): Promise<{ stopReason: acp.StopReason; usage?: { inputTokens: number; outputTokens: number } }> {
     if (!this.connection || !this.sessionId) {
       throw new Error('ACP connection not established');
@@ -277,7 +283,8 @@ export class AcpConnection extends EventEmitter {
     // Queue if already prompting — will be sent when current prompt completes
     if (this._isPrompting) {
       if (opts?.priority) {
-        this.promptQueue.unshift(content);
+        this.promptQueue.splice(this.promptQueuePriorityCount, 0, content);
+        this.promptQueuePriorityCount++;
       } else {
         this.promptQueue.push(content);
       }
@@ -327,6 +334,7 @@ export class AcpConnection extends EventEmitter {
   private drainQueue(): void {
     if (this.promptQueue.length > 0) {
       const items = this.promptQueue.splice(0);
+      this.promptQueuePriorityCount = 0;
       // Merge queued items: concatenate consecutive strings, preserve block arrays
       const merged: acp.ContentBlock[] = [];
       const textParts: string[] = [];

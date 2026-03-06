@@ -138,7 +138,7 @@ describe('User message priority', () => {
   });
 
   describe('multiple priority messages maintain FIFO among themselves', () => {
-    it('first priority message stays at front, second goes after it', () => {
+    it('first priority message stays at front, second goes after it (FIFO)', () => {
       const agent = createTestAgent();
       (agent as any).status = 'running';
 
@@ -148,11 +148,77 @@ describe('User message priority', () => {
       agent.queueMessage('user-msg-2', { priority: true });
 
       const summaries = agent.getPendingMessageSummaries();
-      // Priority messages unshift: user-msg-2 at [0], user-msg-1 at [1], then agents
-      expect(summaries[0]).toBe('user-msg-2');
-      expect(summaries[1]).toBe('user-msg-1');
+      // Priority messages maintain FIFO: user-msg-1 first, user-msg-2 second, then agents
+      expect(summaries[0]).toBe('user-msg-1');
+      expect(summaries[1]).toBe('user-msg-2');
       expect(summaries[2]).toBe('agent-msg-1');
       expect(summaries[3]).toBe('agent-msg-2');
+    });
+
+    it('three priority messages stay in insertion order', () => {
+      const agent = createTestAgent();
+      (agent as any).status = 'running';
+
+      agent.queueMessage('normal-1');
+      agent.queueMessage('priority-A', { priority: true });
+      agent.queueMessage('priority-B', { priority: true });
+      agent.queueMessage('normal-2');
+      agent.queueMessage('priority-C', { priority: true });
+
+      const summaries = agent.getPendingMessageSummaries();
+      expect(summaries[0]).toBe('priority-A');
+      expect(summaries[1]).toBe('priority-B');
+      expect(summaries[2]).toBe('priority-C');
+      expect(summaries[3]).toBe('normal-1');
+      expect(summaries[4]).toBe('normal-2');
+    });
+  });
+
+  describe('rate limiting', () => {
+    it('drops messages when queue is full', () => {
+      const agent = createTestAgent();
+      (agent as any).status = 'running';
+
+      // Fill queue to MAX_PENDING_MESSAGES (50)
+      for (let i = 0; i < 50; i++) {
+        agent.queueMessage(`msg-${i}`);
+      }
+      expect(agent.getPendingMessageSummaries().length).toBe(50);
+
+      // Next message should be dropped
+      agent.queueMessage('overflow-msg');
+      expect(agent.getPendingMessageSummaries().length).toBe(50);
+      expect(agent.getPendingMessageSummaries()).not.toContain('overflow-msg');
+    });
+
+    it('drops priority messages when queue is full', () => {
+      const agent = createTestAgent();
+      (agent as any).status = 'running';
+
+      for (let i = 0; i < 50; i++) {
+        agent.queueMessage(`msg-${i}`);
+      }
+
+      agent.queueMessage('priority-overflow', { priority: true });
+      expect(agent.getPendingMessageSummaries().length).toBe(50);
+    });
+
+    it('allows messages again after queue drains', () => {
+      const agent = createTestAgent();
+      (agent as any).status = 'running';
+
+      for (let i = 0; i < 50; i++) {
+        agent.queueMessage(`msg-${i}`);
+      }
+
+      // Clear queue
+      agent.clearPendingMessages();
+      expect(agent.getPendingMessageSummaries().length).toBe(0);
+
+      // Should accept messages again
+      agent.queueMessage('after-clear');
+      expect(agent.getPendingMessageSummaries().length).toBe(1);
+      expect(agent.getPendingMessageSummaries()[0]).toBe('after-clear');
     });
   });
 });

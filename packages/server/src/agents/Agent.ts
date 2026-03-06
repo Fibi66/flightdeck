@@ -119,6 +119,8 @@ export class Agent {
   private acpConnection: AcpConnection | null = null;
   private config: ServerConfig;
   private pendingMessages: PromptContent[] = [];
+  private pendingPriorityCount = 0;
+  private static readonly MAX_PENDING_MESSAGES = 50;
   private peers: AgentContextInfo[];
   private readonly events = new AgentEventEmitter();
 
@@ -172,6 +174,7 @@ export class Agent {
   /** @internal */ _drainOneMessage(): void {
     if (this.pendingMessages.length > 0) {
       const next = this.pendingMessages.shift()!;
+      if (this.pendingPriorityCount > 0) this.pendingPriorityCount--;
       this.write(next);
     }
   }
@@ -396,24 +399,35 @@ When you discover something important about the codebase, a pattern, a gotcha, o
     this.write(message, opts);
   }
 
-  /** Queue a message — delivered after the agent finishes its current prompt */
+  /**
+   * Queue a message for delivery after the agent finishes its current prompt.
+   * If `opts.priority` is true, the message is inserted after existing priority
+   * messages but before normal messages (FIFO within priority class).
+   * Queue is capped at MAX_PENDING_MESSAGES — excess messages are dropped with a warning.
+   */
   queueMessage(message: PromptContent, opts?: { priority?: boolean }): void {
     if (this.systemPaused) {
-      if (opts?.priority) {
-        this.pendingMessages.unshift(message);
-      } else {
-        this.pendingMessages.push(message);
-      }
+      this.enqueueMessage(message, opts?.priority);
       return;
     }
     if (this.status === 'idle') {
       this.write(message, opts);
     } else {
-      if (opts?.priority) {
-        this.pendingMessages.unshift(message);
-      } else {
-        this.pendingMessages.push(message);
-      }
+      this.enqueueMessage(message, opts?.priority);
+    }
+  }
+
+  /** Internal: insert message into pendingMessages with FIFO priority ordering and rate limiting */
+  private enqueueMessage(message: PromptContent, priority?: boolean): void {
+    if (this.pendingMessages.length >= Agent.MAX_PENDING_MESSAGES) {
+      logger.warn('agent', `Message queue full (${Agent.MAX_PENDING_MESSAGES}) for ${this.role.name} (${this.id.slice(0, 8)}) — dropping message`);
+      return;
+    }
+    if (priority) {
+      this.pendingMessages.splice(this.pendingPriorityCount, 0, message);
+      this.pendingPriorityCount++;
+    } else {
+      this.pendingMessages.push(message);
     }
   }
 
@@ -422,6 +436,7 @@ When you discover something important about the codebase, a pattern, a gotcha, o
     if (this.acpConnection && this.status === 'running') {
       // Clear any queued messages — interrupt takes priority
       this.pendingMessages.length = 0;
+      this.pendingPriorityCount = 0;
       await this.acpConnection.cancel();
       // Small delay to let cancellation settle before sending new prompt
       await new Promise((resolve) => setTimeout(resolve, 500));
@@ -464,6 +479,7 @@ When you discover something important about the codebase, a pattern, a gotcha, o
       typeof msg === 'string' ? msg.slice(0, 100) : `[${msg.length} content block(s)]`,
     );
     this.pendingMessages.length = 0;
+    this.pendingPriorityCount = 0;
     return { count, previews };
   }
 
@@ -518,6 +534,7 @@ When you discover something important about the codebase, a pattern, a gotcha, o
   dispose(): void {
     this.events.dispose();
     this.pendingMessages.length = 0;
+    this.pendingPriorityCount = 0;
     this.messages.length = 0;
     this.toolCalls.length = 0;
     this.lastUpdateHash = '';
