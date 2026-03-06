@@ -5,6 +5,7 @@ import { TrustPresetBar } from './TrustPresetBar';
 import { RuleRow } from './RuleRow';
 import { RuleEditor } from './RuleEditor';
 import { type IntentRuleV2, type TrustPreset } from './types';
+import { backendToFrontend, frontendToCreateBody, frontendToPatchBody, type BackendIntentRule } from './adapters';
 
 export function IntentRulesDashboard() {
   const [rules, setRules] = useState<IntentRuleV2[]>([]);
@@ -12,11 +13,12 @@ export function IntentRulesDashboard() {
   const [activePreset, setActivePreset] = useState<TrustPreset | null>(null);
   const [creating, setCreating] = useState(false);
 
-  // Fetch rules
+  // Fetch rules and transform from backend shape
   const fetchRules = useCallback(async () => {
     try {
-      const data = await apiFetch<IntentRuleV2[]>('/intents');
-      setRules(Array.isArray(data) ? data : []);
+      const data = await apiFetch<BackendIntentRule[]>('/intents');
+      const raw = Array.isArray(data) ? data : [];
+      setRules(raw.map(backendToFrontend));
     } catch { /* rules stay empty */ }
     finally { setLoading(false); }
   }, []);
@@ -53,14 +55,7 @@ export function IntentRulesDashboard() {
         await apiFetch('/intents', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            category: rule.match.categories[0] ?? 'other',
-            source: 'manual',
-            action: rule.action,
-            roles: rule.match.roles,
-            conditions: rule.conditions,
-            name: rule.name,
-          }),
+          body: JSON.stringify(frontendToCreateBody(rule)),
         });
         setCreating(false);
         fetchRules();
@@ -70,7 +65,7 @@ export function IntentRulesDashboard() {
         await apiFetch(`/intents/${rule.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(rule),
+          body: JSON.stringify(frontendToPatchBody(rule)),
         });
         fetchRules();
       } catch { /* optimistic update stays */ }
