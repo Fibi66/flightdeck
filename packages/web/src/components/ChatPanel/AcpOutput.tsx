@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo, memo } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { useAppStore } from '../../stores/appStore';
 import { useLeadStore, type ActivityEvent } from '../../stores/leadStore';
@@ -120,6 +120,27 @@ export function AcpOutput({ agentId }: Props) {
     if (latestUserMsg) setDismissedPinId(null);
   }, [latestUserMsg?.index]);
 
+  // Build mapping: original message index → groupedTimeline index (for PromptNav)
+  const msgIndexToVirtuosoIndex = useMemo(() => {
+    const map = new Map<number, number>();
+    groupedTimeline.forEach((item, vIdx) => {
+      if (item.kind === 'agent-group') {
+        item.messages.forEach((m) => map.set(m.index, vIdx));
+      } else if (item.kind === 'message') {
+        map.set(item.index, vIdx);
+      }
+    });
+    return map;
+  }, [groupedTimeline]);
+
+  // PromptNav callback: scroll Virtuoso to the item containing the target message
+  const handlePromptJump = useCallback((messageIndex: number) => {
+    const vIdx = msgIndexToVirtuosoIndex.get(messageIndex);
+    if (vIdx != null) {
+      virtuosoRef.current?.scrollToIndex({ index: vIdx, align: 'center', behavior: 'smooth' });
+    }
+  }, [msgIndexToVirtuosoIndex]);
+
   // Promote queued messages when agent responds (new agent message after queued user messages)
   useEffect(() => {
     if (!messages.some(m => m.queued)) return;
@@ -160,6 +181,83 @@ export function AcpOutput({ agentId }: Props) {
     }
   }, [agentId, messages]);
 
+  // Stable Virtuoso Header/Footer to avoid remounts on every render
+  const VirtuosoHeader = useMemo(() => {
+    const HeaderComponent = () => (
+      <div className="p-3 pb-0 space-y-3">
+        {plan.length > 0 && (
+          <div className="border border-th-border rounded-lg bg-surface-raised">
+            <button
+              onClick={() => setPlanOpen((o) => !o)}
+              className="flex items-center gap-1 w-full px-3 py-2 text-xs font-medium text-th-text-alt"
+            >
+              {planOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+              Plan ({plan.filter((e) => e.status === 'completed').length}/{plan.length})
+            </button>
+            {planOpen && (
+              <ul className="px-3 pb-2 space-y-1">
+                {plan.map((entry, i) => (
+                  <li key={i} className="flex items-center gap-2 text-xs text-th-text-alt">
+                    <span>{PLAN_ICON[entry.status]}</span>
+                    <span className="flex-1">{entry.content}</span>
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] ${PRIORITY_BADGE[entry.priority]}`}>
+                      {entry.priority}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </div>
+    );
+    return HeaderComponent;
+  }, [plan, planOpen]);
+
+  const queuedMessages = useMemo(() => messages.filter((m) => m.queued), [messages]);
+
+  const VirtuosoFooter = useMemo(() => {
+    const FooterComponent = () => (
+      <>
+        {queuedMessages.length > 0 && (
+          <div className="border-t border-dashed border-th-border px-3 py-2 bg-th-bg-alt/50 mx-3 mb-3">
+            <div className="text-[10px] text-th-text-muted uppercase tracking-wider mb-1 flex items-center gap-1">
+              <Clock className="w-3 h-3" />
+              Queued ({queuedMessages.length})
+            </div>
+            {queuedMessages.map((msg, i, arr) => (
+              <div key={`q-${i}`} className="flex justify-end items-center gap-1.5 py-0.5 group">
+                <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                  {i > 0 && (
+                    <button onClick={() => reorderQueuedMessage(i, i - 1)} className="p-0.5 rounded hover:bg-th-bg-muted text-th-text-muted hover:text-th-text" title="Move up">
+                      <ChevronUp className="w-3 h-3" />
+                    </button>
+                  )}
+                  {i < arr.length - 1 && (
+                    <button onClick={() => reorderQueuedMessage(i, i + 1)} className="p-0.5 rounded hover:bg-th-bg-muted text-th-text-muted hover:text-th-text" title="Move down">
+                      <ChevronDown className="w-3 h-3" />
+                    </button>
+                  )}
+                  <button onClick={() => removeQueuedMessage(i)} className="p-0.5 rounded hover:bg-red-500/20 text-th-text-muted hover:text-red-400" title="Remove">
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+                <span className="text-[10px] text-th-text-muted">
+                  {msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                </span>
+                <div className="max-w-[70%] rounded-lg px-3 py-1.5 bg-blue-600/40 text-blue-600 dark:text-blue-200 font-mono text-sm whitespace-pre-wrap border border-blue-500/30">
+                  {typeof msg.text === 'string' ? msg.text : JSON.stringify(msg.text)}
+                </div>
+                <Loader2 className="w-3 h-3 animate-spin text-blue-400 shrink-0" />
+              </div>
+            ))}
+          </div>
+        )}
+      </>
+    );
+    return FooterComponent;
+  }, [queuedMessages, reorderQueuedMessage, removeQueuedMessage]);
+
   return (
     <div className="flex-1 relative min-h-0">
     <div ref={containerRef} className="absolute inset-0">
@@ -173,72 +271,8 @@ export function AcpOutput({ agentId }: Props) {
         initialTopMostItemIndex={groupedTimeline.length > 0 ? groupedTimeline.length - 1 : 0}
         className="h-full"
         components={{
-          Header: () => (
-            <div className="p-3 pb-0 space-y-3">
-              {plan.length > 0 && (
-                <div className="border border-th-border rounded-lg bg-surface-raised">
-                  <button
-                    onClick={() => setPlanOpen(!planOpen)}
-                    className="flex items-center gap-1 w-full px-3 py-2 text-xs font-medium text-th-text-alt"
-                  >
-                    {planOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                    Plan ({plan.filter((e) => e.status === 'completed').length}/{plan.length})
-                  </button>
-                  {planOpen && (
-                    <ul className="px-3 pb-2 space-y-1">
-                      {plan.map((entry, i) => (
-                        <li key={i} className="flex items-center gap-2 text-xs text-th-text-alt">
-                          <span>{PLAN_ICON[entry.status]}</span>
-                          <span className="flex-1">{entry.content}</span>
-                          <span className={`px-1.5 py-0.5 rounded text-[10px] ${PRIORITY_BADGE[entry.priority]}`}>
-                            {entry.priority}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              )}
-            </div>
-          ),
-          Footer: () => (
-            <>
-              {messages.some((m) => m.queued) && (
-                <div className="border-t border-dashed border-th-border px-3 py-2 bg-th-bg-alt/50 mx-3 mb-3">
-                  <div className="text-[10px] text-th-text-muted uppercase tracking-wider mb-1 flex items-center gap-1">
-                    <Clock className="w-3 h-3" />
-                    Queued ({messages.filter((m) => m.queued).length})
-                  </div>
-                  {messages.filter((m) => m.queued).map((msg, i, arr) => (
-                    <div key={`q-${i}`} className="flex justify-end items-center gap-1.5 py-0.5 group">
-                      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                        {i > 0 && (
-                          <button onClick={() => reorderQueuedMessage(i, i - 1)} className="p-0.5 rounded hover:bg-th-bg-muted text-th-text-muted hover:text-th-text" title="Move up">
-                            <ChevronUp className="w-3 h-3" />
-                          </button>
-                        )}
-                        {i < arr.length - 1 && (
-                          <button onClick={() => reorderQueuedMessage(i, i + 1)} className="p-0.5 rounded hover:bg-th-bg-muted text-th-text-muted hover:text-th-text" title="Move down">
-                            <ChevronDown className="w-3 h-3" />
-                          </button>
-                        )}
-                        <button onClick={() => removeQueuedMessage(i)} className="p-0.5 rounded hover:bg-red-500/20 text-th-text-muted hover:text-red-400" title="Remove">
-                          <X className="w-3 h-3" />
-                        </button>
-                      </div>
-                      <span className="text-[10px] text-th-text-muted">
-                        {msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
-                      </span>
-                      <div className="max-w-[70%] rounded-lg px-3 py-1.5 bg-blue-600/40 text-blue-600 dark:text-blue-200 font-mono text-sm whitespace-pre-wrap border border-blue-500/30">
-                        {typeof msg.text === 'string' ? msg.text : JSON.stringify(msg.text)}
-                      </div>
-                      <Loader2 className="w-3 h-3 animate-spin text-blue-400 shrink-0" />
-                    </div>
-                  ))}
-                </div>
-              )}
-            </>
-          ),
+          Header: VirtuosoHeader,
+          Footer: VirtuosoFooter,
         }}
         itemContent={(index, item) => (
           <div className="px-3">
@@ -279,13 +313,13 @@ export function AcpOutput({ agentId }: Props) {
         </div>
       </div>
     )}
-    <PromptNav containerRef={containerRef} messages={messages} useOriginalIndices />
+    <PromptNav containerRef={containerRef} messages={messages} useOriginalIndices onJump={handlePromptJump} />
     </div>
   );
 }
 
-/** Renders a single grouped timeline item — extracted for Virtuoso itemContent */
-function TimelineRow({ item }: { item: GroupedTimelineItem }) {
+/** Renders a single grouped timeline item — memoized for Virtuoso performance */
+const TimelineRow = memo(function TimelineRow({ item }: { item: GroupedTimelineItem }) {
   if (item.kind === 'agent-group') {
     const group = item;
     const lastMsg = group.messages[group.messages.length - 1];
@@ -436,7 +470,7 @@ function TimelineRow({ item }: { item: GroupedTimelineItem }) {
       </div>
     </div>
   );
-}
+});
 
 /** Collapsed-by-default incoming DM with click to expand */
 function CollapsibleIncomingMessage({ text, timestamp }: { text: string; timestamp: string }) {
