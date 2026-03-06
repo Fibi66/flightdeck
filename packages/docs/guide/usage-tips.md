@@ -160,19 +160,19 @@ Instead of manually approving every agent decision, set up **Intent Rules** to h
 ### Getting Started
 
 1. Go to **Settings → Intent Rules**
-2. Apply a **trust preset** (Conservative, Moderate, or Autonomous) as a starting point
-3. Customize by creating rules for specific categories and roles
+2. The default preset is **Autonomous** — most decisions auto-approved, alerts for architecture and dependencies
+3. Switch to **Moderate** or **Conservative** if you want more control
 
 ### Recommended Approach
 
 | Phase | Strategy |
 |-------|----------|
-| **First session** | Use **Conservative** — review everything to build trust |
-| **After a few sessions** | Switch to **Moderate** — auto-approve style and testing, review architecture |
-| **Established workflow** | Go **Autonomous** for trusted roles, keep review for new ones |
+| **Starting out** | Use the default **Autonomous** preset — step in only when needed |
+| **Want more control** | Switch to **Moderate** — architecture requires review, routine work flows through |
+| **Critical project** | Use **Conservative** — review most decisions, only style is auto-approved |
 
 ::: tip
-Watch the effectiveness scores on your rules. If a rule drops below 50%, you're rejecting what it auto-approves — time to tighten the scope.
+After batch-approving 3+ decisions in the same category, Flightdeck will suggest creating an Allow rule automatically — the "Teach Me" feature.
 :::
 
 For full documentation, see the [Intent Rules guide](/guide/intent-rules).
