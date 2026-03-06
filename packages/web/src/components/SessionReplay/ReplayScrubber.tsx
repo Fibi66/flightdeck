@@ -1,4 +1,4 @@
-import { useMemo, useCallback } from 'react';
+import { useMemo, useCallback, useRef, useEffect } from 'react';
 import { Play, Pause, SkipBack, SkipForward, Zap, Users, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { useSessionReplay } from '../../hooks/useSessionReplay';
 import type { ReplayKeyframe, UseSessionReplayResult } from '../../hooks/useSessionReplay';
@@ -53,11 +53,38 @@ export function ReplayScrubber({ leadId, replay: externalReplay }: ReplayScrubbe
 
   const progressPct = duration > 0 ? (currentTime / duration) * 100 : 0;
 
-  const handleScrubberClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const pct = (e.clientX - rect.left) / rect.width;
+  // ── Drag scrubbing ──────────────────────────────────────────────────
+  const trackRef = useRef<HTMLDivElement>(null);
+  const draggingRef = useRef(false);
+  const wasPlayingRef = useRef(false);
+
+  const seekFromPointer = useCallback((clientX: number) => {
+    const track = trackRef.current;
+    if (!track || duration === 0) return;
+    const rect = track.getBoundingClientRect();
+    const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
     seek(pct * duration);
   }, [seek, duration]);
+
+  const handlePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    draggingRef.current = true;
+    wasPlayingRef.current = playing;
+    if (playing) pause();
+    seekFromPointer(e.clientX);
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  }, [playing, pause, seekFromPointer]);
+
+  const handlePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!draggingRef.current) return;
+    seekFromPointer(e.clientX);
+  }, [seekFromPointer]);
+
+  const handlePointerUp = useCallback(() => {
+    if (!draggingRef.current) return;
+    draggingRef.current = false;
+    if (wasPlayingRef.current) play();
+  }, [play]);
 
   const skipBack = useCallback(() => seek(Math.max(0, currentTime - 5000)), [seek, currentTime]);
   const skipForward = useCallback(() => seek(Math.min(duration, currentTime + 5000)), [seek, currentTime, duration]);
@@ -138,8 +165,12 @@ export function ReplayScrubber({ leadId, replay: externalReplay }: ReplayScrubbe
 
       {/* Scrubber track */}
       <div
-        className="relative h-8 bg-th-bg-alt cursor-pointer group"
-        onClick={handleScrubberClick}
+        ref={trackRef}
+        className="relative h-8 bg-th-bg-alt cursor-pointer group touch-none"
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
         role="slider"
         aria-label="Session timeline scrubber"
         aria-valuemin={0}
@@ -148,7 +179,7 @@ export function ReplayScrubber({ leadId, replay: externalReplay }: ReplayScrubbe
       >
         {/* Progress fill */}
         <div
-          className="absolute inset-y-0 left-0 bg-accent/15 transition-[width] duration-100"
+          className={`absolute inset-y-0 left-0 bg-accent/15 ${draggingRef.current ? '' : 'transition-[width] duration-100'}`}
           style={{ width: `${progressPct}%` }}
         />
 
