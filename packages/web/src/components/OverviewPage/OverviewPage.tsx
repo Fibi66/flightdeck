@@ -173,34 +173,6 @@ export function OverviewPage(_props: Props) {
             bPoints.push({ time: t, remaining: Math.max(0, taskTotal - completed) });
           }
 
-          // Derive synthetic agents from spawn keyframes when no real agent data exists
-          if (currentAgents.length === 0) {
-            const exitedIds = new Set(
-              kf.filter((f) => f.type === 'agent_exit').map((f) => f.label.split(' ')[0]),
-            );
-            const synthAgents = kf
-              .filter((f) => f.type === 'spawn')
-              .map((f) => {
-                const parts = f.label.split(' ');
-                const id = parts[0] ?? 'unknown';
-                const role = parts[1] ?? 'Agent';
-                return {
-                  id,
-                  role: { id: role.toLowerCase(), name: role, icon: '🤖' },
-                  status: exitedIds.has(id) ? 'completed' : 'idle',
-                  messages: [],
-                  childIds: [],
-                  inputTokens: 0,
-                  outputTokens: 0,
-                  contextWindowSize: 0,
-                  contextWindowUsed: 0,
-                } as any;
-              });
-            if (mountedRef.current && synthAgents.length > 0) {
-              setHistoricalAgents(synthAgents);
-            }
-          }
-
           setTimelineData(tPoints);
           setBurndownData(bPoints);
           setCostData(cPoints);

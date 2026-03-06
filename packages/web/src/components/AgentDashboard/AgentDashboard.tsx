@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAppStore } from '../../stores/appStore';
+import { apiFetch } from '../../hooks/useApi';
 import { SpawnDialog } from './SpawnDialog';
 import { FleetStats } from '../FleetOverview/FleetStats';
 import { AgentActivityTable } from '../FleetOverview/AgentActivityTable';
@@ -33,11 +34,9 @@ export function AgentDashboard({ api, ws }: Props) {
   // Fetch historical agents from REST API when no live agents
   useEffect(() => {
     if (liveAgents.length > 0) return;
-    fetch('/api/agents')
-      .then((r) => r.json())
-      .then((data: any) => {
+    apiFetch<any[]>('/agents')
+      .then((data) => {
         const arr = Array.isArray(data) ? data : [];
-        // Normalize shape to match AgentInfo
         setHistoricalAgents(arr.map((a: any) => ({
           id: a.id ?? 'unknown',
           role: a.role ?? { id: 'agent', name: 'Agent', icon: '🤖' },
