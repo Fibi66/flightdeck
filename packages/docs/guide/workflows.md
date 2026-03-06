@@ -1,10 +1,10 @@
 # Workflow Automation
 
-Workflow Automation lets you create "When X then Y" rules that respond to events automatically. Combined with Predictive Intelligence, this creates an anticipation→action loop that makes Away Mode trustworthy.
+Workflow Automation lets you create "When X then Y" rules that respond to events automatically. This creates an event→action loop that makes Away Mode trustworthy.
 
 ## How It Works
 
-1. **Events happen** — an agent crashes, a prediction fires, a task completes
+1. **Events happen** — an agent crashes, a task completes, a build fails
 2. **Rules evaluate** — the engine checks if any rule matches the event
 3. **Actions execute** — matched rules trigger their configured actions
 4. **Activity logs** — every firing is recorded for review
@@ -19,7 +19,6 @@ Workflow Automation lets you create "When X then Y" rules that respond to events
 | Cost threshold | Session cost exceeds configured amount |
 | Task complete | A DAG task transitions to "done" |
 | Task failed | A DAG task transitions to "failed" |
-| Prediction fired | A prediction exceeds confidence threshold |
 | Build failed | CI check reports failure |
 | Conflict detected | File conflict detected between agents |
 | Approval timeout | A pending approval goes unanswered for configured time |
@@ -55,7 +54,6 @@ Example rules:
 - "When **agent crashes**, **restart agent** (max 3 times)"
 - "When **context pressure > 80%**, **restart agent**"
 - "When **cost threshold exceeds $10**, **pause agent**"
-- "When **prediction fired** (context exhaustion, confidence > 70%), **send notification**"
 
 ## Templates
 
@@ -79,7 +77,6 @@ Example rules:
 ### Automation
 - Auto-approve file writes from trusted agents
 - Scale agents on high task queue
-- Log all predictions for review
 
 ## Dry Run
 

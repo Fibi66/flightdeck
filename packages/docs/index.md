@@ -21,15 +21,15 @@ features:
   - icon: ⌨️
     title: "⌘K Command Palette"
     details: "Fuzzy search across all entities, 30 natural language commands, AI-powered suggestions, and preview panel — all from one keyboard shortcut."
-  - icon: 🔮
-    title: Predictive Intelligence
-    details: Six prediction types (context exhaustion, cost overrun, agent stall, and more) with confidence scoring. Anticipate problems before they happen.
+  - icon: 💬
+    title: Virtualized Chat
+    details: High-performance chat with virtual scrolling for 1000+ messages. Pinned user message banners ensure important messages are never buried.
   - icon: ⚡
     title: Workflow Automation
     details: "'When X then Y' rules with 12 triggers × 12 actions. Predictions feed workflow triggers — the anticipation→action loop that makes Away Mode work."
   - icon: 📊
     title: Canvas & Task DAG
-    details: Interactive node-graph of your agent crew with real-time status, communication edges, prediction overlays, and conflict indicators.
+    details: Interactive node-graph of your agent crew with real-time status, communication edges, and conflict indicators.
   - icon: 📱
     title: Mobile PWA
     details: Full Progressive Web App with swipe-to-approve cards, bottom tab navigation, offline support, and mobile command sheet.

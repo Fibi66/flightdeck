@@ -150,6 +150,6 @@ Conflict events can trigger Workflow Automation rules:
 - "When conflict detected, send notification"
 - "When lock contention detected, automatically sequence work"
 
-## Prediction Integration
+## Conflict Detection
 
-Predictive Intelligence includes file conflict predictions that forecast conflicts before they happen, based on task descriptions and historical patterns.
+Flightdeck's conflict detection system identifies potential file conflicts between agents in real-time, based on file locks, task descriptions, and import overlap analysis.

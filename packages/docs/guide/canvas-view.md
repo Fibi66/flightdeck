@@ -34,12 +34,6 @@ Each node displays:
 
 ## Overlays
 
-### Prediction Overlays
-When Predictive Intelligence is active, the Canvas shows:
-- **Dashed rings** around agents approaching context limits
-- **Pulsing edges** on predicted file conflicts
-- **Stall badges** on agents predicted to stall
-
 ### Conflict Overlays
 When Conflict Detection is active:
 - **Amber dashed edges** between agents with potential conflicts

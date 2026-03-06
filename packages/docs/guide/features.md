@@ -21,7 +21,7 @@ Approve or reject multiple pending agent actions at once. When agents request pe
 ![Batch Approval](/images/07-batch-approval.png)
 
 ### The Pulse
-A compact horizontal status strip at the top of every page showing real-time crew health: active agents, token usage, budget spend, context pressure, recovery status, predictions, PRs, and conflicts — all at a glance.
+A compact horizontal status strip at the top of every page showing real-time crew health: active agents, token usage, budget spend, context pressure, recovery status, PRs and conflicts — all at a glance.
 
 ### Token Pressure Gauge
 Visual context window usage indicator per agent. Shows how much of an agent's context window is consumed, with color-coded warnings (green → amber → red) as agents approach their limit.
@@ -35,10 +35,8 @@ Scrub through past sessions like a video timeline. Keyframes capture agent state
 ### Decision Queue
 Review and respond to agent decisions requiring human input. Each decision shows context, options, and impact. Approve, reject, or provide custom feedback.
 
-### Cost Analytics
-Track token usage and estimated costs by agent, by task, or by session. Charts show spend over time. Set budget limits with alerts when approaching thresholds.
-
-![Analytics Dashboard](/images/05-analytics.png)
+### Historical Data
+Browse historical project data even when no live session is running. All pages (Overview, Timeline, Canvas, Tasks, Agents, Mission Control) load data from the REST API when WebSocket data is unavailable. Group chat history is preserved per project.
 
 ### Coordination Timeline
 Chronological view of all inter-agent events: messages sent, tasks delegated, files locked, code reviewed. Filter by agent or event type.
@@ -66,12 +64,14 @@ Automatic agent crash recovery with configurable strategies. When an agent fails
 ### Handoff Briefings
 When a crashed agent is replaced, the new agent receives a structured briefing: what the previous agent was doing, files it had locked, progress made, and remaining work.
 
-### Budget Controls
-Set spending limits per session or per agent. Automatic pausing when budgets are exceeded. Visual budget progress bar with configurable warning thresholds.
+### Data Management
+Purge old session data from the database. Preview shows exact record counts before deletion. Configurable retention period (7 days to 1 year). Transactional cleanup ensures consistency.
+
+→ [Settings Guide](/guide/dashboard-settings)
 
 ## Phase 4 — Intelligence & Community
 
-The final phase adds predictive intelligence, workflow automation, and community features.
+The final phase adds workflow automation, community features, and performance optimizations.
 
 ### Command Palette V2
 The ⌘K command palette is the brain of the product. Fuzzy search (Fuse.js) across all entities — agents, tasks, routes, settings. AI-powered suggestions surface context-aware actions. Natural language commands. Preview panel shows details before executing. Recent commands on empty query.
@@ -88,10 +88,8 @@ Three-layer onboarding system. QuickStart: playbook selection as first-run exper
 
 → [Onboarding Guide](/guide/onboarding)
 
-### Predictive Intelligence
-Six prediction types using linear extrapolation: context exhaustion, cost overrun, agent stall, task duration, completion estimate, file conflict. Confidence scoring. Predictions Panel widget, Pulse micro-indicators, Canvas overlays (dashed rings, pulsing edges, stall badges). Accuracy tracking.
-
-→ [Predictions Guide](/guide/predictions)
+### Chat Virtualization
+High-performance chat rendering using react-virtuoso. Only visible messages plus a small overscan buffer are rendered in the DOM, keeping the UI responsive even with 1000+ messages. Pinned user message banners ensure important messages from the user are never buried under agent responses.
 
 ### Workflow Automation
 'When X then Y' rule engine. 12 event triggers × 12 action types. Sentence builder UI. 12 pre-built templates in 4 categories. Dry Run testing. Activity log with one-click 'Disable rule' safety valve. Predictions can trigger workflow rules.
@@ -104,7 +102,7 @@ PAT-based GitHub connection. Create PRs with auto-generated descriptions. CI sta
 → [GitHub Integration Guide](/guide/github-integration)
 
 ### Conflict Detection
-Four detection levels: same directory, import overlap, lock contention, branch divergence. Real-time scanning. Conflict detail panel with 4 resolution options. Canvas conflict edges (amber/red). Integration with workflow triggers and predictions.
+Four detection levels: same directory, import overlap, lock contention, branch divergence. Real-time scanning. Conflict detail panel with 4 resolution options. Canvas conflict edges (amber/red). Integration with workflow triggers.
 
 → [GitHub Integration Guide](/guide/github-integration)
 

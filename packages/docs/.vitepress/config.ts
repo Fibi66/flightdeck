@@ -61,7 +61,7 @@ export default defineConfig({
           text: 'Features',
           items: [
             { text: 'Command Palette', link: '/guide/command-palette' },
-            { text: 'Predictive Intelligence', link: '/guide/predictions' },
+            { text: 'Data Management', link: '/guide/data-management' },
             { text: 'Workflow Automation', link: '/guide/workflows' },
             { text: 'GitHub Integration', link: '/guide/github-integration' },
             { text: 'Playbooks & Roles', link: '/guide/playbooks' },
@@ -97,7 +97,7 @@ export default defineConfig({
           text: 'Feature APIs',
           items: [
             { text: 'NL Commands', link: '/reference/nl-api' },
-            { text: 'Predictions & Workflows', link: '/reference/predictions-api' },
+            { text: 'Data & Workflows', link: '/reference/data-api' },
             { text: 'GitHub & Conflicts', link: '/reference/github-api' },
             { text: 'Playbooks & Roles', link: '/reference/playbooks-api' },
           ],

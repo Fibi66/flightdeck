@@ -1473,3 +1473,105 @@ ws://localhost:3001?token=<your-token>
 | `lock:acquired` | File lock acquired |
 | `lock:released` | File lock released |
 | `activity` | Activity ledger entry |
+
+---
+
+## Data Management
+
+### `GET /data/stats`
+
+**Description**: Database statistics — file size, record counts, oldest session.
+
+**Response**:
+```json
+{
+  "fileSizeBytes": 5832256,
+  "tableCounts": { "projects": 3, "project_sessions": 9, "activity_log": 2050, "..." : "..." },
+  "totalRecords": 2972,
+  "oldestSession": "2025-01-15T10:30:00Z"
+}
+```
+
+---
+
+### `POST /data/cleanup`
+
+**Description**: Purge old completed session data. Use `dryRun: true` to preview.
+
+**Request Body**:
+```json
+{ "olderThanDays": 30, "dryRun": true }
+```
+
+**Response**:
+```json
+{
+  "deleted": { "project_sessions": 2, "activity_log": 40, "dag_tasks": 8, "projects": 1 },
+  "totalDeleted": 51,
+  "sessionsDeleted": 2,
+  "dryRun": true,
+  "cutoffDate": "2025-02-01T00:00:00.000Z"
+}
+```
+
+---
+
+## Project Historical Data
+
+### `GET /projects/:id/dag`
+
+**Description**: Get historical DAG tasks for a project.
+
+**Response**:
+```json
+[
+  {
+    "id": "task-1",
+    "leadId": "lead-abc",
+    "title": "Implement feature X",
+    "role": "developer",
+    "dagStatus": "done",
+    "createdAt": "2025-03-01T10:00:00Z",
+    "completedAt": "2025-03-01T11:30:00Z"
+  }
+]
+```
+
+---
+
+### `GET /projects/:id/groups`
+
+**Description**: Get historical chat groups for a project.
+
+**Response**:
+```json
+[
+  {
+    "name": "feature-team",
+    "leadId": "lead-abc",
+    "roles": "[\"developer\",\"reviewer\"]",
+    "createdAt": "2025-03-01T10:00:00Z",
+    "messageCount": 26
+  }
+]
+```
+
+---
+
+### `GET /projects/:id/groups/:name/messages`
+
+**Description**: Get historical messages for a specific chat group.
+
+**Response**:
+```json
+[
+  {
+    "id": 1,
+    "groupName": "feature-team",
+    "fromAgentId": "agent-abc",
+    "fromRole": "developer",
+    "content": "Starting implementation...",
+    "timestamp": "2025-03-01T10:05:00Z"
+  }
+]
+```
