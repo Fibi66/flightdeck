@@ -2,6 +2,8 @@
 
 The ⌘K command palette is the central control surface of Flightdeck. It combines fuzzy search, natural language commands, AI-powered suggestions, and quick navigation into a single keyboard-driven interface.
 
+![Command Palette with smart suggestions](/images/06-command-palette.png)
+
 ## Opening the Palette
 
 Press `⌘K` (Mac) or `Ctrl+K` (Windows/Linux) from anywhere in the app. The palette opens as a centered modal overlay.

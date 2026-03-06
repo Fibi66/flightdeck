@@ -2,6 +2,8 @@
 
 Flightdeck ships 33+ features across three phases. This page provides a quick reference to everything available.
 
+![Command Palette — the central control surface](/images/06-command-palette.png)
+
 ## Phase 2 — Core Observability & Control
 
 These features provide real-time visibility into your agent crew and give you controls to guide their work.
@@ -9,10 +11,14 @@ These features provide real-time visibility into your agent crew and give you co
 ### Agent Canvas
 Interactive node-based visualization of your agent crew using ReactFlow. Nodes represent agents, edges show communication flows (messages, delegations, broadcasts). Drag to rearrange, zoom in/out, or use auto-layout. Color-coded by agent status.
 
+![Canvas View](/images/03-canvas.png)
+
 → [Canvas View Guide](/guide/canvas-view)
 
 ### Batch Approval
 Approve or reject multiple pending agent actions at once. When agents request permission for file writes or shell commands, batch approval lets you review and act on all pending items from a single panel instead of one at a time.
+
+![Batch Approval](/images/07-batch-approval.png)
 
 ### The Pulse
 A compact horizontal status strip at the top of every page showing real-time crew health: active agents, token usage, budget spend, context pressure, recovery status, predictions, PRs, and conflicts — all at a glance.
@@ -32,8 +38,12 @@ Review and respond to agent decisions requiring human input. Each decision shows
 ### Cost Analytics
 Track token usage and estimated costs by agent, by task, or by session. Charts show spend over time. Set budget limits with alerts when approaching thresholds.
 
+![Analytics Dashboard](/images/05-analytics.png)
+
 ### Coordination Timeline
 Chronological view of all inter-agent events: messages sent, tasks delegated, files locked, code reviewed. Filter by agent or event type.
+
+![Timeline](/images/09-timeline.png)
 
 ## Phase 3 — Automation & Trust
 

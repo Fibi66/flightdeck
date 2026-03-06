@@ -16,7 +16,29 @@ flightdeck
 
 Instead of one AI agent doing everything sequentially, Flightdeck runs multiple agents at the same time — a developer writes code while a reviewer checks it, an architect designs the system, and a secretary tracks progress. The result: faster delivery, higher quality, and built-in checks and balances.
 
-<img width="3164" height="1598" alt="Flightdeck dashboard showing multi-agent coordination" src="https://github.com/user-attachments/assets/bcf9bb15-be17-4f53-9347-d044dbc0871c" />
+### Screenshots
+
+<p align="center">
+  <img src="docs/images/06-command-palette.png" alt="Command Palette with smart AI suggestions" width="720" />
+  <br /><em>⌘K Command Palette — natural language commands with AI-powered suggestions</em>
+</p>
+
+<details>
+<summary><strong>More screenshots</strong></summary>
+
+| Lead Dashboard | Canvas View |
+|:-:|:-:|
+| <img src="docs/images/01-lead-dashboard.png" alt="Lead Dashboard" width="400" /> | <img src="docs/images/03-canvas-with-panel.png" alt="Canvas with agent detail panel" width="400" /> |
+
+| Mission Control | Analytics |
+|:-:|:-:|
+| <img src="docs/images/04-mission-control.png" alt="Mission Control overview" width="400" /> | <img src="docs/images/05-analytics.png" alt="Analytics dashboard" width="400" /> |
+
+| Batch Approval | Timeline |
+|:-:|:-:|
+| <img src="docs/images/07-batch-approval.png" alt="Batch approval slide-over" width="400" /> | <img src="docs/images/09-timeline.png" alt="Timeline swim-lane view" width="400" /> |
+
+</details>
 
 ## Quick Start
 

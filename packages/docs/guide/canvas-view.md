@@ -2,6 +2,8 @@
 
 The Canvas is an interactive node-graph visualization of your agent crew, built with [ReactFlow](https://reactflow.dev/). It provides a spatial view of agents, their relationships, and real-time status.
 
+![Canvas View with agent detail panel](/images/03-canvas-with-panel.png)
+
 ## Overview
 
 Each agent is represented as a node. Edges between nodes show communication flows: delegations, messages, broadcasts, and group chats. The canvas updates in real-time as agents work.
