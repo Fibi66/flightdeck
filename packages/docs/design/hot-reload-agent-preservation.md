@@ -1318,7 +1318,7 @@ This enables `flightdeck list` to find all projects (repo-based and standalone) 
 
 | Event | Action |
 |-------|--------|
-| `ProjectRegistry.create()` | Resolve project root (git repo root or `~/.flightdeck/projects/<id>/`), write `project.yaml`, register in `projects.json`, insert into SQLite |
+| `ProjectRegistry.create()` | Create `~/.flightdeck/projects/<id>/` (default) or `<git-root>/.flightdeck/` (if `storage: repo`), write `project.yaml`, register in `projects.json`, insert into SQLite |
 | Server startup | Resolve project root, read `project.yaml`, reconcile with SQLite |
 | Project update (name, description) | Update both `project.yaml` and SQLite |
 | Project delete | Remove `.flightdeck/project.yaml`, unregister from `projects.json`, delete SQLite row |
