@@ -46,14 +46,11 @@ interface DaemonStatus {
 
 interface DaemonAgent {
   agentId: string;
-  pid: number | null;
   role: string | null;
   model: string | null;
   status: DaemonAgentStatus;
-  sessionId: string | null;
   taskSummary: string | null;
   spawnedAt: string | null;
-  lastEventId: string | null;
 }
 
 interface ReconnectState {
@@ -251,22 +248,10 @@ function AgentRow({ agent, onTerminate }: { agent: DaemonAgent; onTerminate: (id
       {expanded && (
         <div className="px-4 pb-3 border-t border-th-border/50 pt-3 space-y-2 text-sm">
           <div className="grid grid-cols-2 gap-2">
-            {agent.pid != null && (
-              <div>
-                <span className="text-th-text-alt">PID: </span>
-                <span className="text-th-text font-mono">{agent.pid}</span>
-              </div>
-            )}
             {agent.model && (
               <div>
                 <span className="text-th-text-alt">Model: </span>
                 <span className="text-th-text">{agent.model}</span>
-              </div>
-            )}
-            {agent.sessionId && (
-              <div>
-                <span className="text-th-text-alt">Session: </span>
-                <span className="text-th-text font-mono">{agent.sessionId.slice(0, 8)}</span>
               </div>
             )}
             {agent.spawnedAt && (

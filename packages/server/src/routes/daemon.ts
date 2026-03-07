@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { logger } from '../utils/logger.js';
 import type { AppContext } from './context.js';
 import { rateLimit } from '../middleware/rateLimit.js';
+import type { AgentDescriptor } from '../daemon/DaemonProtocol.js';
 
 const daemonReadLimiter = rateLimit({ windowMs: 60_000, max: 120, message: 'Too many daemon status requests' });
 const daemonWriteLimiter = rateLimit({ windowMs: 60_000, max: 20, message: 'Too many daemon control requests' });
@@ -71,29 +72,31 @@ export function daemonRoutes(ctx: AppContext): Router {
     });
   });
 
-  /** List agents running in the daemon */
+  /** List agents running in the daemon (safe subset only) */
   router.get('/daemon/agents', daemonReadLimiter, async (_req, res) => {
+    // Map to safe fields — no PID, sessionId, or lastEventId
+    function safeAgent(a: AgentDescriptor) {
+      return {
+        agentId: a.agentId,
+        role: a.role ?? null,
+        model: a.model ?? null,
+        status: a.status,
+        taskSummary: a.taskSummary ?? null,
+        spawnedAt: a.spawnedAt ?? null,
+      };
+    }
+
     // In-process daemon
     if (daemonProcess) {
-      const agents = daemonProcess.listAgents().map(a => ({
-        agentId: a.agentId,
-        pid: a.pid,
-        role: a.role,
-        model: a.model,
-        status: a.status,
-        sessionId: a.sessionId,
-        taskSummary: a.taskSummary,
-        spawnedAt: a.spawnedAt,
-        lastEventId: a.lastEventId,
-      }));
-      return res.json(agents);
+      return res.json(daemonProcess.listAgents().map(safeAgent));
     }
 
     // Remote daemon via client
     if (daemonClient?.isConnected) {
       try {
         const result = await daemonClient.listAgents();
-        return res.json(result.agents ?? []);
+        const agents: AgentDescriptor[] = Array.isArray(result.agents) ? result.agents : [];
+        return res.json(agents.map(safeAgent));
       } catch (err: any) {
         logger.warn({ module: 'daemon', msg: 'Failed to list agents via client', err: err.message });
         return res.json([]);

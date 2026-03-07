@@ -38,25 +38,19 @@ const daemonStatus = {
 const daemonAgents = [
   {
     agentId: 'cc29bb0d-1234-5678-abcd-000000000001',
-    pid: 12345,
     role: 'architect',
     model: 'claude-sonnet-4-6',
     status: 'running',
-    sessionId: 'sess-001',
     taskSummary: 'Designing auth module',
     spawnedAt: '2026-03-07T14:52:00Z',
-    lastEventId: 'evt-100',
   },
   {
     agentId: 'dd40cc1e-1234-5678-abcd-000000000002',
-    pid: 12346,
     role: 'developer',
     model: 'claude-sonnet-4-6',
     status: 'idle',
-    sessionId: 'sess-002',
     taskSummary: null,
     spawnedAt: '2026-03-07T14:48:00Z',
-    lastEventId: 'evt-99',
   },
 ];
 
@@ -153,7 +147,6 @@ describe('DaemonPanel', () => {
     await waitFor(() => {
       expect(screen.getByText('Designing auth module')).toBeInTheDocument();
     });
-    expect(screen.getByText('12345')).toBeInTheDocument();
   });
 
   it('shows empty state when no agents', async () => {
