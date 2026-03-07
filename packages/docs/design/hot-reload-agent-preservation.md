@@ -1,6 +1,6 @@
 # Hot-Reload with Agent Process Preservation
 
-> **Status:** Design Document (PROPOSAL) | **Author:** Architect (e7f14c5e) | **Date:** 2026-03-07
+> **Status:** Design Document (PROPOSAL — Security Model Added) | **Author:** Architect (e7f14c5e) | **Security Review:** Architect (cc29bb0d) | **Date:** 2026-03-07
 
 ## Problem Statement
 
@@ -241,7 +241,7 @@ packages/server/
 
 #### Protocol
 
-JSON-RPC over Unix domain socket at `/tmp/flightdeck-agents-{pid}.sock`:
+JSON-RPC over Unix domain socket (see [Security Model](#security-model) for socket location):
 
 ```json
 // Server → Daemon: spawn an agent
@@ -280,6 +280,153 @@ The `scripts/dev.mjs` launcher would be extended to:
 
 ---
 
+## Security Model
+
+### Threat Analysis
+
+The daemon holds live agent processes with access to the filesystem, git, and external APIs. A compromised daemon connection could:
+
+1. **Hijack running agents** — inject arbitrary prompts into an agent with file-write permissions
+2. **Spawn rogue agents** — execute arbitrary CLI commands via `copilot --acp --stdio`
+3. **Exfiltrate data** — subscribe to all agent event streams (code, conversations, tool outputs)
+4. **Denial of service** — terminate all running agents, killing an active crew session
+
+This is a **local privilege boundary** problem, not a network security problem. The threat actor is a rogue process on the same machine — not a remote attacker.
+
+### IPC Mechanism: Unix Domain Socket (Recommended)
+
+| Mechanism | OS-Level Auth | Network Exposure | Node.js Support | Platform |
+|-----------|:---:|:---:|:---:|:---:|
+| **Unix domain socket** | ✅ File permissions | ❌ None | ✅ `net` module | macOS, Linux |
+| TCP localhost | ❌ None | ⚠️ `127.0.0.1` | ✅ `net` module | All |
+| Named pipes | ⚠️ Platform-specific | ❌ None | ⚠️ Partial | Windows-focused |
+
+**Decision: Unix domain socket.** The kernel enforces `connect()` permission checks against the socket file's owner/mode bits. TCP localhost provides zero OS-level authentication — any process can connect to a known port. Named pipes have inconsistent cross-platform behavior and no advantage over UDS on macOS/Linux.
+
+### Socket Location
+
+**Current proposal (WRONG):** `/tmp/flightdeck-agents-{pid}.sock`
+
+**Problems with `/tmp/`:**
+- World-readable directory — any user can see the socket file exists (information leak)
+- Symlink attacks — a malicious user creates `/tmp/flightdeck-agents-*.sock` as a symlink before daemon starts
+- Stale socket cleanup races on multi-user systems
+
+**Recommended:** `$XDG_RUNTIME_DIR/flightdeck/agent-host.sock`
+
+```
+$XDG_RUNTIME_DIR/flightdeck/     # typically /run/user/<uid>/flightdeck/
+├── agent-host.sock               # mode 0600 (owner rw only)
+├── agent-host.token              # mode 0600 (per-session auth token)
+└── agent-host.pid                # mode 0644 (daemon PID for health checks)
+```
+
+**Fallback chain** (for systems without `XDG_RUNTIME_DIR`):
+1. `$XDG_RUNTIME_DIR/flightdeck/` — Linux with systemd (per-user tmpfs, correct permissions)
+2. `~/.flightdeck/run/` — macOS, older Linux (user home, always available)
+
+The directory is created with mode `0700` (owner-only access). The socket file is created with mode `0600`. These two permission checks mean only processes running as the daemon's UID can even attempt to connect.
+
+### Authentication: Defense in Depth (Two Layers)
+
+#### Layer 1: Kernel-Enforced File Permissions
+
+The socket file's `0600` mode means the kernel rejects `connect()` from any process not running as the socket's owner UID. This is the primary security boundary — it's enforced at the syscall level with zero overhead.
+
+```typescript
+// In AgentHostDaemon.ts
+import { createServer } from 'net';
+import { mkdirSync, chmodSync } from 'fs';
+
+const socketDir = getSocketDir();  // XDG_RUNTIME_DIR or ~/.flightdeck/run
+mkdirSync(socketDir, { recursive: true, mode: 0o700 });
+
+const server = createServer();
+const socketPath = join(socketDir, 'agent-host.sock');
+server.listen(socketPath, () => {
+  chmodSync(socketPath, 0o600);  // owner rw only
+});
+```
+
+#### Layer 2: Per-Session Token Handshake
+
+Even with correct file permissions, defense in depth requires a second factor. The daemon generates a cryptographic token at startup, shared via a restricted file.
+
+**Rationale:** File permissions can be bypassed in edge cases — Docker bind mounts inheriting host UIDs, NFS with `no_root_squash`, misconfigured container namespaces. The token ensures that even if a process can connect to the socket, it must also possess a secret that only the legitimate server should know.
+
+```typescript
+// Daemon startup — generate and persist token
+import { randomBytes, timingSafeEqual } from 'crypto';
+
+const sessionToken = randomBytes(32).toString('hex');  // 256-bit
+writeFileSync(join(socketDir, 'agent-host.token'), sessionToken, { mode: 0o600 });
+
+// On client connection — require auth as first message
+socket.once('data', (data) => {
+  const msg = JSON.parse(data.toString());
+  if (msg.method !== 'auth' || !timingSafeEqual(
+    Buffer.from(msg.params.token),
+    Buffer.from(sessionToken),
+  )) {
+    socket.destroy();
+    return;
+  }
+  // Authenticated — proceed to handle JSON-RPC
+  upgradeToJsonRpc(socket);
+});
+```
+
+```typescript
+// Server (client) — read token and authenticate on connect
+import { readFileSync } from 'fs';
+
+const token = readFileSync(join(socketDir, 'agent-host.token'), 'utf-8').trim();
+const socket = connect(socketPath);
+socket.write(JSON.stringify({
+  jsonrpc: '2.0', method: 'auth',
+  params: { token, pid: process.pid },
+  id: 0,
+}) + '\n');
+```
+
+**Token lifecycle:**
+- Generated fresh on each daemon startup (not reusable across sessions)
+- Stored in `agent-host.token` with mode `0600` (same as socket)
+- `timingSafeEqual` prevents timing side-channel attacks
+- Connection rejected immediately on auth failure (no retry, no error details)
+
+### Authorization Model
+
+Once authenticated, the server has full daemon access. No per-operation ACLs are needed because:
+
+- **Single-user system:** The daemon serves exactly one Flightdeck server instance
+- **Same trust boundary:** If you can authenticate, you're the same user who started the daemon
+- **No multi-tenancy:** Each developer runs their own daemon (there's no shared daemon server)
+
+### Threat Mitigation Summary
+
+| Threat | Mitigation | Layer |
+|--------|-----------|-------|
+| Rogue local process connects to socket | Socket file mode `0600` — kernel rejects `connect()` | Filesystem |
+| Socket directory traversal / symlink attack | Directory mode `0700` in user-private path (not `/tmp/`) | Filesystem |
+| Docker/NFS permission bypass | Per-session token required as first message | Application |
+| Token file read by other user | Token file mode `0600` in `0700` directory | Filesystem |
+| Daemon impersonation (fake daemon) | Client verifies `agent-host.pid` matches socket peer | Application |
+| Man-in-the-middle / network sniffing | Unix socket = no network exposure, local-only by definition | Transport |
+| Timing side-channel on token comparison | `crypto.timingSafeEqual()` | Application |
+| Stale socket from crashed daemon | `dev.mjs` checks PID file liveness before connecting | Launcher |
+| Replay attack on auth token | Token is per-session; persistent connection (not per-request auth) | Protocol |
+
+### What We Explicitly Don't Need
+
+- **TLS:** Data never leaves the machine. Unix socket is not network-accessible. TLS would add complexity and latency for zero security benefit.
+- **mTLS / client certificates:** Overkill for same-user local IPC. File permissions + token provides equivalent assurance.
+- **Rate limiting:** Trusted client over local IPC. No abuse vector.
+- **Per-agent ACLs:** Single-user system. If you authenticated, you own everything.
+- **Encryption at rest for token:** The token file has the same permissions as the socket file. If an attacker can read one, they can read the other. The security boundary is the filesystem permissions, not encryption.
+
+---
+
 ## Decision Matrix
 
 | Criterion | Daemon (1) | HMR (2) | Resume (3) | Worker (4) | FIFO (5) | Hybrid (6) |
@@ -300,3 +447,70 @@ The `scripts/dev.mjs` launcher would be extended to:
 - **Edict:** Separate Orchestrator and Dispatch worker processes communicating via Redis Streams. If the orchestrator crashes, unacknowledged events are preserved in Redis for recovery. Flightdeck's SQLite persistence serves the same recovery role.
 
 - **Key insight:** Every system that handles agent process management well separates the "agent lifecycle" concern from the "business logic" concern into different processes. Symphony does it with OTP, Edict with worker processes. Flightdeck currently conflates both in a single Node.js process.
+
+---
+
+## Implementation Timeline (AI-Assisted, 12 Agents)
+
+The original estimates (1-2 days for Phase 1, 2-3 weeks for Phase 2) assumed a single developer working sequentially. With 12 AI agents available for parallel development, the critical path compresses dramatically.
+
+### Phase 1: Enhanced Auto-Resume — 0.5 days
+
+Already a small task. Three agents in parallel:
+
+| Agent | Task | Estimated |
+|-------|------|-----------|
+| Developer A | Roster persistence in `gracefulShutdown()` + auto-resume on startup | 2-3 hours |
+| Developer B | UI banner ("🔄 Resuming N agents...") + WebSocket notification | 2-3 hours |
+| QA Tester | Integration test: restart server during active session, verify resume | 2-3 hours |
+
+**Critical path:** 3 hours. All three workstreams are independent.
+
+### Phase 2: Agent Host Daemon — 3-5 days
+
+The daemon has ~8 independent workstreams, most parallelizable after a short shared-protocol design phase:
+
+#### Day 1: Protocol Design + Foundation (3-4 agents)
+
+| Agent | Task |
+|-------|------|
+| Architect | Design `AgentHostProtocol.ts` — JSON-RPC message types, Zod schemas, event stream format |
+| Developer A | `AgentHostDaemon.ts` skeleton — socket listener, connection lifecycle, auth handshake |
+| Developer B | Security module — token generation, file permissions, socket directory management |
+| Developer C | `AgentHostClient.ts` skeleton — connect, authenticate, reconnect-on-disconnect |
+
+#### Day 2-3: Core Implementation (6-8 agents, after protocol types land)
+
+| Agent | Task |
+|-------|------|
+| Developer A | Daemon: spawn, terminate, prompt — bridge ACP stdio ↔ socket JSON-RPC |
+| Developer B | Daemon: event subscription, multiplexed event streaming over socket |
+| Developer C | Client: spawn/terminate/prompt proxy methods, matching AcpAdapter's EventEmitter interface |
+| Developer D | Client: event demuxing, reconnect with re-subscription |
+| Developer E | `AgentAcpBridge.ts` refactor — swap AcpAdapter for AgentHostClient when daemon detected |
+| Developer F | `scripts/dev.mjs` update — daemon lifecycle (check, start, health, leave running on server stop) |
+| QA Tester A | Unit tests: daemon protocol, auth, spawn/terminate |
+| QA Tester B | Unit tests: client reconnect, event streaming |
+
+#### Day 4-5: Integration + Polish (4-6 agents)
+
+| Agent | Task |
+|-------|------|
+| Developer A | `AgentManager.ts` refactor — delegate to client, handle daemon-not-available fallback |
+| Developer B | Daemon health monitoring — PID file, heartbeat, auto-cleanup of stale sockets |
+| QA Tester A | End-to-end: start daemon → start server → spawn agents → restart server → verify agents alive |
+| QA Tester B | Edge cases: daemon crash recovery, auth failure, concurrent server instances |
+| Tech Writer | Update README, add `docs/daemon-architecture.md` |
+| Code Reviewer | Review all daemon PRs before merge |
+
+**Critical path:** 5 days (protocol → daemon core → integration testing). Most work parallelizes after the Day 1 protocol design.
+
+### Phase Comparison
+
+| | Single Developer | 12 AI Agents | Speedup |
+|---|---|---|---|
+| Phase 1 | 1-2 days | 0.5 days | 2-4x |
+| Phase 2 | 2-3 weeks | 3-5 days | 3-5x |
+| **Total** | **2.5-3.5 weeks** | **3.5-5.5 days** | **~4x** |
+
+**Why not faster?** The critical path is constrained by integration dependencies (protocol types must land before daemon/client, daemon/client must work before AgentManager refactor). Parallelism helps within phases but can't eliminate sequential dependencies between phases.
