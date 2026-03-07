@@ -318,4 +318,41 @@ describe('groupTimeline', () => {
     expect(result[0].kind).toBe('agent-group');
     if (result[0].kind === 'agent-group') expect(result[0].messages).toHaveLength(4);
   });
+
+  it('📨 DM notifications do not break agent groups (treated as system events)', () => {
+    const items: TimelineItem[] = [
+      msg('⟦⟦ DELEGATE {"task": "build', 'agent', 1000, 0),
+      msg('📨 [From Developer (dev-abc)] Done with the task', 'user', 1200, 1),
+      msg(' feature"} ⟧⟧', 'agent', 1500, 2),
+    ];
+    const result = groupTimeline(items);
+    // The 📨 DM notification should NOT flush the agent group.
+    // Both agent texts stay in one group so split commands can be merged during rendering.
+    expect(result).toHaveLength(1);
+    expect(result[0].kind).toBe('agent-group');
+    if (result[0].kind === 'agent-group') {
+      expect(result[0].messages).toHaveLength(2);
+      expect(result[0].messages[0].msg.text).toContain('DELEGATE');
+      expect(result[0].messages[1].msg.text).toContain('feature');
+      // The DM notification should be in systemEvents
+      expect(result[0].systemEvents).toHaveLength(1);
+      if (result[0].systemEvents[0].kind === 'message') {
+        expect(result[0].systemEvents[0].msg.text).toContain('📨');
+      }
+    }
+  });
+
+  it('non-DM user messages still flush agent groups', () => {
+    const items: TimelineItem[] = [
+      msg('agent text', 'agent', 1000, 0),
+      msg('What should I do next?', 'user', 2000, 1),
+      msg('agent reply', 'agent', 3000, 2),
+    ];
+    const result = groupTimeline(items);
+    // Regular user messages (not 📨 DMs) still break the group
+    expect(result).toHaveLength(3);
+    expect(result[0].kind).toBe('message'); // standalone agent
+    expect(result[1].kind).toBe('message'); // user message
+    expect(result[2].kind).toBe('message'); // standalone agent
+  });
 });

@@ -43,19 +43,7 @@ default-branch: main
 
 **Note:** There is no system-level pause command. The workaround is targeted DIRECT_MESSAGE to each affected agent. Treat broadcasts as "best-effort notifications," not reliable delivery.
 
-## Pattern 3: Suppress Known CI Failures Early
-
-**Problem:** A pre-existing `build:server` failure triggered on every commit, creating noise. Agents spent cycles investigating a build failure unrelated to their documentation work.
-
-**Guideline:** At session start, identify pre-existing CI failures and broadcast them with specifics:
-```
-BROADCAST: "Known CI failure: `build:server` fails with 'No workspaces found: 
---workspace=packages/server'. This is pre-existing — ignore it.
-Only investigate NEW failures or failures with DIFFERENT error messages."
-```
-Be specific about the exact error message or test name, not just the build step. A new failure in the same step could be masked otherwise. Periodically re-check whether the "known" failure is still the same failure.
-
-## Pattern 4: Incremental Review Diffing
+## Pattern 3: Incremental Review Diffing
 
 **Problem:** In iterative review cycles (review → fix → review → fix), reviewers re-read the entire file each round even though most of it is unchanged. Later rounds are slower and more tedious despite fewer actual changes.
 

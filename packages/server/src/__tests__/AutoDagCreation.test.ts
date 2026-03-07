@@ -6,7 +6,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { getLifecycleCommands } from '../agents/commands/AgentLifecycle.js';
-import { generateAutoTaskId, requestSecretaryDependencyAnalysis, maybeSuggestDagGroup, suggestedGroupNames } from '../agents/commands/AgentLifecycle.js';
+import { generateAutoTaskId, requestSecretaryDependencyAnalysis, maybeSuggestDagGroup, suggestedGroupNames, inferReviewDependencies } from '../agents/commands/AgentLifecycle.js';
 import type { CommandHandlerContext } from '../agents/commands/types.js';
 
 function makeLeadAgent(overrides: Record<string, any> = {}) {
@@ -139,9 +139,10 @@ describe('Auto-DAG creation from CREATE_AGENT', () => {
     expect(ctx.taskDAG.startTask).toHaveBeenCalledWith('lead-001', 'pre-declared', expect.any(String));
   });
 
-  it('warns about near-duplicate instead of auto-creating', () => {
-    const ctx = makeCtx();
-    // Return existing tasks that are similar to the delegation
+  it('warns about possible duplicate for borderline similarity', () => {
+    const child = makeChildAgent('lead-001');
+    const ctx = makeCtx({ spawnAgent: vi.fn().mockReturnValue(child) });
+    // Return existing tasks that are similar to the delegation (0.8-0.95 similarity)
     (ctx.taskDAG.getTasks as any).mockReturnValue([{
       id: 'existing-fix-login',
       role: 'developer',
@@ -157,16 +158,15 @@ describe('Auto-DAG creation from CREATE_AGENT', () => {
 
     cmd.handler(agent, '⟦⟦ CREATE_AGENT {"role": "developer", "task": "Fix the login bug in auth"} ⟧⟧');
 
-    // Should warn about near-duplicate, not auto-create
-    expect(ctx.taskDAG.addTask).not.toHaveBeenCalled();
-    expect(agent.sendMessage).toHaveBeenCalledWith(expect.stringContaining('Similar DAG task exists'));
-    expect(agent.sendMessage).toHaveBeenCalledWith(expect.stringContaining('existing-fix-login'));
+    // With borderline similarity (0.8-0.95), task is created anyway but with a warning
+    expect(ctx.taskDAG.addTask).toHaveBeenCalled();
+    expect(agent.sendMessage).toHaveBeenCalledWith(expect.stringContaining('Possible duplicate'));
   });
 
   it('links to existing ready declared task instead of creating duplicate', () => {
     const child = makeChildAgent('lead-001');
     const ctx = makeCtx({ spawnAgent: vi.fn().mockReturnValue(child) });
-    // Existing ready task that matches the delegation
+    // Existing ready task with near-identical description (>0.95 similarity)
     (ctx.taskDAG.getTasks as any).mockReturnValue([{
       id: 'declared-fix-login',
       role: 'developer',
@@ -181,7 +181,7 @@ describe('Auto-DAG creation from CREATE_AGENT', () => {
     const agent = makeLeadAgent();
     const cmd = getCreateAgentHandler(ctx);
 
-    cmd.handler(agent, '⟦⟦ CREATE_AGENT {"role": "developer", "task": "Fix the login bug in auth"} ⟧⟧');
+    cmd.handler(agent, '⟦⟦ CREATE_AGENT {"role": "developer", "task": "Fix the login bug in the auth module"} ⟧⟧');
 
     // Should link to existing, not auto-create
     expect(ctx.taskDAG.addTask).not.toHaveBeenCalled();
@@ -193,7 +193,7 @@ describe('Auto-DAG creation from CREATE_AGENT', () => {
   it('force-links to pending declared task instead of creating duplicate', () => {
     const child = makeChildAgent('lead-001');
     const ctx = makeCtx({ spawnAgent: vi.fn().mockReturnValue(child) });
-    // Existing pending task (deps not met) that matches the delegation
+    // Existing pending task with near-identical description (>0.95 similarity)
     (ctx.taskDAG.getTasks as any).mockReturnValue([{
       id: 'declared-pending-task',
       role: 'developer',
@@ -210,7 +210,7 @@ describe('Auto-DAG creation from CREATE_AGENT', () => {
     const agent = makeLeadAgent();
     const cmd = getCreateAgentHandler(ctx);
 
-    cmd.handler(agent, '⟦⟦ CREATE_AGENT {"role": "developer", "task": "Fix the login bug in auth"} ⟧⟧');
+    cmd.handler(agent, '⟦⟦ CREATE_AGENT {"role": "developer", "task": "Fix the login bug in the auth module"} ⟧⟧');
 
     // Should force-link to existing pending task
     expect(ctx.taskDAG.addTask).not.toHaveBeenCalled();
@@ -222,6 +222,7 @@ describe('Auto-DAG creation from CREATE_AGENT', () => {
   it('force-links to blocked declared task instead of creating duplicate', () => {
     const child = makeChildAgent('lead-001');
     const ctx = makeCtx({ spawnAgent: vi.fn().mockReturnValue(child) });
+    // Near-identical description (>0.95 similarity)
     (ctx.taskDAG.getTasks as any).mockReturnValue([{
       id: 'declared-blocked-task',
       role: 'developer',
@@ -237,7 +238,7 @@ describe('Auto-DAG creation from CREATE_AGENT', () => {
     const agent = makeLeadAgent();
     const cmd = getCreateAgentHandler(ctx);
 
-    cmd.handler(agent, '⟦⟦ CREATE_AGENT {"role": "developer", "task": "Fix the login bug in auth"} ⟧⟧');
+    cmd.handler(agent, '⟦⟦ CREATE_AGENT {"role": "developer", "task": "Fix the login bug in the auth module"} ⟧⟧');
 
     expect(ctx.taskDAG.addTask).not.toHaveBeenCalled();
     expect(ctx.taskDAG.forceStartTask).toHaveBeenCalledWith('lead-001', 'declared-blocked-task', expect.any(String));
@@ -943,5 +944,143 @@ describe('maybeSuggestDagGroup', () => {
     // Second call — should NOT re-suggest (already suggested)
     maybeSuggestDagGroup(ctx, 'lead-001');
     expect(leadAgent.sendMessage).not.toHaveBeenCalled();
+  });
+});
+
+describe('Duplicate detection applies role filter', () => {
+  it('does not flag as duplicate when roles differ', () => {
+    const child = makeChildAgent('lead-001');
+    const ctx = makeCtx({ spawnAgent: vi.fn().mockReturnValue(child) });
+    // Existing task for 'architect' role with same description
+    (ctx.taskDAG.getTasks as any).mockReturnValue([{
+      id: 'existing-arch-task',
+      role: 'architect',
+      title: 'Fix the login bug',
+      description: 'Fix the login bug in the auth module',
+      dagStatus: 'running',
+      dependsOn: [],
+      files: [],
+    }]);
+
+    const agent = makeLeadAgent();
+    const cmd = getCreateAgentHandler(ctx);
+
+    // Creating a 'developer' task with same description should NOT match the 'architect' task
+    cmd.handler(agent, '⟦⟦ CREATE_AGENT {"role": "developer", "task": "Fix the login bug in the auth module"} ⟧⟧');
+
+    // Should auto-create, not link to the architect's task
+    expect(ctx.taskDAG.addTask).toHaveBeenCalled();
+  });
+
+  it('correctly deduplicates when role and description match with high similarity', () => {
+    const child = makeChildAgent('lead-001');
+    const ctx = makeCtx({ spawnAgent: vi.fn().mockReturnValue(child) });
+    // Existing task for same role with identical description
+    (ctx.taskDAG.getTasks as any).mockReturnValue([{
+      id: 'existing-dev-task',
+      role: 'developer',
+      title: 'Fix the login bug',
+      description: 'Fix the login bug in the auth module',
+      dagStatus: 'ready',
+      dependsOn: [],
+      files: [],
+    }]);
+    (ctx.taskDAG.startTask as any).mockReturnValue({ id: 'existing-dev-task', dagStatus: 'running' });
+
+    const agent = makeLeadAgent();
+    const cmd = getCreateAgentHandler(ctx);
+
+    // Identical description → >0.95 similarity → should link
+    cmd.handler(agent, '⟦⟦ CREATE_AGENT {"role": "developer", "task": "Fix the login bug in the auth module"} ⟧⟧');
+
+    expect(ctx.taskDAG.addTask).not.toHaveBeenCalled();
+    expect(child.dagTaskId).toBe('existing-dev-task');
+  });
+});
+
+describe('Missing dagTaskId emits warning when DAG exists', () => {
+  it('warns when DELEGATE without dagTaskId and DAG exists', () => {
+    const child = makeChildAgent('lead-001');
+    const ctx = makeCtx({ spawnAgent: vi.fn().mockReturnValue(child) });
+    // Simulate existing DAG tasks
+    (ctx.taskDAG.getTasks as any).mockReturnValue([{
+      id: 'existing-task',
+      role: 'designer',
+      title: 'Design mockups',
+      description: 'Design mockups for the UI',
+      dagStatus: 'done',
+      dependsOn: [],
+      files: [],
+    }]);
+    (ctx.getAllAgents as any).mockReturnValue([child, {
+      id: 'target-agent',
+      parentId: 'lead-001',
+      role: { id: 'developer', name: 'Developer' },
+      status: 'idle',
+      task: undefined,
+      dagTaskId: undefined,
+      sendMessage: vi.fn(),
+      taskOutputStartIndex: 0,
+      messages: [],
+    }]);
+
+    const agent = makeLeadAgent();
+    const cmds = getLifecycleCommands(ctx);
+    const delegateCmd = cmds.find(c => c.name === 'DELEGATE');
+    if (!delegateCmd) throw new Error('DELEGATE not found');
+
+    delegateCmd.handler(agent, '⟦⟦ DELEGATE {"to": "target-agent", "task": "Build the API"} ⟧⟧');
+
+    // Should contain dagTaskId tip
+    expect(agent.sendMessage).toHaveBeenCalledWith(expect.stringContaining('dagTaskId'));
+  });
+});
+
+describe('Review dependency inference finds all matching tasks', () => {
+  it('finds ALL tasks matching reviewed role (Strategy 3)', () => {
+    const ctx = makeCtx();
+    // Set up multiple developer tasks
+    (ctx.taskDAG.getTasks as any).mockReturnValue([
+      { id: 'dev-task-1', role: 'developer', dagStatus: 'done', assignedAgentId: 'agent-1', dependsOn: [], files: [] },
+      { id: 'dev-task-2', role: 'developer', dagStatus: 'running', assignedAgentId: 'agent-2', dependsOn: [], files: [] },
+      { id: 'dev-task-3', role: 'developer', dagStatus: 'done', assignedAgentId: 'agent-3', dependsOn: [], files: [] },
+    ]);
+
+    const deps = inferReviewDependencies(ctx as any, 'lead-001', "Review work from the developer's output");
+
+    // Should find ALL developer tasks, not just one
+    expect(deps).toContain('dev-task-1');
+    expect(deps).toContain('dev-task-2');
+    expect(deps).toContain('dev-task-3');
+    expect(deps.length).toBe(3);
+  });
+
+  it('Strategy 4: "review all work" depends on all running/done tasks', () => {
+    const ctx = makeCtx();
+    (ctx.taskDAG.getTasks as any).mockReturnValue([
+      { id: 'task-a', role: 'developer', dagStatus: 'done', assignedAgentId: 'a1', dependsOn: [], files: [] },
+      { id: 'task-b', role: 'designer', dagStatus: 'running', assignedAgentId: 'a2', dependsOn: [], files: [] },
+      { id: 'task-c', role: 'architect', dagStatus: 'pending', assignedAgentId: 'a3', dependsOn: [], files: [] },
+    ]);
+
+    const deps = inferReviewDependencies(ctx as any, 'lead-001', 'Review all completed work');
+
+    expect(deps).toContain('task-a');
+    expect(deps).toContain('task-b');
+    expect(deps).not.toContain('task-c'); // pending tasks excluded
+  });
+
+  it('normalizes plural role names in Strategy 3 (e.g., "developers" → "developer")', () => {
+    const ctx = makeCtx();
+    (ctx.taskDAG.getTasks as any).mockReturnValue([
+      { id: 'dev-task-1', role: 'developer', dagStatus: 'done', assignedAgentId: 'agent-1', dependsOn: [], files: [] },
+      { id: 'dev-task-2', role: 'developer', dagStatus: 'done', assignedAgentId: 'agent-2', dependsOn: [], files: [] },
+    ]);
+
+    const deps = inferReviewDependencies(ctx as any, 'lead-001', 'Review work from the developers');
+
+    expect(deps).toContain('dev-task-1');
+    expect(deps).toContain('dev-task-2');
+    expect(deps.length).toBe(2);
   });
 });

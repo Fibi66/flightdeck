@@ -351,11 +351,11 @@ export function TimelinePage({ api, ws }: Props) {
             aria-pressed={liveMode}
             className={`flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg transition-colors ${
               liveMode
-                ? 'bg-emerald-900/40 text-emerald-400 border border-emerald-700/50 hover:bg-emerald-900/60'
+                ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-700/50 hover:bg-emerald-200 dark:hover:bg-emerald-900/60'
                 : 'bg-th-bg-alt text-th-text-muted hover:bg-th-bg-muted hover:text-th-text-alt'
             }`}
           >
-            <span className={`inline-block w-2 h-2 rounded-full ${liveMode ? 'bg-emerald-400 animate-pulse motion-reduce:animate-none' : 'bg-zinc-600'}`} aria-hidden="true" />
+            <span className={`inline-block w-2 h-2 rounded-full ${liveMode ? 'bg-emerald-600 dark:bg-emerald-400 animate-pulse motion-reduce:animate-none' : 'bg-zinc-400 dark:bg-zinc-600'}`} aria-hidden="true" />
             Live
           </button>
           <button

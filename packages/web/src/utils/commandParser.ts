@@ -38,6 +38,7 @@ export function splitCommandBlocks(text: string): string[] {
       continue;
     }
 
+    // Assumes well-formed JSON strings; unescaped quotes may desync string tracking
     if (ch === '"' && depth > 0) {
       inString = !inString;
       current += ch;
@@ -116,6 +117,7 @@ export function hasUnclosedCommandBlock(text: string): boolean {
       continue;
     }
 
+    // Assumes well-formed JSON strings; unescaped quotes may desync string tracking
     if (ch === '"' && depth > 0) {
       inString = !inString;
       continue;

@@ -73,6 +73,9 @@ const MIN_DESCRIPTION_MATCH_THRESHOLD = 0.2;
  */
 const MIN_SCORE_GAP = 0.15;
 
+/** Threshold for declareTaskBatch auto-DAG dedup (matching declared tasks to auto-created) */
+const DECLARE_BATCH_DEDUP_THRESHOLD = 0.85;
+
 const STOP_WORDS = new Set([
   'the', 'a', 'an', 'is', 'are', 'was', 'to', 'of', 'in', 'for', 'on',
   'and', 'or', 'with', 'that', 'this', 'it', 'from', 'by', 'as', 'at',
@@ -185,7 +188,7 @@ export class TaskDAG extends EventEmitter {
       const autoMatch = existingAutoTasks.find(auto =>
         !linkedAutoIds.has(auto.id)
         && auto.role === task.role
-        && descriptionSimilarity(task.description || '', auto.description, auto.title) > 0.7
+        && descriptionSimilarity(task.description || '', auto.description, auto.title) > DECLARE_BATCH_DEDUP_THRESHOLD
       );
 
       if (autoMatch) {
@@ -704,10 +707,11 @@ export class TaskDAG extends EventEmitter {
   }
 
   /** Get full DAG status (for TASK_STATUS command) */
-  getStatus(leadId: string): {
+  getStatus(leadId: string, activeAgents?: Array<{ id: string; role: string }>): {
     tasks: DagTask[];
     fileLockMap: Record<string, { taskId: string; agentId?: string }>;
     summary: { pending: number; ready: number; running: number; done: number; failed: number; blocked: number; paused: number; skipped: number };
+    coverage?: { tracked: number; untracked: number; total: number; percentage: number; untrackedAgents: Array<{ id: string; role: string }> };
   } {
     const tasks = this.getTasks(leadId);
     const fileLockMap: Record<string, { taskId: string; agentId?: string }> = {};
@@ -725,7 +729,26 @@ export class TaskDAG extends EventEmitter {
       summary[task.dagStatus as keyof typeof summary]++;
     }
 
-    return { tasks, fileLockMap, summary };
+    // Coverage metric (only if activeAgents provided)
+    let coverage;
+    if (activeAgents) {
+      const trackedAgentIds = new Set(
+        tasks.filter(t => t.assignedAgentId && t.dagStatus === 'running')
+          .map(t => t.assignedAgentId!)
+      );
+      const untrackedAgents = activeAgents.filter(a => !trackedAgentIds.has(a.id));
+      const total = activeAgents.length;
+      const tracked = total - untrackedAgents.length;
+      coverage = {
+        tracked,
+        untracked: untrackedAgents.length,
+        total,
+        percentage: total > 0 ? Math.round((tracked / total) * 100) : 100,
+        untrackedAgents: untrackedAgents.map(a => ({ id: a.id, role: a.role })),
+      };
+    }
+
+    return { tasks, fileLockMap, summary, coverage };
   }
 
   /** Find task by assigned agent ID (checks running first, then ready as fallback) */
