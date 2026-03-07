@@ -233,4 +233,62 @@ describe('AgentRosterRepository', () => {
       expect(repo.getAllAgents('terminated').length).toBe(1);
     });
   });
+
+  // ── Team scoping ─────────────────────────────────────────────────
+
+  describe('team scoping', () => {
+    it('defaults teamId to "default"', () => {
+      const agent = repo.upsertAgent('agent-1', 'developer', 'claude-sonnet');
+      expect(agent.teamId).toBe('default');
+
+      const fromDb = repo.getAgent('agent-1');
+      expect(fromDb!.teamId).toBe('default');
+    });
+
+    it('stores and retrieves custom teamId', () => {
+      const agent = repo.upsertAgent(
+        'agent-t1', 'developer', 'claude-sonnet', 'idle',
+        undefined, 'proj-1', undefined, 'team-alpha',
+      );
+      expect(agent.teamId).toBe('team-alpha');
+
+      const fromDb = repo.getAgent('agent-t1');
+      expect(fromDb!.teamId).toBe('team-alpha');
+    });
+
+    it('updates teamId on upsert', () => {
+      repo.upsertAgent('agent-1', 'developer', 'claude-sonnet', 'idle', undefined, undefined, undefined, 'team-a');
+      repo.upsertAgent('agent-1', 'developer', 'claude-sonnet', 'busy', undefined, undefined, undefined, 'team-b');
+
+      const fromDb = repo.getAgent('agent-1');
+      expect(fromDb!.teamId).toBe('team-b');
+    });
+
+    it('filters getAllAgents by teamId', () => {
+      repo.upsertAgent('a1', 'dev', 'model', 'idle', undefined, undefined, undefined, 'team-x');
+      repo.upsertAgent('a2', 'dev', 'model', 'idle', undefined, undefined, undefined, 'team-y');
+      repo.upsertAgent('a3', 'lead', 'model', 'busy', undefined, undefined, undefined, 'team-x');
+
+      expect(repo.getAllAgents(undefined, 'team-x').length).toBe(2);
+      expect(repo.getAllAgents(undefined, 'team-y').length).toBe(1);
+      expect(repo.getAllAgents(undefined, 'team-z').length).toBe(0);
+    });
+
+    it('filters getAllAgents by status AND teamId', () => {
+      repo.upsertAgent('a1', 'dev', 'model', 'idle', undefined, undefined, undefined, 'team-x');
+      repo.upsertAgent('a2', 'dev', 'model', 'busy', undefined, undefined, undefined, 'team-x');
+      repo.upsertAgent('a3', 'dev', 'model', 'idle', undefined, undefined, undefined, 'team-y');
+
+      expect(repo.getAllAgents('idle', 'team-x').length).toBe(1);
+      expect(repo.getAllAgents('busy', 'team-x').length).toBe(1);
+      expect(repo.getAllAgents('idle', 'team-y').length).toBe(1);
+    });
+
+    it('getAllAgents without teamId returns all teams', () => {
+      repo.upsertAgent('a1', 'dev', 'model', 'idle', undefined, undefined, undefined, 'team-x');
+      repo.upsertAgent('a2', 'dev', 'model', 'idle', undefined, undefined, undefined, 'team-y');
+
+      expect(repo.getAllAgents().length).toBe(2);
+    });
+  });
 });

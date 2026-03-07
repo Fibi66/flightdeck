@@ -10,6 +10,7 @@ export interface DelegationRecord {
   task: string;
   context?: string;
   dagTaskId?: string;
+  teamId: string;
   status: DelegationStatus;
   createdAt: string;
   completedAt?: string;
@@ -25,6 +26,7 @@ export class ActiveDelegationRepository {
     task: string,
     context?: string,
     dagTaskId?: string,
+    teamId: string = 'default',
   ): DelegationRecord {
     const now = new Date().toISOString();
     this.db.drizzle
@@ -35,6 +37,7 @@ export class ActiveDelegationRepository {
         task,
         context: context ?? null,
         dagTaskId: dagTaskId ?? null,
+        teamId,
         status: 'active',
         createdAt: now,
       })
@@ -46,6 +49,7 @@ export class ActiveDelegationRepository {
       task,
       context,
       dagTaskId,
+      teamId,
       status: 'active',
       createdAt: now,
     };
@@ -92,14 +96,16 @@ export class ActiveDelegationRepository {
     return res.changes > 0;
   }
 
-  getActive(agentId?: string): DelegationRecord[] {
-    const query = this.db.drizzle.select().from(activeDelegations);
+  getActive(agentId?: string, teamId?: string): DelegationRecord[] {
+    const conditions = [eq(activeDelegations.status, 'active')];
+    if (agentId) conditions.push(eq(activeDelegations.agentId, agentId));
+    if (teamId) conditions.push(eq(activeDelegations.teamId, teamId));
 
-    const rows = agentId
-      ? query
-          .where(and(eq(activeDelegations.agentId, agentId), eq(activeDelegations.status, 'active')))
-          .all()
-      : query.where(eq(activeDelegations.status, 'active')).all();
+    const rows = this.db.drizzle
+      .select()
+      .from(activeDelegations)
+      .where(and(...conditions))
+      .all();
 
     return rows.map((r) => this.rowToRecord(r));
   }
@@ -143,6 +149,7 @@ export class ActiveDelegationRepository {
       task: row.task,
       context: row.context ?? undefined,
       dagTaskId: row.dagTaskId ?? undefined,
+      teamId: row.teamId,
       status: row.status as DelegationStatus,
       createdAt: row.createdAt,
       completedAt: row.completedAt ?? undefined,

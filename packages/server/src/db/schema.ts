@@ -155,6 +155,7 @@ export const dagTasks = sqliteTable('dag_tasks', {
   id: text('id').notNull(),
   leadId: text('lead_id').notNull(),
   projectId: text('project_id'),
+  teamId: text('team_id').notNull().default('default'),
   role: text('role').notNull(),
   title: text('title'),
   description: text('description').notNull().default(''),
@@ -172,6 +173,8 @@ export const dagTasks = sqliteTable('dag_tasks', {
   index('idx_dag_tasks_lead').on(table.leadId),
   index('idx_dag_tasks_status').on(table.dagStatus),
   index('idx_dag_tasks_project').on(table.projectId),
+  index('idx_dag_tasks_team').on(table.teamId),
+  index('idx_dag_tasks_id_team').on(table.id, table.teamId),
 ]);
 
 // ── Deferred Issues ──────────────────────────────────────────────
@@ -339,6 +342,7 @@ export const agentRoster = sqliteTable('agent_roster', {
   status: text('status').notNull().default('idle'), // 'idle' | 'busy' | 'terminated'
   sessionId: text('session_id'),
   projectId: text('project_id'),
+  teamId: text('team_id').notNull().default('default'),
   createdAt: text('created_at').notNull().default(utcNow),
   updatedAt: text('updated_at').notNull().default(utcNow),
   lastTaskSummary: text('last_task_summary'),
@@ -346,6 +350,8 @@ export const agentRoster = sqliteTable('agent_roster', {
 }, (table) => [
   index('idx_agent_roster_status').on(table.status),
   index('idx_agent_roster_project').on(table.projectId),
+  index('idx_agent_roster_project_team').on(table.projectId, table.teamId),
+  index('idx_agent_roster_team').on(table.teamId),
 ]);
 
 // ── Active Delegations (in-flight task assignments) ─────────────────
@@ -356,6 +362,7 @@ export const activeDelegations = sqliteTable('active_delegations', {
   task: text('task').notNull(),
   context: text('context'),
   dagTaskId: text('dag_task_id'),
+  teamId: text('team_id').notNull().default('default'),
   status: text('status').notNull().default('active'), // 'active' | 'completed' | 'failed' | 'cancelled'
   createdAt: text('created_at').notNull().default(utcNow),
   completedAt: text('completed_at'),
@@ -364,6 +371,7 @@ export const activeDelegations = sqliteTable('active_delegations', {
   index('idx_ad_agent').on(table.agentId, table.status),
   index('idx_ad_status').on(table.status),
   index('idx_ad_dag_task').on(table.dagTaskId),
+  index('idx_ad_team').on(table.teamId),
 ]);
 
 // ── Knowledge (per-project 4-tier memory) ──────────────────────────

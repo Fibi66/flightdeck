@@ -215,4 +215,52 @@ describe('ActiveDelegationRepository', () => {
       expect(delegationRepo.getAllByAgent('agent-1').length).toBe(3);
     });
   });
+
+  // ── Team scoping ─────────────────────────────────────────────────
+
+  describe('team scoping', () => {
+    it('defaults teamId to "default"', () => {
+      const d = delegationRepo.create('del-1', 'agent-1', 'Some task');
+      expect(d.teamId).toBe('default');
+
+      const fromDb = delegationRepo.getByDelegationId('del-1');
+      expect(fromDb!.teamId).toBe('default');
+    });
+
+    it('stores custom teamId', () => {
+      const d = delegationRepo.create('del-t1', 'agent-1', 'Task', undefined, undefined, 'team-alpha');
+      expect(d.teamId).toBe('team-alpha');
+
+      const fromDb = delegationRepo.getByDelegationId('del-t1');
+      expect(fromDb!.teamId).toBe('team-alpha');
+    });
+
+    it('filters getActive by teamId', () => {
+      delegationRepo.create('del-1', 'agent-1', 'T1', undefined, undefined, 'team-x');
+      delegationRepo.create('del-2', 'agent-1', 'T2', undefined, undefined, 'team-y');
+      delegationRepo.create('del-3', 'agent-1', 'T3', undefined, undefined, 'team-x');
+
+      expect(delegationRepo.getActive(undefined, 'team-x').length).toBe(2);
+      expect(delegationRepo.getActive(undefined, 'team-y').length).toBe(1);
+      expect(delegationRepo.getActive(undefined, 'team-z').length).toBe(0);
+    });
+
+    it('filters getActive by agentId AND teamId', () => {
+      rosterRepo.upsertAgent('agent-2', 'dev', 'model');
+      delegationRepo.create('del-1', 'agent-1', 'T1', undefined, undefined, 'team-x');
+      delegationRepo.create('del-2', 'agent-2', 'T2', undefined, undefined, 'team-x');
+      delegationRepo.create('del-3', 'agent-1', 'T3', undefined, undefined, 'team-y');
+
+      expect(delegationRepo.getActive('agent-1', 'team-x').length).toBe(1);
+      expect(delegationRepo.getActive('agent-1', 'team-y').length).toBe(1);
+      expect(delegationRepo.getActive('agent-2', 'team-x').length).toBe(1);
+    });
+
+    it('getActive without teamId returns all teams', () => {
+      delegationRepo.create('del-1', 'agent-1', 'T1', undefined, undefined, 'team-x');
+      delegationRepo.create('del-2', 'agent-1', 'T2', undefined, undefined, 'team-y');
+
+      expect(delegationRepo.getActive('agent-1').length).toBe(2);
+    });
+  });
 });

@@ -20,6 +20,7 @@ function makeRecord(overrides: Partial<AgentRecord> = {}): AgentRecord {
     status: overrides.status ?? 'idle',
     sessionId: 'sessionId' in overrides ? overrides.sessionId : 'session-abc',
     projectId: overrides.projectId ?? 'proj-1',
+    teamId: overrides.teamId ?? 'default',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     lastTaskSummary: overrides.lastTaskSummary,

@@ -11,6 +11,7 @@ export interface AgentRecord {
   status: AgentStatus;
   sessionId?: string;
   projectId?: string;
+  teamId: string;
   createdAt: string;
   updatedAt: string;
   lastTaskSummary?: string;
@@ -28,6 +29,7 @@ export class AgentRosterRepository {
     sessionId?: string,
     projectId?: string,
     metadata?: Record<string, unknown>,
+    teamId: string = 'default',
   ): AgentRecord {
     const now = new Date().toISOString();
     this.db.drizzle
@@ -39,6 +41,7 @@ export class AgentRosterRepository {
         status,
         sessionId: sessionId ?? null,
         projectId: projectId ?? null,
+        teamId,
         metadata: metadata ? JSON.stringify(metadata) : null,
         createdAt: now,
         updatedAt: now,
@@ -51,6 +54,7 @@ export class AgentRosterRepository {
           status,
           sessionId: sessionId ?? null,
           projectId: projectId ?? null,
+          teamId,
           metadata: metadata ? JSON.stringify(metadata) : null,
           updatedAt: now,
         },
@@ -64,6 +68,7 @@ export class AgentRosterRepository {
       status,
       sessionId,
       projectId,
+      teamId,
       createdAt: now,
       updatedAt: now,
       metadata,
@@ -81,11 +86,14 @@ export class AgentRosterRepository {
     return this.rowToRecord(row);
   }
 
-  getAllAgents(status?: AgentStatus): AgentRecord[] {
-    const query = this.db.drizzle.select().from(agentRoster);
+  getAllAgents(status?: AgentStatus, teamId?: string): AgentRecord[] {
+    const conditions = [];
+    if (status) conditions.push(eq(agentRoster.status, status));
+    if (teamId) conditions.push(eq(agentRoster.teamId, teamId));
 
-    const rows = status
-      ? query.where(eq(agentRoster.status, status)).all()
+    const query = this.db.drizzle.select().from(agentRoster);
+    const rows = conditions.length > 0
+      ? query.where(and(...conditions)).all()
       : query.all();
 
     return rows.map((r) => this.rowToRecord(r));
@@ -143,6 +151,7 @@ export class AgentRosterRepository {
       status: row.status as AgentStatus,
       sessionId: row.sessionId ?? undefined,
       projectId: row.projectId ?? undefined,
+      teamId: row.teamId,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
       lastTaskSummary: row.lastTaskSummary ?? undefined,
