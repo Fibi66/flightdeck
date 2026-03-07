@@ -8,10 +8,11 @@ import { redact } from '../utils/redaction.js';
 import { AgentEventEmitter } from './AgentEvents.js';
 import type { UsageInfo, CompactionInfo } from './AgentEvents.js';
 import { startAcp as startAcpBridge, ensureSharedWorkspace } from './AgentAcpBridge.js';
-import { formatCrewUpdate } from '../coordination/CrewFormatter.js';
-import type { CrewMember } from '../coordination/CrewFormatter.js';
+import { formatCrewUpdate } from '../coordination/agents/CrewFormatter.js';
+import type { CrewMember } from '../coordination/agents/CrewFormatter.js';
 
-export type AgentStatus = 'creating' | 'running' | 'idle' | 'completed' | 'failed' | 'terminated';
+import type { AgentStatus } from '@flightdeck/shared';
+export type { AgentStatus } from '@flightdeck/shared';
 
 export function isTerminalStatus(status: AgentStatus): boolean {
   return status === 'completed' || status === 'failed' || status === 'terminated';

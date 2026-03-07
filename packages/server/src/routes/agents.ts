@@ -22,7 +22,7 @@ function buildContentBlocks(text: string, attachments?: Array<{ name: string; mi
   return blocks;
 }
 
-import { DiffService } from '../coordination/DiffService.js';
+import { DiffService } from '../coordination/files/DiffService.js';
 
 export function agentsRoutes(ctx: AppContext): Router {
   const { agentManager, roleRegistry, db: _db, lockRegistry, decisionLog, activityLedger } = ctx;
