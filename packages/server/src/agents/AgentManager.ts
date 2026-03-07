@@ -490,6 +490,9 @@ export class AgentManager extends TypedEmitter<AgentManagerEvents> {
         logger.info('lock', `Auto-released ${releasedCount} lock(s) for exiting agent ${agent.id.slice(0, 8)}`);
       }
 
+      // Clear any pending timers for the exiting agent
+      if (this.timerRegistry) this.timerRegistry.clearAgent(agent.id);
+
       // Clean up parent-child reference
       if (agent.parentId) {
         const parent = this.agents.get(agent.parentId);
