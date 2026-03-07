@@ -317,6 +317,11 @@ function handleCompleteTask(ctx: CommandHandlerContext, agent: Agent, data: stri
 
         const newlyReady = ctx.taskDAG.completeTask(agent.parentId, taskId);
 
+        // Log to activity ledger so keyframes/milestones track completion
+        ctx.activityLedger.log(agent.id, agent.role.id, 'task_completed',
+          `Completed task "${taskId}": ${summary}`,
+          { taskId }, ctx.getProjectIdForAgent(agent.id) ?? '');
+
         // Notify parent with completion details and newly ready tasks
         let parentMsg = `[Agent Report] ${agent.role.name} (${agent.id.slice(0, 8)}) completed DAG task "${taskId}".\nStatus: ${status}\nSummary: ${summary}`;
         if (newlyReady && newlyReady.length > 0) {
@@ -360,6 +365,12 @@ function handleCompleteTask(ctx: CommandHandlerContext, agent: Agent, data: stri
       return;
     }
     const newlyReady = ctx.taskDAG.completeTask(agent.id, req.taskId);
+
+    // Log to activity ledger so keyframes/milestones track completion
+    ctx.activityLedger.log(agent.id, agent.role.id, 'task_completed',
+      `Completed task "${req.taskId}"${summary ? ': ' + summary.slice(0, 200) : ''}`,
+      { taskId: req.taskId }, ctx.getProjectIdForAgent(agent.id) ?? '');
+
     let msg = `[System] Task "${req.taskId}" marked as done.`;
     if (summary) msg += ` Summary: ${summary}`;
     if (newlyReady && newlyReady.length > 0) {

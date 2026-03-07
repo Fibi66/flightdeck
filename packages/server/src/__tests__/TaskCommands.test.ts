@@ -35,6 +35,7 @@ function makeCtx(overrides: Record<string, any> = {}): CommandHandlerContext {
     },
     getAgent: vi.fn(),
     getProjectIdForAgent: vi.fn().mockReturnValue('proj-1'),
+    activityLedger: { log: vi.fn() },
     emit: vi.fn(),
     ...overrides,
   } as any;
