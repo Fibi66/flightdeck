@@ -25,6 +25,7 @@ import type { AgentRosterRepository } from '../db/AgentRosterRepository.js';
 import type { AgentServerClient } from '../agents/AgentServerClient.js';
 import type { AgentServerHealth } from '../agents/AgentServerHealth.js';
 import type { TeamExporter } from '../teams/TeamExporter.js';
+import type { TeamImporter } from '../teams/TeamImporter.js';
 import { rateLimit } from '../middleware/rateLimit.js';
 import { execSync } from 'node:child_process';
 
@@ -79,6 +80,7 @@ export interface AppContext {
   /** @deprecated Use agentServerClient instead. Kept for daemon.ts route compat. */
   reconnectProtocol?: import('../daemon/ReconnectProtocol.js').ReconnectProtocol;
   teamExporter?: TeamExporter;
+  teamImporter?: TeamImporter;
   agentRoster?: AgentRosterRepository;
 }
 

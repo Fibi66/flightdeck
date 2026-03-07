@@ -74,6 +74,17 @@ function minimalCtx(overrides: Partial<AppContext> = {}): AppContext {
     trainingCapture: {
       getTrainingSummary: vi.fn().mockReturnValue(MOCK_TRAINING_SUMMARY),
     } as any,
+    teamImporter: {
+      import: vi.fn().mockReturnValue({
+        success: true,
+        teamId: 'team-1',
+        validation: { valid: true, issues: [] },
+        agents: [{ name: 'a1', action: 'created', newAgentId: 'new-1' }],
+        knowledge: { imported: 1, skipped: 0, conflicts: 0 },
+        training: { correctionsImported: 0, feedbackImported: 0 },
+        warnings: [],
+      }),
+    } as any,
     ...overrides,
   } as AppContext;
 }
@@ -217,16 +228,93 @@ describe('teamsRoutes', () => {
   // ── POST /teams/import ──────────────────────────────────────────
 
   describe('POST /teams/import', () => {
-    it('returns 501 (stub)', async () => {
+    it('imports a valid bundle', async () => {
       const srv = createTestServer();
       const base = await srv.start();
       try {
         const res = await fetch(`${base}/teams/import`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({}),
+          body: JSON.stringify({ bundle: MOCK_BUNDLE, projectId: 'proj-1' }),
         });
-        expect(res.status).toBe(501);
+        const body = await res.json();
+        expect(res.status).toBe(200);
+        expect(body.success).toBe(true);
+        expect(body.report.teamId).toBe('team-1');
+      } finally {
+        await srv.stop();
+      }
+    });
+
+    it('returns 400 when bundle missing', async () => {
+      const srv = createTestServer();
+      const base = await srv.start();
+      try {
+        const res = await fetch(`${base}/teams/import`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ projectId: 'proj-1' }),
+        });
+        expect(res.status).toBe(400);
+      } finally {
+        await srv.stop();
+      }
+    });
+
+    it('returns 400 when projectId missing', async () => {
+      const srv = createTestServer();
+      const base = await srv.start();
+      try {
+        const res = await fetch(`${base}/teams/import`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ bundle: MOCK_BUNDLE }),
+        });
+        expect(res.status).toBe(400);
+      } finally {
+        await srv.stop();
+      }
+    });
+
+    it('returns 422 when validation fails', async () => {
+      const srv = createTestServer({
+        teamImporter: {
+          import: vi.fn().mockReturnValue({
+            success: false,
+            teamId: 'team-1',
+            validation: { valid: false, issues: [{ phase: 'integrity', severity: 'error', message: 'bad checksum' }] },
+            agents: [],
+            knowledge: { imported: 0, skipped: 0, conflicts: 0 },
+            training: { correctionsImported: 0, feedbackImported: 0 },
+            warnings: [],
+          }),
+        } as any,
+      });
+      const base = await srv.start();
+      try {
+        const res = await fetch(`${base}/teams/import`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ bundle: MOCK_BUNDLE, projectId: 'proj-1' }),
+        });
+        expect(res.status).toBe(422);
+        const body = await res.json();
+        expect(body.success).toBe(false);
+      } finally {
+        await srv.stop();
+      }
+    });
+
+    it('returns 503 when importer not available', async () => {
+      const srv = createTestServer({ teamImporter: undefined });
+      const base = await srv.start();
+      try {
+        const res = await fetch(`${base}/teams/import`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ bundle: MOCK_BUNDLE, projectId: 'proj-1' }),
+        });
+        expect(res.status).toBe(503);
       } finally {
         await srv.stop();
       }
@@ -304,6 +392,229 @@ describe('teamsRoutes', () => {
       const base = await srv.start();
       try {
         const res = await fetch(`${base}/teams/team-1`);
+        expect(res.status).toBe(503);
+      } finally {
+        await srv.stop();
+      }
+    });
+  });
+
+  // ── GET /teams/:teamId/health ───────────────────────────────────
+
+  describe('GET /teams/:teamId/health', () => {
+    it('returns health with status counts and agents', async () => {
+      const srv = createTestServer({
+        agentRoster: {
+          getAllAgents: vi.fn().mockReturnValue(MOCK_AGENTS),
+          getStatusCounts: vi.fn().mockReturnValue({ idle: 1, busy: 2, retired: 0, terminated: 0 }),
+        } as any,
+      });
+      const base = await srv.start();
+      try {
+        const res = await fetch(`${base}/teams/team-1/health`);
+        expect(res.status).toBe(200);
+        const body = await res.json();
+        expect(body.teamId).toBe('team-1');
+        expect(body.totalAgents).toBe(3);
+        expect(body.statusCounts).toEqual({ idle: 1, busy: 2, retired: 0, terminated: 0 });
+        expect(body.massFailurePaused).toBe(false);
+        expect(body.agents).toHaveLength(3);
+        expect(body.agents[0]).toHaveProperty('uptimeMs');
+      } finally {
+        await srv.stop();
+      }
+    });
+
+    it('shows mass failure paused when detector triggered', async () => {
+      const srv = createTestServer({
+        agentRoster: {
+          getAllAgents: vi.fn().mockReturnValue(MOCK_AGENTS),
+          getStatusCounts: vi.fn().mockReturnValue({ idle: 1, busy: 2 }),
+        } as any,
+        massFailureDetector: {
+          isTriggered: vi.fn().mockReturnValue(true),
+        } as any,
+      });
+      const base = await srv.start();
+      try {
+        const res = await fetch(`${base}/teams/team-1/health`);
+        const body = await res.json();
+        expect(body.massFailurePaused).toBe(true);
+      } finally {
+        await srv.stop();
+      }
+    });
+
+    it('returns 404 for empty team', async () => {
+      const srv = createTestServer({
+        agentRoster: {
+          getAllAgents: vi.fn().mockReturnValue([]),
+          getStatusCounts: vi.fn().mockReturnValue({}),
+        } as any,
+      });
+      const base = await srv.start();
+      try {
+        const res = await fetch(`${base}/teams/nonexistent/health`);
+        expect(res.status).toBe(404);
+      } finally {
+        await srv.stop();
+      }
+    });
+
+    it('returns 503 when roster not available', async () => {
+      const srv = createTestServer({ agentRoster: undefined });
+      const base = await srv.start();
+      try {
+        const res = await fetch(`${base}/teams/team-1/health`);
+        expect(res.status).toBe(503);
+      } finally {
+        await srv.stop();
+      }
+    });
+  });
+
+  // ── POST /teams/:teamId/agents/:agentId/retire ─────────────────
+
+  describe('POST /teams/:teamId/agents/:agentId/retire', () => {
+    it('retires an agent', async () => {
+      const srv = createTestServer({
+        agentRoster: {
+          getAgent: vi.fn().mockReturnValue({ agentId: 'a1', status: 'idle' }),
+          retireAgent: vi.fn().mockReturnValue(true),
+          getAllAgents: vi.fn().mockReturnValue(MOCK_AGENTS),
+        } as any,
+      });
+      const base = await srv.start();
+      try {
+        const res = await fetch(`${base}/teams/team-1/agents/a1/retire`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason: 'end of project' }),
+        });
+        expect(res.status).toBe(200);
+        const body = await res.json();
+        expect(body.ok).toBe(true);
+        expect(body.status).toBe('retired');
+      } finally {
+        await srv.stop();
+      }
+    });
+
+    it('returns 404 for unknown agent', async () => {
+      const srv = createTestServer({
+        agentRoster: {
+          getAgent: vi.fn().mockReturnValue(undefined),
+          getAllAgents: vi.fn().mockReturnValue(MOCK_AGENTS),
+        } as any,
+      });
+      const base = await srv.start();
+      try {
+        const res = await fetch(`${base}/teams/team-1/agents/unknown/retire`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        expect(res.status).toBe(404);
+      } finally {
+        await srv.stop();
+      }
+    });
+
+    it('returns 409 if already retired', async () => {
+      const srv = createTestServer({
+        agentRoster: {
+          getAgent: vi.fn().mockReturnValue({ agentId: 'a1', status: 'retired' }),
+          getAllAgents: vi.fn().mockReturnValue(MOCK_AGENTS),
+        } as any,
+      });
+      const base = await srv.start();
+      try {
+        const res = await fetch(`${base}/teams/team-1/agents/a1/retire`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        expect(res.status).toBe(409);
+        const body = await res.json();
+        expect(body.error).toContain('already retired');
+      } finally {
+        await srv.stop();
+      }
+    });
+
+    it('returns 503 when roster not available', async () => {
+      const srv = createTestServer({ agentRoster: undefined });
+      const base = await srv.start();
+      try {
+        const res = await fetch(`${base}/teams/team-1/agents/a1/retire`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        expect(res.status).toBe(503);
+      } finally {
+        await srv.stop();
+      }
+    });
+  });
+
+  // ── POST /teams/:teamId/agents/:agentId/clone ──────────────────
+
+  describe('POST /teams/:teamId/agents/:agentId/clone', () => {
+    it('clones an agent', async () => {
+      const mockClone = { agentId: 'a1-clone-xxx', role: 'architect', model: 'gpt-4', status: 'idle', teamId: 'team-1' };
+      const srv = createTestServer({
+        agentRoster: {
+          getAgent: vi.fn().mockReturnValue({ agentId: 'a1', status: 'idle' }),
+          cloneAgent: vi.fn().mockReturnValue(mockClone),
+          getAllAgents: vi.fn().mockReturnValue(MOCK_AGENTS),
+        } as any,
+      });
+      const base = await srv.start();
+      try {
+        const res = await fetch(`${base}/teams/team-1/agents/a1/clone`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        expect(res.status).toBe(201);
+        const body = await res.json();
+        expect(body.ok).toBe(true);
+        expect(body.clone).toEqual(mockClone);
+      } finally {
+        await srv.stop();
+      }
+    });
+
+    it('returns 404 for unknown agent', async () => {
+      const srv = createTestServer({
+        agentRoster: {
+          getAgent: vi.fn().mockReturnValue(undefined),
+          getAllAgents: vi.fn().mockReturnValue(MOCK_AGENTS),
+        } as any,
+      });
+      const base = await srv.start();
+      try {
+        const res = await fetch(`${base}/teams/team-1/agents/unknown/clone`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        expect(res.status).toBe(404);
+      } finally {
+        await srv.stop();
+      }
+    });
+
+    it('returns 503 when roster not available', async () => {
+      const srv = createTestServer({ agentRoster: undefined });
+      const base = await srv.start();
+      try {
+        const res = await fetch(`${base}/teams/team-1/agents/a1/clone`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        });
         expect(res.status).toBe(503);
       } finally {
         await srv.stop();
