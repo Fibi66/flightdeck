@@ -2,17 +2,26 @@
 
 > **Author**: Architect (e7f14c5e)  
 > **Date**: 2026-03-07  
-> **Context**: Flightdeck stores most state in SQLite. This analysis examines what should stay in the DB vs move to human-readable filesystem storage.
+> **Updated**: 2026-03-07 — Revised to "SQLite + Filesystem Mirror" model per user design direction  
+> **Context**: Flightdeck stores all state in SQLite. This analysis designs the filesystem mirror that makes ALL project state human-readable, inspectable, and git-committable.
 
 ---
 
 ## Executive Summary
 
-Flightdeck has **22 SQLite tables** storing everything from file locks (needs atomicity) to collective memory (should be human-readable). The current design treats SQLite as the universal store, but several categories of data would serve users better on the filesystem.
+Flightdeck has **22 SQLite tables** — the complete operational state. SQLite remains the **real-time source of truth** for all operations (ACID transactions, relational queries, sub-millisecond reads).
 
-**The key distinction**: Operational state (locks, DAG, timers, decisions) needs ACID transactions and relational queries — SQLite is correct. Knowledge state (collective memory, session retros, custom roles, training data) should be human-readable, git-trackable, and editable — filesystem is correct.
+**The filesystem mirror**: ALL project state is periodically exported as human-readable files to `<git-root>/.flightdeck/` (or `~/.flightdeck/projects/<pid>/`). This includes agents, sessions, DAG, memory, knowledge, training, and skills. The sync runs every ~30s or on significant state changes.
 
-**Recommendation**: Hybrid model. Keep 16 tables in SQLite for operational state. Move 4 categories to filesystem at `~/.flightdeck/projects/<project-id>/`. Add 2 new filesystem-only categories for per-user training and preferences. SQLite becomes the "working memory" (within-session), filesystem becomes the "long-term memory" (across sessions and users).
+**The model**:
+- **SQLite** = real-time operational database (writes go here first, always)
+- **Filesystem** = human-readable mirror (periodically synced from SQLite)
+- **Users** can inspect, edit, or `git commit` the filesystem files
+- **User edits** are read back on next session start (filesystem → SQLite reverse sync)
+
+This gives us the best of both worlds: SQLite's ACID guarantees for real-time operations, AND human-readable files that users can browse with `ls`, edit in VS Code, and share via git.
+
+**Key directories**: `agents/`, `sessions/`, `dag/`, `memory/`, `knowledge/`, `training/`, `skills/`
 
 ---
 
@@ -93,7 +102,9 @@ Flightdeck already stores some state on the filesystem:
 
 ---
 
-## What Should Move to Filesystem
+## Filesystem Mirror Format by Data Category
+
+> **Note**: In the original analysis, this section asked "what should move to filesystem?" The answer is now: **everything gets mirrored**. SQLite keeps all data. The filesystem gets a human-readable export of each category. This section describes what the mirror looks like for each data type.
 
 ### 1. Collective Memory → `~/.flightdeck/projects/<pid>/knowledge/`
 
@@ -223,9 +234,11 @@ You are a security-focused code reviewer. Your primary responsibility is...
 
 ---
 
-## What Stays in SQLite
+## What Stays SQLite-Only (No Mirror Needed)
 
-### Must Stay (Transactional/Relational)
+> **Note**: In the revised model, ALL tables remain in SQLite. These tables are the ones where the filesystem mirror adds less value — they're either too ephemeral, too high-volume, or too relational to benefit from human-readable files. They MAY get mirrored in the future but are low priority.
+
+### Low-Priority Mirror Candidates
 
 | Table | Why SQLite | Risk if Filesystem |
 |-------|-----------|-------------------|
@@ -240,7 +253,7 @@ You are a security-focused code reviewer. Your primary responsibility is...
 | `agent_plans` | Ephemeral, rebuilt per session | No benefit to filesystem |
 | `task_cost_records` | Aggregation queries (SUM, GROUP BY) | Can't aggregate on filesystem |
 
-### Should Stay (Performance)
+### Future Mirror Candidates (Performance-Sensitive)
 
 | Table | Why SQLite | Notes |
 |-------|-----------|-------|
@@ -277,101 +290,159 @@ You are a security-focused code reviewer. Your primary responsibility is...
 
 ---
 
-## Hybrid Boundary Design
+## Architecture: SQLite + Filesystem Mirror
 
-### The Principle
+### The Model
 
 ```
-                    ┌──────────────────────────┐
-                    │     Flightdeck State      │
-                    └──────────┬───────────────┘
-                               │
-              ┌────────────────┼────────────────┐
-              ▼                                  ▼
-     ┌────────────────┐                ┌────────────────┐
-     │    SQLite       │                │   Filesystem    │
-     │  (flightdeck.db)│                │ (~/.flightdeck/)│
-     │                 │                │                 │
-     │ "Working Memory"│                │ "Long-Term      │
-     │  Within-session │                │  Memory"        │
-     │  operational    │                │  Cross-session  │
-     │  state          │                │  knowledge      │
-     └────────────────┘                └────────────────┘
-     
-     ✅ Locks, DAG, timers            ✅ Knowledge, roles
-     ✅ Decisions, approvals           ✅ Training, preferences  
-     ✅ Chat groups, messages          ✅ Retros, learnings
-     ✅ Activity log, metrics          ✅ Skills, templates
-     ✅ Projects, sessions             ✅ User config
+              ┌──────────────────────────────────┐
+              │         Flightdeck State          │
+              └──────────────┬───────────────────┘
+                             │
+                    ┌────────▼────────┐
+                    │     SQLite      │
+                    │ (flightdeck.db) │
+                    │                 │
+                    │ Source of Truth  │
+                    │ All 22 tables   │
+                    │ ACID, relational│
+                    └────────┬────────┘
+                             │
+                    ┌────────▼────────┐
+                    │  Sync Engine    │
+                    │                 │
+                    │ Every ~30s or   │
+                    │ on state change │
+                    └────────┬────────┘
+                             │
+                    ┌────────▼──────────────────────────────┐
+                    │         Filesystem Mirror              │
+                    │  <git-root>/.flightdeck/               │
+                    │  OR ~/.flightdeck/projects/<pid>/      │
+                    │                                        │
+                    │  Human-readable · git-committable      │
+                    │  User-editable · IDE-browsable         │
+                    └───────────────────────────────────────┘
 ```
 
-### SQLite Keeps (16 tables — operational state)
+### Sync Direction
 
-1. `conversations` + `messages` — Session chat history
-2. `file_locks` — Atomic lock management
-3. `dag_tasks` — Task state machine
-4. `decisions` — Approval workflows
-5. `deferred_issues` — Issue tracking
-6. `timers` — Scheduled events
-7. `chat_groups` + `chat_group_members` + `chat_group_messages` — Group coordination
-8. `projects` + `project_sessions` — Project registry
-9. `activity_log` — Audit trail
-10. `task_cost_records` — Token metrics
-11. `agent_plans` — Ephemeral plans
-12. `agent_file_history` — File touch metrics
-13. `settings` (operational only) — Share links, budgets, recovery state
+| Direction | When | What |
+|-----------|------|------|
+| **SQLite → Filesystem** | Every ~30s + on significant state changes | All mirrored categories |
+| **Filesystem → SQLite** | On session start | User edits detected via mtime/checksum |
 
-### Filesystem Gets (4 categories — knowledge state)
+**"Significant state changes"** = task completion, agent spawn/death, decision made, session retro generated, delegation created/completed. NOT every message or activity log entry.
 
-1. **Knowledge** (`collective_memory` → files) — Patterns, decisions, gotchas
-2. **Retros** (`session_retros` → files) — Session retrospectives
-3. **Custom Roles** (`roles` where builtIn=0 → files) — User-authored system prompts
-4. **Agent Preferences** (subset of `agent_memory` → files) — Cross-session agent facts
+### What Gets Mirrored (7 Directories)
 
-### Filesystem New (2 categories — per-user training)
+| Directory | Source Tables | Sync Freq | User-Editable? |
+|-----------|-------------|-----------|----------------|
+| `agents/` | roles, agent_memory, agent_plans | 30s + spawn/death | ✅ Yes (memory, preferences) |
+| `sessions/` | project_sessions, conversations, messages | 30s | ❌ Read-only (inspect) |
+| `dag/` | dag_tasks, decisions, deferred_issues | 30s + task complete | ❌ Read-only (inspect) |
+| `memory/` | agent_memory, collective_memory | 30s + new entry | ✅ Yes (edit/delete entries) |
+| `knowledge/` | collective_memory (categorized) | 30s + new entry | ✅ Yes (edit/add/delete) |
+| `training/` | (filesystem-native, no DB source) | n/a | ✅ Yes (user-authored) |
+| `skills/` | (filesystem-native, no DB source) | n/a | ✅ Yes (user-authored) |
 
-5. **User Preferences** — Per-user coding style, tool preferences, communication style
-6. **Training Notes** — Corrections, feedback, domain knowledge
+**Note**: `training/` and `skills/` are filesystem-native — they don't come FROM SQLite. They're user-authored content that flows INTO agent context at session start. The reverse of the mirror pattern.
+
+### SQLite Keeps ALL 22 Tables
+
+Nothing moves out of SQLite. The database retains all data for real-time operations. The filesystem mirror is additive — a read-only export that users can inspect and (for designated categories) edit.
+
+Tables that benefit most from the mirror:
+- **High user value**: `collective_memory`, `agent_memory`, `roles`, `session_retros`, `dag_tasks`, `decisions`
+- **Medium user value**: `conversations`/`messages` (session history summaries), `projects`/`project_sessions`
+- **Low user value**: `file_locks`, `timers`, `activity_log`, `agent_plans` (too ephemeral or high-volume)
+
+### Filesystem Mirror Structure
+
+```
+<git-root>/.flightdeck/          # Project-scoped (or ~/.flightdeck/projects/<pid>/)
+├── project.yaml                 # Project metadata, sync state, schema version
+│
+├── agents/                      # Agent roster and per-agent state
+│   ├── roster.yaml              # All agents: role, model, backend, status
+│   ├── architect/
+│   │   ├── role.md              # System prompt (built-in or custom)
+│   │   ├── memory.yaml          # Learned facts, preferences (from agent_memory)
+│   │   └── plan.md              # Current plan (from agent_plans)
+│   ├── developer/
+│   │   ├── role.md
+│   │   ├── memory.yaml
+│   │   └── plan.md
+│   └── ...
+│
+├── sessions/                    # Session history and conversation summaries
+│   ├── current.yaml             # Active session metadata
+│   ├── history/
+│   │   ├── 2026-03-07-daemon-design.md    # Session summary/retro
+│   │   └── 2026-03-06-r5-logging.md
+│   └── conversations/           # Conversation summaries (NOT full transcripts)
+│       ├── architect.md         # Summary of key exchanges
+│       └── developer.md
+│
+├── dag/                         # Task DAG and decisions
+│   ├── tasks.yaml               # Full task DAG (id, title, status, assignee, deps)
+│   ├── delegations.yaml         # Active delegations
+│   └── decisions.yaml           # Pending and resolved decisions
+│
+├── memory/                      # Agent memory and collective knowledge
+│   ├── collective/              # From collective_memory table
+│   │   ├── patterns.md          # Learned patterns
+│   │   ├── decisions.md         # Key decisions made
+│   │   ├── gotchas.md           # Gotchas and pitfalls
+│   │   └── expertise.md         # Agent expertise notes
+│   └── per-agent/               # From agent_memory table (cross-session facts)
+│       ├── architect.yaml
+│       └── developer.yaml
+│
+├── knowledge/                   # Project knowledge base (curated)
+│   ├── patterns/
+│   │   ├── async-error-handling.md
+│   │   └── drizzle-migration-order.md
+│   ├── decisions/
+│   │   ├── chose-pino-over-winston.md
+│   │   └── flat-options-not-union.md
+│   └── gotchas/
+│       ├── sqlite-wal-checkpoint-blocks.md
+│       └── acp-session-load-gemini.md
+│
+├── training/                    # User-authored training data (filesystem-native)
+│   ├── corrections.yaml         # "When I say X, I mean Y"
+│   ├── style-guide.md           # Personal coding style preferences
+│   ├── domain-terms.yaml        # Project-specific terminology
+│   └── feedback/                # Session-specific corrections
+│       └── 2026-03-07.yaml
+│
+├── skills/                      # Skill files for agent capabilities
+│   └── ...
+│
+└── .gitattributes               # Git merge strategies for YAML files
+```
+
+### Storage Location Choice
+
+The user confirmed: filesystem mirror can live in either location:
+
+| Location | When to Use | Gitcommittable? |
+|----------|------------|-----------------|
+| `<git-root>/.flightdeck/` | Default for project-scoped state | ✅ Yes (team sharing) |
+| `~/.flightdeck/projects/<pid>/` | User-private state, or no git repo | ❌ Not in repo |
+
+Both can coexist: `.flightdeck/` for shared team knowledge, `~/.flightdeck/` for personal training/preferences.
 
 ---
 
-## Per-User Training Design
+## Training Data (Filesystem-Native)
+
+> Training and skills directories are **filesystem-native** — they don't come from SQLite. They're user-authored content that flows into agent context at session start. This is the reverse of the mirror pattern: filesystem → agent context, not SQLite → filesystem.
 
 ### Directory Structure
 
-```
-~/.flightdeck/
-├── config.yaml                       # Global user preferences
-├── roles/                            # User-global custom roles
-│   ├── security-expert.md
-│   └── ml-engineer.md
-├── projects/
-│   ├── <project-id>/                 # Per-project, per-user
-│   │   ├── knowledge/                # Collective memory (moved from DB)
-│   │   │   ├── patterns/
-│   │   │   ├── decisions/
-│   │   │   ├── expertise/
-│   │   │   └── gotchas/
-│   │   ├── retros/                   # Session retrospectives
-│   │   │   └── 2026-03-07-daemon.md
-│   │   ├── training/                 # NEW: Per-user training data
-│   │   │   ├── corrections.yaml     # "When I say X, I mean Y"
-│   │   │   ├── style-guide.md       # Personal coding style prefs
-│   │   │   ├── domain-terms.yaml    # Project-specific terminology
-│   │   │   └── feedback/            # Session-specific corrections
-│   │   │       └── 2026-03-07.yaml
-│   │   ├── agents/                   # Per-role preferences
-│   │   │   ├── architect/
-│   │   │   │   └── preferences.yaml
-│   │   │   └── developer/
-│   │   │       └── preferences.yaml
-│   │   └── roles/                    # Project-specific custom roles
-│   │       └── domain-expert.md
-│   └── <another-project-id>/
-│       └── ...
-└── shared/                           # Shared across projects (rare)
-    └── global-corrections.yaml
-```
+The training directory lives within the mirror structure (see above). Here are the file formats:
 
 ### Training File Formats
 
@@ -432,36 +503,40 @@ abbreviations:
   WS: "WebSocket"
 ```
 
-### How Training Data Flows
+### How Data Flows (Mirror + Training)
 
 ```
 Session Start:
-  1. Load ~/.flightdeck/config.yaml (global prefs)
-  2. Load ~/.flightdeck/projects/<pid>/training/ (project training)
-  3. Load ~/.flightdeck/projects/<pid>/knowledge/ (collective memory)
-  4. Inject into agent context manifest (Agent.buildContextManifest())
+  1. Reverse sync: read filesystem mirror, detect user edits (mtime/checksum)
+  2. Apply user edits to SQLite (knowledge, memory, roles)
+  3. Load training/ files (corrections, style-guide, domain-terms)
+  4. Load skills/ files
+  5. Inject into agent context manifest (Agent.buildContextManifest())
 
 During Session:
-  5. Agents discover patterns → write to knowledge/patterns/
-  6. User provides corrections → append to training/feedback/<date>.yaml
-  7. Agent learns from corrections → updates training/corrections.yaml
+  6. SQLite = source of truth for all real-time state
+  7. Sync engine writes mirror every ~30s + on significant events
+  8. Agents discover patterns → SQLite → mirrored to knowledge/
+  9. User provides corrections → append to training/feedback/<date>.yaml
 
 Session End:
-  8. Generate retro → write to retros/<date>.md
-  9. Consolidate feedback → merge into corrections.yaml
+  10. Final sync: full mirror write
+  11. Generate retro → SQLite → mirrored to sessions/history/
+  12. Consolidate feedback → merge into training/corrections.yaml
 ```
 
 ### Sharing Model
 
 ```
-Per-user, per-project (DEFAULT):
-  ~/.flightdeck/projects/<pid>/training/    ← YOUR training data
-  ~/.flightdeck/projects/<pid>/knowledge/   ← YOUR knowledge entries
+In-repo (team-shared, git-committable):
+  <git-root>/.flightdeck/knowledge/     ← Team knowledge base
+  <git-root>/.flightdeck/training/      ← Team conventions, domain terms
+  <git-root>/.flightdeck/skills/        ← Team skill files
+  <git-root>/.flightdeck/dag/           ← Inspectable task state
+  <git-root>/.flightdeck/agents/        ← Agent roster, roles
 
-Shared with team (OPT-IN):
-  <cwd>/.flightdeck/knowledge/              ← Committed to git, shared
-  <cwd>/.flightdeck/training/               ← Committed to git, shared
-  <cwd>/.flightdeck/roles/                  ← Project roles, shared
+Private (user-only):
+  ~/.flightdeck/projects/<pid>/         ← Personal preferences, private corrections
 
 Merge strategy:
   Team knowledge + personal training = merged context at session start
@@ -470,53 +545,179 @@ Merge strategy:
 
 ---
 
-## Migration Strategy
+## Sync Architecture
 
-### Phase 1: Read-Through Cache (Non-Breaking)
+### Sync Engine Design
 
-Add filesystem reading WITHOUT removing DB writes. Both paths active.
+The sync engine is a service that periodically exports SQLite state to the filesystem mirror.
 
-1. At session start, check `~/.flightdeck/projects/<pid>/knowledge/` for files
-2. Load them into `CollectiveMemory` service alongside DB entries
-3. Filesystem entries take priority over DB entries with same key
-4. New entries still write to DB (backward compatible)
+```typescript
+interface SyncEngine {
+  // Start periodic sync (called once at server startup)
+  start(intervalMs: number): void;
+  stop(): void;
+  
+  // Trigger immediate sync (called on significant state changes)
+  syncNow(reason: string): Promise<void>;
+  
+  // Reverse sync: read user edits from filesystem → SQLite
+  importUserEdits(): Promise<SyncResult>;
+  
+  // Full export: SQLite → filesystem (for CLI command)
+  exportAll(): Promise<void>;
+}
 
-### Phase 2: Write to Filesystem
+interface SyncResult {
+  filesRead: number;
+  editsDetected: number;
+  editsApplied: number;
+  conflicts: SyncConflict[];
+}
+```
 
-Start writing NEW knowledge entries to filesystem instead of DB.
+### Sync Triggers
 
-1. `CollectiveMemory.remember()` writes a markdown file instead of DB insert
-2. Existing DB entries remain readable (migration happens gradually)
-3. Add `flightdeck export-knowledge` CLI command to bulk-migrate DB → files
-4. Same for session retros, custom roles
+| Trigger | What Syncs | Priority |
+|---------|-----------|----------|
+| Periodic (every ~30s) | All dirty categories | Low (batched) |
+| Agent spawn/death | `agents/roster.yaml`, `agents/<role>/` | High (immediate) |
+| Task completion | `dag/tasks.yaml`, `dag/delegations.yaml` | High (immediate) |
+| Decision made | `dag/decisions.yaml` | High (immediate) |
+| New knowledge entry | `memory/collective/`, `knowledge/` | Medium |
+| Session end | Full sync + retro | High (immediate) |
+| Session start | Reverse sync (filesystem → SQLite) | High (blocking) |
 
-### Phase 3: Training Infrastructure
+### Dirty Tracking
 
-Add the per-user training system.
+The sync engine doesn't re-export everything every 30s. It tracks which categories are dirty:
 
-1. Create training file templates on first `flightdeck init`
-2. Load training data in `Agent.buildContextManifest()`
-3. Add `/correct` command in session for real-time feedback capture
+```typescript
+class SyncEngine {
+  private dirty = new Set<SyncCategory>();
+  
+  // Called by services when they modify SQLite data
+  markDirty(category: SyncCategory): void {
+    this.dirty.add(category);
+  }
+  
+  // Periodic tick: only sync dirty categories
+  private async tick(): Promise<void> {
+    if (this.dirty.size === 0) return;
+    const categories = [...this.dirty];
+    this.dirty.clear();
+    await Promise.all(categories.map(c => this.syncCategory(c)));
+  }
+}
+
+type SyncCategory = 'agents' | 'sessions' | 'dag' | 'memory' | 'knowledge';
+```
+
+### Export Format Per Category
+
+**agents/roster.yaml** (from roles + agent runtime state):
+```yaml
+schemaVersion: 1
+syncedAt: 2026-03-07T17:30:00Z
+
+agents:
+  - id: e7f14c5e
+    role: architect
+    model: claude-opus-4.6
+    backend: copilot-cli
+    status: active
+    currentTask: design-multi-backend
+    
+  - id: d3ec686e
+    role: developer
+    model: claude-opus-4.6
+    backend: copilot-cli
+    status: active
+    currentTask: implement-r5-logging
+```
+
+**dag/tasks.yaml** (from dag_tasks + decisions):
+```yaml
+schemaVersion: 1
+syncedAt: 2026-03-07T17:30:00Z
+
+tasks:
+  - id: auto-architect-research-acp
+    title: "Research ACP support across CLIs"
+    status: done
+    assignee: e7f14c5e
+    dependencies: []
+    completedAt: 2026-03-07T15:00:00Z
+    
+  - id: auto-dev-implement-r5
+    title: "Implement structured logging"
+    status: running
+    assignee: d3ec686e
+    dependencies: [auto-architect-research-acp]
+```
+
+**sessions/current.yaml** (from project_sessions):
+```yaml
+schemaVersion: 1
+syncedAt: 2026-03-07T17:30:00Z
+
+session:
+  id: sess-abc123
+  projectId: ai-crew
+  startedAt: 2026-03-07T14:00:00Z
+  agentCount: 12
+  tasksCompleted: 5
+  tasksRemaining: 3
+```
+
+**sessions/conversations/architect.md** (summarized, NOT full transcript):
+```markdown
+# Architect Conversation Summary
+
+## Key Exchanges
+- Discussed multi-backend adapter design with lead
+- Resolved AdapterStartOptions conflict (flat vs union → flat wins)
+- Designed filesystem mirror architecture
+
+## Decisions Made
+- SDK backends hold API key in-process (documented security tradeoff)
+- Training files are filesystem-native, not DB-mirrored
+```
+
+### Phase 1: Core Mirror (MVP)
+
+1. Implement `SyncEngine` service with periodic tick
+2. Export `agents/roster.yaml` and `dag/tasks.yaml` — highest user value
+3. Export `memory/collective/` — knowledge entries
+4. Trigger sync on agent spawn/death and task completion
+5. CLI command: `flightdeck export` for manual full export
+
+### Phase 2: Full Mirror
+
+1. Add `sessions/` export (history, conversation summaries)
+2. Add `dag/decisions.yaml` and `dag/delegations.yaml`
+3. Add `agents/<role>/memory.yaml` per-agent memory export
+4. Reverse sync: detect user edits on session start
+
+### Phase 3: Training Integration
+
+1. Load `training/` files at session start
+2. Load `skills/` files at session start
+3. `/correct` command for real-time feedback capture
 4. Auto-consolidate feedback at session end
-
-### Phase 4: DB Cleanup
-
-Remove migrated tables from DB (or leave as read-only fallback).
-
-1. Mark `collective_memory` table as deprecated
-2. Mark `session_retros` table as deprecated
-3. Custom roles load from filesystem first, DB fallback
-4. Eventually remove deprecated tables in a future migration
 
 ---
 
 ## Impact on Daemon Design
 
-The daemon design doc (1229 lines) proposed `agentRoster` and `activeDelegations` as SQLite tables. These are NOT yet implemented — they're in-memory structures.
+The daemon design doc (1466 lines) proposed `agentRoster` and `activeDelegations` as SQLite tables. These are NOT yet implemented — they're in-memory structures.
 
-**Recommendation**: Keep both in SQLite when implemented. They're operational state (agent lifecycle tracking, delegation assignments) that needs atomicity and survives daemon restarts. Not knowledge data.
+**Recommendation**: Keep both in SQLite when implemented. They're operational state that needs atomicity and survives daemon restarts. The sync engine mirrors them to `agents/roster.yaml` and `dag/delegations.yaml`.
 
-The daemon's event buffer during reconnect should also be in-memory (or SQLite for crash resilience), NOT filesystem — it's ephemeral operational state with sub-second access requirements.
+**Daemon + Sync Engine interaction**:
+- The daemon owns agent lifecycle → marks `agents` category dirty on spawn/death
+- The daemon owns delegation lifecycle → marks `dag` category dirty on delegate/complete
+- The sync engine runs in the server process (not the daemon) — it has direct DB access
+- The daemon's event buffer during reconnect stays in-memory (NOT synced to filesystem — too ephemeral, sub-second access requirements)
 
 ---
 
@@ -867,26 +1068,32 @@ function safeReadYaml<T>(path: string, schema: z.ZodSchema<T>, fallback: T): T {
 
 ## Design Decisions
 
-### D1: SQLite = operational, filesystem = knowledge
-**Why**: Operational state changes rapidly, needs transactions, and is queried relationally. Knowledge state changes slowly, needs human readability, and should be portable/shareable.
+### D1: SQLite = source of truth, filesystem = periodic mirror
+**Why**: SQLite handles real-time operations (ACID, relational queries, sub-ms reads). The filesystem mirror makes ALL state human-readable, inspectable, and git-committable. Users never need to open a SQL client. Neither store is abandoned — they serve different access patterns.
 
 ### D2: Local-only, single-user — no user nesting
 **Why**: Flightdeck is single-user local software. `~/.flightdeck/` IS the user's directory. No `users/<id>/` subdirectories. Sharing with team happens via git (commit `<cwd>/.flightdeck/` files).
 
 ### D3: Markdown for content, YAML for structured data
-**Why**: Knowledge entries and roles are prose — markdown is natural. Corrections, domain terms, and preferences are structured — YAML is human-editable and parseable.
+**Why**: Knowledge entries and roles are prose — markdown is natural. Roster, DAG, and preferences are structured — YAML is human-editable and parseable.
 
-### D4: Read-on-start, merge-on-end — no filesystem watching
-**Why**: Filesystem watching adds platform-specific complexity and race conditions. For single-user local operation, "snapshot at start, three-way-merge at end" is simple, reliable, and respects user edits made mid-session.
+### D4: Dirty tracking, not full re-export
+**Why**: Re-exporting all categories every 30s wastes I/O. Services call `syncEngine.markDirty(category)` when they modify data. The periodic tick only exports dirty categories. Significant events (agent spawn, task complete) trigger immediate sync.
 
-### D5: Gradual migration, not big-bang
-**Why**: The DB works today. Moving data to filesystem should be incremental — read from both, write to new, migrate existing on demand. No data loss risk.
+### D5: Reverse sync on session start only
+**Why**: Detecting user edits mid-session adds filesystem watching complexity. Instead, we read filesystem at session start and three-way-merge any user edits into SQLite. Simple, reliable, no race conditions.
 
-### D6: Knowledge files are NOT the collective_memory table dumped to disk
-**Why**: The filesystem format should be designed for human consumption (readable markdown with context), not machine consumption (raw key-value). The migration is a format transformation, not a copy.
+### D6: Conversation summaries, NOT full transcripts
+**Why**: Full conversation transcripts are massive (thousands of messages). The `sessions/conversations/` mirror contains AI-generated summaries of key exchanges and decisions — human-scannable, not machine-dump.
 
-### D7: Zod schemas with .passthrough() for all structured files
+### D7: Training and skills are filesystem-native
+**Why**: Training files (corrections, style-guide, domain-terms) and skill files are user-authored content. They DON'T come from SQLite — they flow INTO agent context at session start. The reverse of the mirror pattern.
+
+### D8: Zod schemas with .passthrough() for all structured files
 **Why**: Forward compatibility (unknown fields preserved) and backward compatibility (missing fields get defaults) handled by the same mechanism. Aligns with R2 shared types pattern. Never crashes on malformed input.
 
-### D8: Schema version in every file, lazy migration on read
+### D9: Schema version in every file, lazy migration on read
 **Why**: Files only get rewritten when Flightdeck actually changes them — preserves user formatting, avoids noisy diffs, respects file ownership. Explicit `flightdeck migrate-files` command available for users who want clean files.
+
+### D10: Two storage locations, user's choice
+**Why**: `<git-root>/.flightdeck/` for team-shared state (committed to git). `~/.flightdeck/projects/<pid>/` for private state (personal preferences, training). Both can coexist.
