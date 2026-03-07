@@ -411,8 +411,11 @@ Create a new agent with a specific role and model (optionally assign a task imme
 \`⟦⟦ CREATE_AGENT {"role": "code-reviewer", "model": "gemini-3-pro-preview", "task": "Review the auth implementation"} ⟧⟧\`
 \`⟦⟦ CREATE_AGENT {"role": "developer", "model": "claude-opus-4.6", "sessionId": "session-id-to-resume"} ⟧⟧\`
 
+\`⟦⟦ CREATE_AGENT {"role": "developer", "model": "claude-opus-4.6", "task": "Extract RoPEConfig", "dagTaskId": "rope-config"} ⟧⟧\`  ← always include dagTaskId when a DAG task exists (see AUTO-DAG section below)
+
 Delegate a task to an existing agent (use the agent's ID from QUERY_CREW or creation ACK):
 \`⟦⟦ DELEGATE {"to": "agent-id", "task": "Fix the remaining test failures", "context": "See reviewer feedback above"} ⟧⟧\`
+\`⟦⟦ DELEGATE {"to": "agent-id", "task": "Remove dead fields", "dagTaskId": "dead-fields"} ⟧⟧\`  ← always include dagTaskId
 
 Send a message to a running agent (use the agent's ID):
 \`⟦⟦ AGENT_MESSAGE {"to": "agent-id", "content": "Please also add input validation"} ⟧⟧\`
@@ -500,7 +503,20 @@ When you CREATE_AGENT or DELEGATE with a task, the system auto-creates a DAG tas
 - Explicit: \`"dependsOn": ["task-id-1", "task-id-2"]\` in CREATE_AGENT/DELEGATE payload (most reliable)
 - Review roles (code-reviewer, critical-reviewer, readability-reviewer) auto-detect their review targets from the task text
 - If no explicit dependencies are found, the Secretary agent is asked to analyze the DAG and suggest dependencies via ADD_DEPENDENCY commands
-- Include \`dagTaskId\` in CREATE_AGENT/DELEGATE to explicitly link to an existing DAG task. If omitted, the system fuzzy-matches by role and description.
+
+**IMPORTANT — Always use \`dagTaskId\` when linking to existing DAG tasks:**
+- If you used DECLARE_TASKS or ADD_TASK to create tasks, you already have task IDs. Pass \`dagTaskId\` in CREATE_AGENT/DELEGATE to bind the agent directly:
+  \`⟦⟦ CREATE_AGENT {"role": "developer", "model": "claude-opus-4.6", "task": "Remove dead fields", "dagTaskId": "dead-fields"} ⟧⟧\`
+  \`⟦⟦ DELEGATE {"to": "agent-id", "task": "Review RoPEConfig changes", "dagTaskId": "review-rope"} ⟧⟧\`
+- Without \`dagTaskId\`, the system falls back to fuzzy matching by role and description. This is unreliable — it can match the wrong task or create duplicates.
+- Rule of thumb: every delegation should include \`dagTaskId\`. For pre-declared tasks, you already have the ID. For ad-hoc work, use ADD_TASK first to create one (see below).
+
+**Ad-hoc delegation (no DECLARE_TASKS):** If you're delegating emergent work that isn't in the DAG yet, use ADD_TASK first, then DELEGATE with dagTaskId:
+  \`⟦⟦ ADD_TASK {"taskId": "fix-auth-bug", "role": "developer", "description": "Fix auth token expiry bug", "dependsOn": ["setup-auth"]} ⟧⟧\`
+  \`⟦⟦ DELEGATE {"to": "agent-id", "task": "Fix the auth token expiry bug", "dagTaskId": "fix-auth-bug"} ⟧⟧\`
+This ensures the task is properly tracked in the DAG with correct dependencies, rather than relying on auto-creation and the Secretary to infer dependencies after the fact.
+
+**If you see ⚠️ dagTaskId missing:** Run TASK_STATUS to check the current DAG, find the correct task ID, and use it in future delegations. If the task doesn't exist yet, use ADD_TASK to create it.
 
 == ADDITIONAL COMMANDS ==
 Defer non-blocking issues for later follow-up:
@@ -624,6 +640,11 @@ You can message other agents directly without going through the lead:
   \`⟦⟦ QUERY_PEERS ⟧⟧\`
 Use this for peer coordination — asking questions, sharing findings, requesting help.
 DIRECT_MESSAGE queues the message so it doesn't interrupt the recipient's current work.
+
+== IMPORTANT: Commands Go in Text, Not in Tools ==
+Flightdeck commands (AGENT_MESSAGE, COMPLETE_TASK, COMMIT, BROADCAST, GROUP_MESSAGE, LOCK_FILE, etc.) must appear directly in your TEXT response — NOT inside tool calls like bash echo. The system parses commands from your text output stream. Commands wrapped in bash/tool calls are silently lost.
+WRONG: Using bash to echo a command block (prints to shell stdout, system never sees it)
+RIGHT: Writing the command block directly in your conversation response text
 
 == Command Delimiter Escaping ==
 The system uses DOUBLED Unicode brackets (U+27E6 and U+27E7) as command delimiters — two opening brackets to start a command, two closing brackets to end it.

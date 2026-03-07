@@ -63,11 +63,16 @@ export function startAcp(agent: Agent, config: ServerConfig, initialPrompt?: str
       return conn.prompt(initialPrompt);
     }
   }).catch((err) => {
-    logger.error('acp', `Agent ${agent.id.slice(0, 8)} ACP start failed: ${err?.message || err}`, {
+    const errorMsg = err?.message || String(err);
+    logger.error('acp', `Agent ${agent.id.slice(0, 8)} ACP start failed: ${errorMsg}`, {
       cliCommand: config.cliCommand,
       cwd: agent.cwd || process.cwd(),
       role: agent.role?.id,
     });
+
+    // Store error for exit event (text pipeline is buffered, races with immediate exit)
+    agent.exitError = errorMsg;
+
     agent.status = 'failed';
     agent._notifyExit(1);
   });

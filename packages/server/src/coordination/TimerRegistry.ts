@@ -64,14 +64,15 @@ export class TimerRegistry extends EventEmitter {
     }
   }
 
-  /** Load all pending timers from DB into memory */
+  /** Load all pending timers from DB into memory, merging with any already in the map */
   private loadPending(): void {
     const rows = this.db.select().from(schema.timers)
       .where(eq(schema.timers.status, 'pending'))
       .all();
-    this.pending.clear();
     for (const row of rows) {
-      this.pending.set(row.id, this.rowToTimer(row));
+      if (!this.pending.has(row.id)) {
+        this.pending.set(row.id, this.rowToTimer(row));
+      }
     }
   }
 
