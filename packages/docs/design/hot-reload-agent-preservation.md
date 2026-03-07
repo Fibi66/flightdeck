@@ -44,19 +44,19 @@ ACP uses stdio pipes (`stdin`/`stdout`) for communication via the `@agentclientp
 Split into two processes: a long-lived **Agent Host** daemon that spawns and manages Copilot CLI processes, and a restartable **API Server** that connects to the daemon via local IPC.
 
 ```
-┌─────────────────────────────────────────┐
-│ Agent Host Daemon (long-lived)          │
-│                                         │
+┌────────────────────────────────────────┐
+│ Agent Host Daemon (long-lived)         │
+│                                        │
 │  ┌──────────┐ ┌──────────┐ ┌────────┐  │
-│  │ copilot   │ │ copilot   │ │  ...   │  │
-│  │ (agent 1) │ │ (agent 2) │ │        │  │
+│  │ copilot  │ │ copilot  │ │  ...   │  │
+│  │ (agent 1)│ │ (agent 2)│ │        │  │
 │  └────┬─────┘ └────┬─────┘ └────┬───┘  │
-│       │ stdio       │ stdio      │       │
-│  ┌────┴─────────────┴────────────┴───┐  │
-│  │    ACP Bridge Layer               │  │
-│  └────────────────┬──────────────────┘  │
-│                   │ Unix Domain Socket   │
-└───────────────────┼─────────────────────┘
+│       │ stdio      │ stdio      │      │
+│  ┌────┴────────────┴────────────┴───┐  │
+│  │    ACP Bridge Layer              │  │
+│  └────────────────┬─────────────────┘  │
+│                   │ Unix Domain Socket │
+└───────────────────┼────────────────────┘
                     │
 ┌───────────────────┼─────────────────────┐
 │ API Server (restartable via tsx watch)  │
