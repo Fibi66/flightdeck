@@ -29,11 +29,10 @@ const daemonStatus = {
   running: true,
   mode: 'development',
   agentCount: 3,
-  pid: 48291,
   uptimeMs: 8100000,
   uptimeFormatted: '2h 15m',
   spawningPaused: false,
-  transport: { platform: 'darwin', socketPath: '/tmp/flightdeck.sock' },
+  transport: { type: 'unix' },
 };
 
 const daemonAgents = [
@@ -119,16 +118,15 @@ describe('DaemonPanel', () => {
     });
     expect(screen.getAllByText('Running').length).toBeGreaterThan(0);
     expect(screen.getByText('2h 15m')).toBeInTheDocument();
-    expect(screen.getByText('48291')).toBeInTheDocument();
   });
 
-  it('renders transport info with platform label', async () => {
+  it('renders transport info with type label', async () => {
     setupMocks();
     renderPanel();
     await waitFor(() => {
       expect(screen.getByText('Transport')).toBeInTheDocument();
     });
-    expect(screen.getByText('macOS (Unix Domain Socket)')).toBeInTheDocument();
+    expect(screen.getByText('Unix Domain Socket')).toBeInTheDocument();
   });
 
   it('renders reconnect status', async () => {
@@ -168,7 +166,7 @@ describe('DaemonPanel', () => {
 
   it('shows stopped state when daemon is not running', async () => {
     setupMocks({
-      status: { ...daemonStatus, running: false, mode: 'unavailable', agentCount: 0, pid: null, uptimeFormatted: null },
+      status: { ...daemonStatus, running: false, mode: 'unavailable', agentCount: 0, uptimeFormatted: null },
     });
     renderPanel();
     await waitFor(() => {
@@ -242,23 +240,23 @@ describe('DaemonPanel', () => {
     });
   });
 
-  it('renders Linux transport platform label', async () => {
+  it('renders TCP transport type label', async () => {
     setupMocks({
-      status: { ...daemonStatus, transport: { platform: 'linux', socketPath: '/run/flightdeck.sock' } },
+      status: { ...daemonStatus, transport: { type: 'tcp' } },
     });
     renderPanel();
     await waitFor(() => {
-      expect(screen.getByText('Linux (Unix Domain Socket)')).toBeInTheDocument();
+      expect(screen.getByText('TCP')).toBeInTheDocument();
     });
   });
 
-  it('renders Windows transport platform label', async () => {
+  it('renders Named Pipe transport type label', async () => {
     setupMocks({
-      status: { ...daemonStatus, transport: { platform: 'win32', socketPath: null } },
+      status: { ...daemonStatus, transport: { type: 'pipe' } },
     });
     renderPanel();
     await waitFor(() => {
-      expect(screen.getByText('Windows (Named Pipe)')).toBeInTheDocument();
+      expect(screen.getByText('Named Pipe')).toBeInTheDocument();
     });
   });
 });

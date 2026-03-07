@@ -11,6 +11,9 @@ function paramStr(val: string | string[] | undefined): string {
   return Array.isArray(val) ? val[0] ?? '' : val ?? '';
 }
 
+/** Validate agentId format — UUID-like hex with dashes, prevents log injection */
+const AGENT_ID_RE = /^[a-f0-9\-]{8,64}$/i;
+
 export function daemonRoutes(ctx: AppContext): Router {
   const { daemonProcess, daemonClient, reconnectProtocol, massFailureDetector } = ctx;
   const router = Router();
@@ -19,42 +22,37 @@ export function daemonRoutes(ctx: AppContext): Router {
 
   /** Get daemon status overview */
   router.get('/daemon/status', daemonReadLimiter, (_req, res) => {
-    const now = Date.now();
-
     // If DaemonProcess is running in-process, use it directly
     if (daemonProcess) {
       const agents = daemonProcess.listAgents();
-      const startedAt = (daemonProcess as any)._startedAt as number | undefined;
-      const uptimeMs = startedAt ? now - startedAt : 0;
+      const uptimeMs = daemonProcess.uptime;
 
       return res.json({
         running: true,
         mode: daemonProcess.mode,
         agentCount: agents.length,
-        pid: process.pid,
         uptimeMs,
         uptimeFormatted: formatUptime(uptimeMs),
         spawningPaused: daemonProcess.isSpawningPaused,
         transport: {
-          platform: (daemonProcess as any)._transport?.platform ?? process.platform,
-          socketPath: daemonProcess.path,
+          type: daemonProcess.transportType,
         },
       });
     }
 
     // Fall back to DaemonClient (remote daemon)
     if (daemonClient) {
+      const platform = process.platform;
+      const transportType = platform === 'win32' ? 'pipe' : (platform === 'linux' || platform === 'darwin') ? 'unix' : 'tcp';
       return res.json({
         running: daemonClient.isConnected,
         mode: 'remote',
         agentCount: null,
-        pid: null,
         uptimeMs: null,
         uptimeFormatted: null,
         spawningPaused: false,
         transport: {
-          platform: process.platform,
-          socketPath: null,
+          type: transportType,
         },
         connection: {
           connected: daemonClient.isConnected,
@@ -66,11 +64,10 @@ export function daemonRoutes(ctx: AppContext): Router {
       running: false,
       mode: 'unavailable',
       agentCount: 0,
-      pid: null,
       uptimeMs: null,
       uptimeFormatted: null,
       spawningPaused: false,
-      transport: { platform: process.platform, socketPath: null },
+      transport: { type: 'unknown' },
     });
   });
 
@@ -214,7 +211,9 @@ export function daemonRoutes(ctx: AppContext): Router {
   /** Terminate a specific agent */
   router.post('/daemon/agents/:agentId/terminate', daemonWriteLimiter, async (req, res) => {
     const agentId = paramStr(req.params.agentId);
-    if (!agentId) return res.status(400).json({ error: 'agentId is required' });
+    if (!agentId || !AGENT_ID_RE.test(agentId)) {
+      return res.status(400).json({ error: 'Invalid agentId format' });
+    }
 
     if (daemonClient?.isConnected) {
       try {

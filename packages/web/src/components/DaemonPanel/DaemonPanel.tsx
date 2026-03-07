@@ -33,13 +33,11 @@ interface DaemonStatus {
   running: boolean;
   mode: DaemonMode;
   agentCount: number | null;
-  pid: number | null;
   uptimeMs: number | null;
   uptimeFormatted: string | null;
   spawningPaused: boolean;
   transport: {
-    platform: string;
-    socketPath: string | null;
+    type: string;
   };
   connection?: {
     connected: boolean;
@@ -106,12 +104,12 @@ function connectionStateBadge(state: ConnectionState): { bg: string; label: stri
   }
 }
 
-function platformLabel(platform: string): string {
-  switch (platform) {
-    case 'darwin': return 'macOS (Unix Domain Socket)';
-    case 'linux': return 'Linux (Unix Domain Socket)';
-    case 'win32': return 'Windows (Named Pipe)';
-    default: return `${platform} (TCP Fallback)`;
+function transportLabel(type: string): string {
+  switch (type) {
+    case 'unix': return 'Unix Domain Socket';
+    case 'pipe': return 'Named Pipe';
+    case 'tcp': return 'TCP';
+    default: return type;
   }
 }
 
@@ -134,7 +132,7 @@ function StatusCard({ status }: { status: DaemonStatus }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
         <div>
           <span className="text-th-text-alt">Mode</span>
           <p className="font-medium text-th-text capitalize">{status.mode}</p>
@@ -146,10 +144,6 @@ function StatusCard({ status }: { status: DaemonStatus }) {
         <div>
           <span className="text-th-text-alt">Uptime</span>
           <p className="font-medium text-th-text">{status.uptimeFormatted ?? '—'}</p>
-        </div>
-        <div>
-          <span className="text-th-text-alt">PID</span>
-          <p className="font-medium text-th-text font-mono">{status.pid ?? '—'}</p>
         </div>
       </div>
 
@@ -172,15 +166,9 @@ function TransportCard({ transport }: { transport: DaemonStatus['transport'] }) 
       </div>
       <div className="space-y-2 text-sm">
         <div className="flex justify-between">
-          <span className="text-th-text-alt">Platform</span>
-          <span className="text-th-text">{platformLabel(transport.platform)}</span>
+          <span className="text-th-text-alt">Type</span>
+          <span className="text-th-text">{transportLabel(transport.type)}</span>
         </div>
-        {transport.socketPath && (
-          <div className="flex justify-between">
-            <span className="text-th-text-alt">Socket</span>
-            <span className="text-th-text font-mono text-xs truncate max-w-[300px]">{transport.socketPath}</span>
-          </div>
-        )}
       </div>
     </div>
   );

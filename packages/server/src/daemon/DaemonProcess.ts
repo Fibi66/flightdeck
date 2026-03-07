@@ -192,6 +192,19 @@ export class DaemonProcess {
     return this._mode;
   }
 
+  /** Timestamp (ms) when the daemon was started, or 0 if not started. */
+  get uptime(): number {
+    return this.startedAt > 0 ? Date.now() - this.startedAt : 0;
+  }
+
+  /** Transport type: 'unix', 'pipe', or 'tcp'. */
+  get transportType(): string {
+    const p = this.transport.platform;
+    if (p === 'win32') return 'pipe';
+    if (p === 'linux' || p === 'darwin') return 'unix';
+    return 'tcp';
+  }
+
   /** Switch lifecycle mode at runtime. Clears stale timers and restarts for new mode if orphaned. */
   setMode(mode: DaemonLifecycleMode): void {
     if (mode !== 'production' && mode !== 'development') {
