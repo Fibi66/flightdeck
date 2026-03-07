@@ -1371,6 +1371,246 @@ async function main() {
 - Multiple tsx watch restarts don't create multiple agent servers
 - `dev.mjs` crash doesn't kill the agent server
 
+## State Persistence Ownership
+
+### Principle: Write-on-Mutation, Not Write-on-Shutdown
+
+The agent server persists state on **every lifecycle event** (spawn, status change, exit), not just on graceful shutdown. This means:
+
+- **Graceful shutdown:** State is already in SQLite. Shutdown just flushes any remaining buffers.
+- **Crash:** The last-mutated state is already in SQLite. At most one event is lost (the one being processed when the crash occurred).
+- **Restart:** The agent server reads persisted state, detects stale/crashed agents, and marks them dead or attempts SDK resume.
+
+This mirrors the `TimerRegistry` and `MessageQueueStore` patterns already in the codebase — DB-first, in-memory cache second.
+
+### Shared Database with Ownership Boundaries
+
+A single shared SQLite database (WAL mode, already configured) with clear write ownership per table. Only one process writes to any given table — this eliminates write contention without requiring separate databases or synchronization protocols.
+
+**Why shared DB (not separate)?**
+- SQLite WAL mode supports concurrent readers with a single writer — perfect for two-process architecture
+- No sync complexity (no replication, no conflict resolution, no message-based state transfer)
+- Both processes see the same data immediately (no eventual consistency)
+- Existing 25+ tables and migrations work unchanged
+- Single backup, single migration path
+
+#### Agent Server Owns (writes):
+
+| Table | Contents | Write Trigger |
+|-------|----------|---------------|
+| `agentRoster` | Active agent instances: id, role, status, pid, sessionId, provider | Every spawn, status change, exit |
+| `activeDelegations` | Parent→child task assignments: fromAgent, toAgent, task, status | Every delegation create, complete, fail |
+| `conversations` (agent rows) | Per-agent conversation threads | On agent output events |
+| `messages` (agent rows) | Individual messages within conversations | On each agent message |
+
+#### Orchestration Server Owns (writes):
+
+| Table | Contents | Write Trigger |
+|-------|----------|---------------|
+| `dagTasks` | Task DAG: tasks, dependencies, status | DAG mutations |
+| `projects` | Project metadata: id, name, config | Project CRUD |
+| `messageQueue` | Queued messages TO agents (write-on-enqueue) | Agent messaging |
+| `knowledge` | Knowledge store entries (core, procedural, semantic, episodic) | Knowledge operations |
+| `fileLocks` | File lock registry | Lock/unlock operations |
+| `decisions` | Approval gate decisions | Governance actions |
+| `timers` | Scheduled timer state | Timer create/fire/cancel |
+| `chatGroups`, `chatGroupMessages` | Group chat definitions and history | Group operations |
+| `activityLog` | Audit trail | All significant events |
+| `agentMemory` | Cross-session key-value memory | Memory operations |
+| `agentPlans` | Agent planning state | Plan updates |
+
+#### Both Read:
+
+| Reader | Tables Read | Purpose |
+|--------|------------|---------|
+| Agent server | `messageQueue` | Drain queued messages to agents on startup |
+| Agent server | `projects` | Resolve project config for agent spawn |
+| Orchestration server | `agentRoster` | Display agent status in UI, reconciliation |
+| Orchestration server | `activeDelegations` | Track delegation status in DAG view |
+| Orchestration server | `conversations`, `messages` | Display agent conversation history in UI |
+
+### Filesystem Mirroring Ownership
+
+Each process runs its own `SyncEngine` instance for the tables it owns. This produces clear directory ownership with no file conflicts:
+
+```
+~/.flightdeck/projects/<project-id>/
+  agents/                              # Agent server SyncEngine
+    roster.json                        # Agent roster snapshot
+    delegations.json                   # Active delegations snapshot
+    sessions/                          # Per-agent session metadata
+      <agent-id>.json                  # sessionId, provider, model, status
+  knowledge/                           # Orchestration server SyncEngine
+    core.json                          # Core knowledge entries
+    procedural.json                    # Learned procedures
+    semantic.json                      # Domain concepts
+    episodic.json                      # Session history
+  dag/                                 # Orchestration server SyncEngine
+    tasks.json                         # Task DAG state
+    delegations-view.json              # Read-only copy for UI
+  project.yaml                         # Project metadata (orchestration server)
+```
+
+**Rule:** Each directory is written by exactly one process. The other process may read but never writes. This eliminates filesystem race conditions without locks.
+
+## Recovery Responsibilities
+
+### Who Restarts What
+
+| Failure | Who Detects | Who Recovers | Recovery Action |
+|---------|-------------|-------------|-----------------|
+| Agent server crash | Orchestration server (ForkTransport `'exit'` event) | Orchestration server | Re-fork agent server, wait for ready, reconcile |
+| Orchestration server crash | Agent server (IPC disconnect) | tsx watch (auto-restart) | New server connects, authenticates, subscribes |
+| Individual agent crash | Agent server (child `'exit'` event) | Orchestration server (decides policy) | SDK resume, re-spawn, or mark failed |
+| Both crash | OS / developer | Developer restarts `npm run dev` | Full startup sequence |
+
+### Agent Server Self-Recovery on Startup
+
+When the agent server starts (fresh or after crash), it recovers its own state:
+
+```typescript
+class AgentServer {
+  async recover(): Promise<RecoveryResult> {
+    // 1. Read last-known agent roster from SQLite
+    const roster = db.select().from(agentRoster)
+      .where(eq(agentRoster.status, 'running')).all();
+
+    const recovered: string[] = [];
+    const stale: string[] = [];
+
+    for (const entry of roster) {
+      // 2. Check if the agent process is still alive (from previous session)
+      if (this.isProcessAlive(entry.pid)) {
+        // Agent survived (rare — only if agent server was the one that died
+        // but agents were somehow reparented). Re-adopt.
+        this.reattachAgent(entry);
+        recovered.push(entry.agentId);
+      } else {
+        // Agent is dead — mark as stale in DB
+        db.update(agentRoster)
+          .set({ status: 'stale', updatedAt: now() })
+          .where(eq(agentRoster.id, entry.id)).run();
+        stale.push(entry.agentId);
+      }
+    }
+
+    return { recovered, stale, total: roster.length };
+  }
+}
+```
+
+### Orchestration Server Reconciliation
+
+After the agent server restarts (or on initial connection), the orchestration server reconciles what SHOULD be running vs what IS running:
+
+```typescript
+async function reconcileAgents(
+  agentServerClient: AgentServerClient,
+  dagTasks: DagTask[],
+  roster: AgentRosterEntry[],
+): Promise<ReconciliationPlan> {
+  // 1. Ask agent server what's alive
+  const liveAgents = await agentServerClient.list();
+  const liveSet = new Set(liveAgents.map(a => a.agentId));
+
+  // 2. Compare with what DAG says should be running
+  const activeTasks = dagTasks.filter(t => t.status === 'in_progress' && t.assignedAgentId);
+
+  const plan: ReconciliationPlan = {
+    alive: [],       // Running and should be running ✅
+    missing: [],     // Should be running but not found — need re-spawn
+    orphaned: [],    // Running but no DAG task — may be stale
+    staleInDb: [],   // Marked stale in roster — need resume or re-spawn
+  };
+
+  for (const task of activeTasks) {
+    if (liveSet.has(task.assignedAgentId)) {
+      plan.alive.push(task.assignedAgentId);
+    } else {
+      plan.missing.push({ agentId: task.assignedAgentId, task });
+    }
+  }
+
+  // 3. Execute plan
+  for (const { agentId, task } of plan.missing) {
+    const rosterEntry = roster.find(r => r.agentId === agentId);
+    if (rosterEntry?.sessionId && rosterEntry.supportsResume) {
+      // Attempt SDK resume
+      await agentServerClient.spawn({ ...rosterEntry, sessionId: rosterEntry.sessionId });
+    } else {
+      // Fresh spawn with task context
+      await agentServerClient.spawn({ role: task.role, task: task.description, ... });
+    }
+  }
+
+  return plan;
+}
+```
+
+**Reconciliation runs:**
+1. On orchestration server startup (connect to existing agent server)
+2. After agent server restart (re-fork recovery)
+3. On explicit user action ("Reconcile agents" button)
+
+## Project Scoping
+
+### Everything is Project-Scoped
+
+Agents, knowledge, DAG tasks, delegations, file locks, and memory are all keyed by `projectId`. This is already the case in the existing schema — every major table has a `projectId` foreign key.
+
+### Agent Server is Project-Aware but Not Project-Limited
+
+The agent server manages agents across **all projects simultaneously**. Each agent carries its `projectId`, and the agent server uses it for:
+
+- Routing events to the correct orchestration server connection (future: multi-server)
+- Scoping `list()` responses when the orchestration server requests agents for a specific project
+- Isolating mass-failure detection per project (a bad API key in project A shouldn't pause project B)
+
+```typescript
+// Agent server: list agents, optionally scoped to project
+handleList(msg: ListAgentsMessage): void {
+  let agents = [...this.agents.values()];
+  if (msg.projectId) {
+    agents = agents.filter(a => a.params.projectId === msg.projectId);
+  }
+  this.listener.send({
+    type: 'list_result',
+    requestId: msg.requestId,
+    agents: agents.map(toDescriptor),
+  });
+}
+```
+
+### Orchestration Server Connects with Project Context
+
+The orchestration server tells the agent server which project it's working on. This scopes event subscriptions and agent listing:
+
+```typescript
+// On connect, orchestration server declares its project context
+agentServerClient.send({
+  type: 'configure',
+  projectId: currentProject.id,  // "I care about this project's agents"
+});
+```
+
+### Agent Server as Shared Service
+
+The agent server outlives any single project session:
+
+- **User switches projects:** Agents from the previous project keep running. The orchestration server subscribes to the new project's agents. Old agents are either explicitly terminated or continue running in the background.
+- **Multiple projects active:** The agent server manages agents for project A and project B simultaneously. Each project's agents are isolated by `projectId`.
+- **Future team mode:** Multiple orchestration servers (different developers or different UI instances) connect to the same agent server, each with their own project context. The agent server routes events to the appropriate orchestration server based on `projectId`. This is a natural extension of the architecture — no redesign needed.
+
+```
+Future: Team Mode
+  Orchestration Server A (Alice, project-X) ──┐
+                                               ├── Agent Server (shared)
+  Orchestration Server B (Bob, project-Y)   ──┘     ├─ agents for project-X
+                                                     └─ agents for project-Y
+```
+
+This requires the WebSocketTransport (multi-connection) and multi-client support in the agent server — but the architecture is ready for it.
+
 ## Migration from Daemon Code
 
 ### What We Reuse (Directly)
@@ -1464,7 +1704,7 @@ This is the path from "local dev tool" to "production infrastructure" — and th
 
 1. **TCP vs UDS for reconnection?** TCP localhost is simpler and cross-platform. UDS is marginally more secure (file permissions on the socket itself). Recommendation: TCP with token auth — simplicity wins, and the token provides equivalent security to UDS file permissions.
 
-2. **Should the agent server have its own SQLite connection?** Currently: no — all DB writes go through the orchestration server. The agent server is stateless (roster is in-memory, persisted by the orchestration server via AgentRosterRepository). If the agent server needs to write directly (e.g., crash-safe state), it could open its own read-only or write-ahead connection.
+2. **~~Should the agent server have its own SQLite connection?~~** **RESOLVED:** Yes — the agent server opens its own connection to the shared SQLite database (WAL mode). It owns writes to agent-scoped tables (agentRoster, activeDelegations, conversations/messages for agents). The orchestration server owns writes to coordination tables (taskDag, knowledge, messageQueue, etc.). Both read each other's tables. See "Shared Database with Ownership Boundaries" section.
 
 3. **In-process Claude SDK agents?** ClaudeSdkAdapter runs in-process (no subprocess). These agents die with the orchestration server, not the agent server. Should they move to the agent server? Probably yes — but that requires the agent server to have the Claude SDK dependency and API key. For now, in-process agents use SDK resume as their survival mechanism.
 
