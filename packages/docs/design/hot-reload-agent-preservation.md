@@ -708,6 +708,113 @@ Option D (nuclear — kills everything):
 
 ---
 
+### Operational Robustness
+
+Additional failure modes identified during group design review (@e7f14c5e, @bb14c13b):
+
+#### Per-Agent Health Monitoring
+
+The daemon must handle individual agent process death while remaining healthy itself. When a Copilot CLI agent's stdio pipes close unexpectedly (crash, OOM, segfault):
+
+1. Daemon emits an `exit` event to the server (with exit code and agent ID)
+2. Daemon cleans up internal state for that agent (remove from roster, close pipes)
+3. Daemon does **NOT** auto-restart the agent — the server's existing `RecoveryService` / `RetryManager` decides whether to retry
+
+This mirrors `AcpAdapter`'s existing `process.on('exit', ...)` handler. The daemon's ACP bridge layer should implement the same pattern.
+
+#### Event Buffering on Server Reconnect
+
+When the API server restarts and reconnects to the daemon, there's a window where agent events could be lost (old socket closing, new socket opening). The daemon must buffer events during disconnection:
+
+- **Buffer size:** Last 100 events per agent, or 30 seconds' worth, whichever is smaller
+- **On reconnect:** Server sends `subscribe(agentId)` for each known agent, daemon replays buffered events in order
+- **Buffer overflow:** Oldest events dropped (FIFO). Server can request full state sync via `list()` if needed
+
+#### Orphaned Mode (Server Disconnect)
+
+If the daemon detects server disconnect (socket EOF, heartbeat timeout), it enters **orphaned mode**:
+
+- Agents keep running — daemon does NOT terminate them
+- Events are buffered (see above)
+- Daemon logs warning: `[daemon] Server disconnected — agents preserved, waiting for reconnect`
+- When a new server connects and authenticates, daemon exits orphaned mode and replays buffered events
+
+This is the key behavior that makes the daemon valuable: server crash/restart is invisible to agents.
+
+#### Single-Client Mode
+
+The daemon accepts **one server connection at a time**. If a second server attempts to connect (e.g., developer runs `npm run dev` in two terminals):
+
+- Second connection is rejected after auth with error: `{ "error": "Another server is already connected" }`
+- Server logs: `[daemon] Connection rejected — daemon already has an active client`
+- The UI should surface this as: "Another Flightdeck instance is connected to the agent host"
+
+Multi-client adds massive complexity for a scenario that shouldn't happen. Single-client is the 80/20 solution.
+
+#### Token File Race on Daemon Restart
+
+If the daemon restarts (new token generated) while the server is also restarting, the server may read the old token file before the new daemon writes the new one. Auth fails on first attempt.
+
+**Fix:** Server retries auth with a fresh token file read after a 500ms delay if the first attempt fails. Maximum 3 retries (1.5s total). This covers the race window where the daemon is still initializing.
+
+#### Socket Ownership Check
+
+If a developer accidentally runs `sudo npm run dev` once, the socket/token/pid files get created as `root`. Subsequent non-sudo runs can't connect.
+
+**Fix:** Daemon startup checks `stat(socketDir).uid === process.getuid()` and refuses to start with a clear error:
+```
+Error: Socket directory ~/.flightdeck/run/ is owned by uid 0 (root), but daemon
+is running as uid 1000. This usually means a previous run used sudo. Fix:
+  sudo rm -rf ~/.flightdeck/run/
+```
+
+### Copilot SDK `--resume` Impact
+
+The planned Copilot SDK natively supports `--resume <sessionId>`, which changes the cost/benefit of both phases:
+
+**Phase 1 (auto-resume) improves dramatically:** `--resume` skips context window rebuild. Resume time drops from 5-15s to ~1-2s per agent. Context budget cost drops from "rebuild everything" to "resume token only." Phase 1 becomes nearly free.
+
+**Phase 2 (daemon) still adds value:** Even with `--resume`, agents still die and restart on server restart. The daemon provides true zero-downtime — agents never notice the server restarted. For a 10-agent crew, that's 10-20s of resume time eliminated entirely.
+
+**Daemon crash recovery simplifies:** With `--resume`, daemon crash recovery becomes: daemon restarts → server tells new daemon to `spawn --resume <sessionId>` for each agent → agents resume natively. Data loss drops from "30s of activity" to "current in-progress turn only."
+
+**Recommendation:** Keep daemon design as-is. Add `--resume` support as a spawn option in the daemon protocol. Both Phase 1 and daemon crash recovery become 1-line changes (add `--resume` to spawn args), not architectural changes.
+
+### API Surface for Web Dashboard
+
+The daemon is invisible to the web UI — the API server proxies all daemon operations. The UI talks to the server, never to the daemon directly.
+
+**New endpoints:**
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/daemon/status` | GET | `{ running, pid, uptime, agentCount, mode: 'daemon'\|'direct', socketPath }` |
+| `/api/daemon/stop` | POST | Graceful shutdown. `?force=true` for SIGKILL. |
+| `/api/daemon/restart` | POST | Graceful restart (agents re-attached after new daemon starts) |
+
+Existing endpoints work unchanged — `POST /api/agents` (spawn), `DELETE /api/agents/:id` (terminate), etc. — they proxy through the daemon when connected, fall back to direct spawn when not.
+
+**New WebSocket events:**
+
+| Event | Payload | When |
+|-------|---------|------|
+| `daemon:status` | `{ connected, mode: 'daemon'\|'direct' }` | Daemon connect/disconnect |
+| `daemon:reconnecting` | `{}` | Server lost daemon, attempting reconnect |
+| `daemon:fallback` | `{}` | Server fell back to direct ACP spawn |
+
+**Key R9 alignment (@e7f14c5e):** The `AgentAdapter` interface from R9 is exactly the abstraction boundary the daemon client needs. `AcpAdapter` implements it for direct spawn; a future `DaemonAdapter` implements the same interface, proxying through the socket. All downstream code (AgentManager, CommandDispatcher, routes) sees zero changes.
+
+### Future Considerations
+
+Items identified during design review that are worth noting but not specced in detail:
+
+- **Abstract Unix sockets (Linux):** Prefixed with `\0`, live in kernel memory, auto-cleanup on process exit. Avoids all filesystem race conditions. Linux-specific optimization — worth adding as an opt-in feature.
+- **Mutual auth:** Daemon proves its identity to the server (not just server→daemon). Low risk since socket file permissions prevent daemon impersonation, but adds defense-in-depth.
+- **Budget-based auto-kill:** Wire `BudgetEnforcer` to call daemon's `terminateAll()` when budget limit is hit (currently only logs a warning).
+- **Max connections limit on daemon socket:** Not needed for single-client mode, but consider if multi-client is ever added.
+
+---
+
 ## Decision Matrix
 
 | Criterion | Daemon (1) | HMR (2) | Resume (3) | Worker (4) | FIFO (5) | Hybrid (6) |
