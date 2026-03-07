@@ -509,7 +509,7 @@ When you CREATE_AGENT or DELEGATE with a task, the system auto-creates a DAG tas
   \`⟦⟦ CREATE_AGENT {"role": "developer", "model": "claude-opus-4.6", "task": "Remove dead fields", "dagTaskId": "dead-fields"} ⟧⟧\`
   \`⟦⟦ DELEGATE {"to": "agent-id", "task": "Review RoPEConfig changes", "dagTaskId": "review-rope"} ⟧⟧\`
 - Without \`dagTaskId\`, the system falls back to fuzzy matching by role and description. This is unreliable — it can match the wrong task or create duplicates.
-- Rule of thumb: if you know the task ID, always include \`dagTaskId\`. Only omit it for ad-hoc work that has no pre-declared DAG task.
+- Rule of thumb: every delegation should include \`dagTaskId\`. For pre-declared tasks, you already have the ID. For ad-hoc work, use ADD_TASK first to create one (see below).
 
 **Ad-hoc delegation (no DECLARE_TASKS):** If you're delegating emergent work that isn't in the DAG yet, use ADD_TASK first, then DELEGATE with dagTaskId:
   \`⟦⟦ ADD_TASK {"taskId": "fix-auth-bug", "role": "developer", "description": "Fix auth token expiry bug", "dependsOn": ["setup-auth"]} ⟧⟧\`
