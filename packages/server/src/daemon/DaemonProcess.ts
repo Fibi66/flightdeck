@@ -10,7 +10,7 @@
  * - production: daemon shuts down when the server disconnects (no orphans)
  * - development: daemon persists, agents survive for hot-reload iteration
  *
- * Design: packages/docs/design/hot-reload-agent-preservation.md
+ * Design: docs/design/hot-reload-agent-preservation.md
  */
 import { createServer, type Server, type Socket } from 'node:net';
 import { randomBytes, timingSafeEqual } from 'node:crypto';

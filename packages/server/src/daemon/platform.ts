@@ -4,7 +4,7 @@
  * Abstracts platform-specific IPC transport, file permissions, signal handling,
  * and path resolution so the daemon works on macOS, Linux, and Windows.
  *
- * Design: packages/docs/design/hot-reload-agent-preservation.md § Cross-Platform Compatibility
+ * Design: docs/design/hot-reload-agent-preservation.md § Cross-Platform Compatibility
  *
  * Key points:
  * - Node.js `net` module handles both UDS (Unix) and named pipes (Windows) through the same API

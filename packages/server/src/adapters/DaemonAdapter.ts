@@ -11,7 +11,7 @@
  *   daemon 'agent:spawned' → adapter 'connected'
  *   daemon 'agent:exit'    → adapter 'exit'
  *
- * Design: packages/docs/design/hot-reload-agent-preservation.md
+ * Design: docs/design/hot-reload-agent-preservation.md
  */
 import { EventEmitter } from 'events';
 import type {

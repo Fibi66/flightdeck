@@ -9,7 +9,7 @@
  *  4. Reconcile daemon agent state vs local expectations
  *  5. Surface connection lifecycle to callers via typed events
  *
- * Design: packages/docs/design/hot-reload-agent-preservation.md (D4)
+ * Design: docs/design/hot-reload-agent-preservation.md (D4)
  */
 import { TypedEmitter } from '../utils/TypedEmitter.js';
 import { logger } from '../utils/logger.js';

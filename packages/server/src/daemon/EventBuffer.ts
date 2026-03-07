@@ -5,7 +5,7 @@
  * events are replayed in order. The buffer is bounded per-agent with
  * configurable limits on count and age.
  *
- * Design: packages/docs/design/hot-reload-agent-preservation.md
+ * Design: docs/design/hot-reload-agent-preservation.md
  *   - Max 100 events per agent, or 30 seconds' worth, whichever is smaller
  *   - FIFO overflow (oldest dropped)
  *   - Start buffering on server disconnect, drain on reconnect

@@ -6,7 +6,7 @@
  * and receives event notifications. Includes heartbeat (ping every 10s) and
  * reconnection logic.
  *
- * Design: packages/docs/design/hot-reload-agent-preservation.md
+ * Design: docs/design/hot-reload-agent-preservation.md
  */
 import { connect, type Socket } from 'node:net';
 import { readFileSync } from 'node:fs';
