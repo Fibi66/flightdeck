@@ -880,13 +880,22 @@ Items identified during design review that are worth noting but not specced in d
 
 *Based on product analysis by @a6fa6770, with architectural validation by @e7f14c5e and @bb14c13b.*
 
-### Core UX Principle: Invisible When Healthy
+### Core UX Principle: Progressive Disclosure
+
+The daemon follows a **progressive disclosure** pattern — invisible by default, revealed incrementally as the user needs more control:
+
+| Level | Context | What the user sees |
+|-------|---------|-------------------|
+| **Level 0** | Everything works | Green dot in header. Nothing else. |
+| **Level 1** | Something goes wrong | Toast/banner explaining the issue and what to do |
+| **Level 2** | User investigates | Mission Control → full System Health panel with controls |
+| **Level 3** | Advanced ops | CLI: `flightdeck daemon status/stop/restart` |
 
 The daemon is infrastructure. Users should NEVER have to think about it during normal operation. It should be like electricity — you only notice when it stops working.
 
 - ❌ No dedicated `/daemon` page in the nav. That's operator-level UI, not user-level.
 - ✅ A tiny status indicator in the header bar (next to the existing session dot). Green dot = healthy. That's it.
-- ✅ Daemon controls live in the **Settings** or **Mission Control** page, not a top-level route.
+- ✅ Daemon controls live in **Mission Control** page, not a top-level route.
 - ✅ Only surface daemon status prominently when something goes WRONG.
 
 ### Three Tiers of User Control
@@ -898,13 +907,15 @@ The daemon is infrastructure. Users should NEVER have to think about it during n
 
 **Tier 2: Something's off (occasional)**
 - An agent is stuck/unresponsive. User needs per-agent controls:
-  - **Kill agent** — Red button on agent card (already exists as Stop button). Works whether daemon is up or not.
+  - **Kill agent** — Stop button on agent card. Inline confirmation (NOT a modal — modals are disruptive): card expands slightly to show `"Kill agent? Currently working on: [task summary]"` with [Cancel] [Kill] buttons. If the agent is mid-tool-call (writing files), show warning: `"⚠️ Agent is mid-file-write. Killing may leave partial changes. [Kill Anyway] [Wait for Turn]"`.
+  - **Respawn after kill** — After killing an agent, a "Respawn" button appears on the card. Same role, same task, uses `--resume` if available.
   - **Restart agent** — Kill + re-spawn with same config. This is what users ACTUALLY want when they say "restart."
   - **View agent health** — Last heartbeat time, context window usage %, memory. These belong on the agent detail panel, not a daemon page.
 
 **Tier 3: Emergency / everything is broken (rare)**
 - The daemon is unresponsive or agents are going rogue.
-- **Emergency Kill Switch in UI:** A big red button in Mission Control: "🛑 Kill All Agents". Two-click confirmation: click → "Are you sure? This will terminate all 12 agents immediately" → confirm. Confirmation dialog auto-dismisses after 10s to prevent blocking other interactions.
+- **Emergency Kill Switch in UI:** Big red button in Mission Control (System Health section): "🛑 Kill All Agents". Two-click confirmation: click → "Are you sure? This will terminate all 12 agents immediately" → confirm. Confirmation dialog auto-dismisses after **10 seconds** to prevent blocking other interactions (toast: "Emergency stop cancelled (timeout). Use Mission Control to try again.").
+- **Keyboard shortcut:** `Cmd+Shift+K` for Kill All — discoverable via Command Palette (`Cmd+K`). Fast for power users, invisible for beginners.
 - **CLI fallback:** `flightdeck daemon stop --force` (covered in Emergency Kill Switch section above).
 - **Kill file sentinel:** `touch ~/.flightdeck/run/EMERGENCY_STOP` — documented in a help tooltip next to the emergency button.
 
@@ -917,13 +928,17 @@ The daemon is infrastructure. Users should NEVER have to think about it during n
                                                 ↑ existing  ↑ new
 ```
 
-The daemon status dot appears next to the existing session indicator:
+The daemon status dot appears next to the existing session indicator with **three states**:
 - **Green (●)** — Daemon connected, all agents healthy
-- **Amber (●)** — Daemon connected, but degraded (agents resuming, or stale heartbeat)
-- **Red (●)** — Daemon disconnected or unavailable
-- **Hidden** — Phase 1 mode (no daemon). Dot is only shown when daemon mode is active.
+- **Amber (●)** — Reconnecting or degraded (agents resuming, stale heartbeat, brief disconnect)
+- **Gray (●)** — No daemon running / Phase 1 mode. This is NOT an error — it means the user doesn't have the daemon enabled, which is fine. Gray = "this is fine, you just don't have the daemon."
 
-Tooltip on hover: `"Agent Host: Running (12 agents, uptime 2h 15m)"`
+Tooltip on hover: `"Agent Host: Running (12 agents, uptime 2h 15m)"` (green), `"Agent Host: Reconnecting..."` (amber), `"Agent Host: Not running (Phase 1 mode)"` (gray).
+
+**Toast notifications on state changes:**
+- **Daemon disconnected:** Amber toast (does NOT auto-dismiss — stays until resolved)
+- **Reconnected:** Green toast (auto-dismiss 3s)
+- **Fallback mode:** Info toast: `"Running without daemon — agents will restart on code changes."`
 
 #### Mission Control — System Health Panel
 
@@ -979,23 +994,28 @@ User action: None needed
 #### State: Daemon Disconnected
 
 ```
-UI shows:   Header dot → amber/red. Banner: "⚠️ Agent host disconnected. 
+UI shows:   Header dot → amber. Banner: "⚠️ Agent host disconnected. 
             Agents may still be running. [Reconnect] [Restart Daemon]"
 Agents:     Show last known state with "stale" indicator (dimmed, with timestamp)
 User action: Click Reconnect (auto-attempted every 5s) or Restart Daemon
 ```
 
+**Reconnect escalation:** Auto-reconnect attempts every 5s. After 3 failed attempts, the banner upgrades to include a [Restart Daemon] button. The attempt counter is visible: "Reconnecting (attempt 3/5)..."
+
 **Critical (@bb14c13b):** Don't show agents as "terminated" just because we lost contact. They might still be running in the daemon. Show uncertainty honestly. The current codebase marks agents as 'terminated' when ACP connection drops (Agent.ts line ~535); with daemon mode, lost SERVER→DAEMON connection ≠ agent death.
 
-**Backend prerequisite:** The agent status model needs to distinguish `'confirmed terminated'` (exit event received) from `'unknown'` (daemon unreachable). The `DaemonAdapter` should expose a `connectionState: 'connected' | 'disconnected' | 'unknown'` field separate from the agent's `status` field.
+**Backend prerequisite:** See Agent Status Model section below — lifecycle state + connection overlay.
 
 #### State: Daemon Crashed, Agents Lost
 
 ```
-UI shows:   Banner: "⚠️ Agent host crashed. Resuming 12 agents..." 
-            with progress bar showing N/12 resumed.
-Agents:     Cards show "Resuming..." state (amber, spinner) one by one
+UI shows:   Banner at top of page (NOT toast — too important to miss):
+            "⚠️ Agent host crashed. Resuming 12 agents..." 
+            with per-agent progress (N/12 resumed).
+Agents:     Cards show "Resuming..." state (amber, spinner) one by one.
+            Each card: spinner → green checkmark when back.
 User action: Watch and wait. Offer "Cancel resume" to start fresh.
+            Banner auto-dismisses when ALL agents are back.
 ```
 
 With 10-20 agents, resume takes 30-60s (or 10-20s with SDK `--resume`). Users need to see progress, not a blank screen.
@@ -1011,6 +1031,69 @@ User action: "Kill Agent" button. If multiple agents rogue: "Kill All" in Missio
 
 **Open question: Per-agent resource telemetry.** The daemon does NOT need to track per-agent resource usage itself. The server already has the data: `AcpAdapter` emits `tool_call` events (file writes, bash commands), `BudgetEnforcer` tracks cost, and `ActivityLedger` records all actions. Rogue detection logic should live in the server, not the daemon. The daemon just needs to reliably deliver the kill command. Keeping the daemon dumb is a feature (@e7f14c5e).
 
+**UX detail:** The agent card alert should show WHY the agent was flagged: `"⚠️ High file write rate (47 writes/min)"` not just `"⚠️ Alert"`. The `reason` field from `BudgetEnforcer` / `ActivityLedger` is surfaced directly.
+
+#### State: Daemon Auto-Shutdown
+
+```
+UI shows:   Toast: "Agent host shut down (no active session for 5 min). 
+            Agents preserved in database."
+Agents:     Cards removed or dimmed with "Session ended" state
+User action: Next session start → daemon auto-starts again
+```
+
+#### State: Fallback Mode (no daemon)
+
+```
+UI shows:   Info toast (auto-dismiss 5s): "Running without daemon — 
+            agents will restart on code changes."
+Header dot: Gray (not amber or red — this is expected, not an error)
+User action: None needed. Enable daemon via config if zero-downtime desired.
+```
+
+### Agent Status Model
+
+The agent status model separates **lifecycle state** from **connection overlay**. This is a backend requirement, not just UI:
+
+```typescript
+// Lifecycle state — what the agent IS doing
+type AgentLifecycleState = 'creating' | 'running' | 'idle' | 'completed' | 'failed' | 'terminated';
+
+// Connection overlay — what we KNOW about the agent's connection
+type ConnectionOverlay = 
+  | { state: 'connected' }
+  | { state: 'stale', lastSeen: Date, reason: 'server-reconnecting' | 'daemon-unresponsive' | 'heartbeat-missed' }
+  | { state: 'unknown', reason: 'daemon-lost' };
+```
+
+An agent can be `running + stale` (we think it's running but haven't heard from the daemon in 30s). The UI renders this as: normal agent card but slightly dimmed, with a small clock icon and "30s ago" timestamp. Same visual treatment regardless of `reason`, but the **tooltip differs**: "Server reconnecting" = calm, "Daemon unresponsive" = concern.
+
+#### Staleness Thresholds (agent-activity-aware)
+
+An idle agent with `lastSeen: 3 minutes ago` is completely normal, while a streaming agent going silent for 10s is alarming. Staleness thresholds adapt to agent activity (@bb14c13b):
+
+| Agent Activity | Stale After | Rationale |
+|---------------|-------------|-----------|
+| Running + streaming text/tool_calls | 10s silence | Active output expected continuously |
+| Running + waiting for tool approval | 60s silence | Approvals can take a while (human in loop) |
+| Idle (between tasks) | 120s silence | Normal for agents waiting for work |
+| Any state + daemon heartbeat missed | Immediately | Daemon heartbeat is the ground truth signal |
+
+The UI only shows the stale indicator when silence exceeds the threshold for that agent's current activity. This prevents false alarms on idle agents while catching genuine problems on active ones.
+
+#### Stale State Escalation Ladder
+
+When daemon connection is lost, the header dot and UI escalate over time:
+
+| Time Since Disconnect | Header Dot | UI Treatment |
+|----------------------|------------|--------------|
+| 0-10s | Amber | "Reconnecting..." — normal tsx watch restart |
+| 10-30s | Amber | "Still reconnecting..." — slightly more urgent |
+| 30-60s | Orange pulse | "Connection delayed" — subtle pulse animation |
+| 60s+ | Red | "Likely down" — action buttons: [Check Daemon] [Restart Daemon] |
+
+The 60s threshold aligns with infrastructure reality: auto-resume < 30s, heartbeat timeout = 30s. Past 60s, something is genuinely broken. This prevents the stale state from becoming a lie of omission — users get honest uncertainty for the common case (brief reconnect) and clear escalation for the rare case (daemon crash).
+
 ### SDK `--resume` Product Implications
 
 With SDK `--resume`, the product positioning shifts:
@@ -1019,9 +1102,18 @@ With SDK `--resume`, the product positioning shifts:
 
 2. **Phase 2 daemon becomes opt-in "pro mode" (100% solution).** Eliminates even the 10s blip — true zero-downtime hot reload. Auto-started in dev mode but gracefully degradable.
 
-3. **Security note (@bb14c13b):** If Phase 2 is opt-in, most users run Phase 1 (no daemon). Phase 1 has NO security boundary between server and agent processes (same process tree, shared memory). Phase 2 with UDS + token + umask is inherently more secure. Worth noting that the simpler path is the less secure one.
+3. **Security framing (@bb14c13b, @a6fa6770):** Phase 1 does NOT remove any security boundary — it IS the current security model (agents are child processes of the server). Every Copilot CLI user today runs in this model. Phase 2 ADDS process isolation as a security bonus (UDS + token + umask). Frame as: "Phase 2 adds defense-in-depth" rather than "Phase 1 is insecure." The threat model for Phase 1: if the server is compromised, agents are too — but that's already true today.
 
 **Recommendation:** Ship Phase 1 with `--resume` support as the default. Make Phase 2 daemon available via config flag (`daemon.enabled: true` in `flightdeck.config.yaml`). The daemon auto-starts when enabled but everything works without it.
+
+#### Phase 1 Polish Priorities
+
+With Phase 1 becoming the default experience, invest heavily in polish (@e7f14c5e, @a6fa6770):
+
+1. **Progress UI for resume** — per-agent status updates, not a single spinner
+2. **"Cancel resume" button** — let users start fresh instead of resuming
+3. **Message queue persistence** — inter-agent messages in SQLite survive the restart
+4. **Parallel resume** — resume agents concurrently, not sequentially (10-20s vs 60-120s for 12 agents)
 
 ### Quality Bar — Acceptance Criteria
 
