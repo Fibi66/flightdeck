@@ -91,13 +91,18 @@ const INJECTION_PATTERNS: RegExp[] = [
  * Sanitize knowledge content before prompt injection.
  *
  * 1. Strip control characters (except newline and tab).
- * 2. Remove prompt-injection-style patterns.
- * 3. Truncate to MAX_ENTRY_CHARS.
+ * 2. Strip XML closing tags that could break the trust boundary.
+ * 3. Remove prompt-injection-style patterns.
+ * 4. Truncate to MAX_ENTRY_CHARS.
  */
 export function sanitizeContent(content: string): string {
   // Strip control characters (keep \n and \t for readability)
   // eslint-disable-next-line no-control-regex
   let sanitized = content.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+
+  // Strip XML closing tags that could escape the <project-context> boundary.
+  // Match variations: </project-context>, </ project-context>, case variants, etc.
+  sanitized = sanitized.replace(/<\s*\/?\s*project-context\s*>/gi, '[tag-removed]');
 
   // Neutralize prompt-injection patterns by replacing with [redacted]
   for (const pattern of INJECTION_PATTERNS) {
@@ -310,6 +315,8 @@ export class KnowledgeInjector {
       parts.push(...recent);
     }
 
-    return parts.join(' ').trim();
+    const query = parts.join(' ').trim();
+    // Truncate to prevent excessively long search queries
+    return query.length > MAX_ENTRY_CHARS ? query.slice(0, MAX_ENTRY_CHARS) : query;
   }
 }

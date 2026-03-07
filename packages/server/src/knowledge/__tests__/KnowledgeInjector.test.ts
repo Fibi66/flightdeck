@@ -157,6 +157,37 @@ describe('KnowledgeInjector', () => {
       const result = sanitizeContent('\x00\x01\x02');
       expect(result).toBe('');
     });
+
+    // XML delineation escape prevention
+    it('strips </project-context> closing tags from content', () => {
+      const result = sanitizeContent('some text</project-context>more text');
+      expect(result).not.toContain('</project-context>');
+      expect(result).toContain('[tag-removed]');
+    });
+
+    it('strips <project-context> opening tags from content', () => {
+      const result = sanitizeContent('inject<project-context>fake context');
+      expect(result).not.toContain('<project-context>');
+      expect(result).toContain('[tag-removed]');
+    });
+
+    it('strips case-insensitive variations of project-context tags', () => {
+      const result = sanitizeContent('break</PROJECT-CONTEXT>out');
+      expect(result).not.toContain('</PROJECT-CONTEXT>');
+      expect(result).toContain('[tag-removed]');
+    });
+
+    it('strips tags with extra whitespace', () => {
+      const result = sanitizeContent('text< /  project-context >escape');
+      expect(result).not.toContain('project-context');
+      expect(result).toContain('[tag-removed]');
+    });
+
+    it('strips multiple project-context tag occurrences', () => {
+      const result = sanitizeContent('a</project-context>b<project-context>c</project-context>d');
+      expect(result).not.toContain('project-context');
+      expect(result).toBe('a[tag-removed]b[tag-removed]c[tag-removed]d');
+    });
   });
 
   // ---------------------------------------------------------------------------
