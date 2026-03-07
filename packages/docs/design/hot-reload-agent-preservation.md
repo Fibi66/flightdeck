@@ -934,6 +934,193 @@ On server reconnect, the server needs to rebuild in-memory state (delegations, D
 
 **Daemon structured logging:** The daemon uses the same pino logger from R5, enabling correlation of daemon events with server events via `agentId`. At minimum, the daemon logs: connection events, auth attempts (success/fail), spawn/terminate calls, disconnections, and auto-shutdown timer state.
 
+### Graceful Shutdown and State Persistence
+
+When the daemon shuts down (12h timeout, production `daemon.shutdown({ persist: false })`, or emergency stop), it must preserve all agent state so agents can be resumed later via SDK resume. No work should be lost.
+
+#### What SQLite Already Persists (No Additional Work Needed)
+
+A gap analysis of the current schema (`packages/server/src/db/schema.ts`, 25 tables) shows that most business state is already in SQLite:
+
+| State | SQLite Table | Status |
+|-------|-------------|--------|
+| Projects | `projects` | ✅ Full CRUD |
+| Project sessions (with sessionId) | `projectSessions` | ✅ Includes `claimSessionForResume()` |
+| DAG tasks | `dagTasks` | ✅ Full lifecycle |
+| File locks | `fileLocks` | ✅ Per-agent tracking |
+| Agent plans | `agentPlans` | ✅ JSON, upserted on change |
+| Conversations / messages | `conversations`, `messages` | ✅ Committed messages |
+| Agent memory (key-value) | `agentMemory` | ✅ Cross-agent state sharing |
+| Decisions | `decisions` | ✅ Architecture decisions log |
+| Timers | `timers` | ✅ Scheduled reminders |
+| Cost records | `taskCostRecords` | ✅ Token usage tracking |
+| Groups | `groups`, `groupMembers` | ✅ Agent collaboration groups |
+
+**These require zero additional persistence work.** The server reconstructs all of this from SQLite on restart.
+
+#### What's NOT in SQLite (Critical Gaps)
+
+| State | Current Location | Impact of Loss |
+|-------|-----------------|----------------|
+| **Agent instances** (id, role, model, task, sessionId, parentId, cwd) | `AgentManager.agents` Map (in-memory) | 🔴 All running agents lost — cannot resume |
+| **Delegations** (parent→child task assignments) | `CommandDispatcher.delegations` Map (in-memory) | 🔴 Mid-delegation workflows broken, children orphaned |
+| **Reported completions** | `CommandDispatcher.reportedCompletions` Set | 🟡 Duplicate completion reports possible |
+| **Queued messages** (pending delivery to agents) | `Agent.pendingMessages` array | 🟡 Queued inter-agent messages lost |
+| **Tool call history** | `Agent.toolCalls` array | 🟡 No audit trail for recent tool invocations |
+| **Message buffers** (partially received text) | `AgentManager.messageBuffers` Map | 🟢 Low impact — partial text discarded |
+
+**The two critical gaps are agent instances and delegations.** Both must be persisted for graceful resume.
+
+#### Persistence Strategy: SQLite + Minimal Filesystem
+
+**Principle: Persist to SQLite wherever possible. Use the filesystem only for daemon-specific state that the server doesn't own.**
+
+The server should add two new SQLite tables to close the critical gaps:
+
+```sql
+-- New table: active agent roster (persisted on every spawn/terminate)
+CREATE TABLE agentRoster (
+  id TEXT PRIMARY KEY,           -- agent ID
+  projectId TEXT NOT NULL,
+  role TEXT NOT NULL,
+  model TEXT,
+  task TEXT,
+  status TEXT NOT NULL,
+  sessionId TEXT,                -- SDK session ID for resume
+  parentId TEXT,                 -- parent agent ID (for delegation tree)
+  cwd TEXT,
+  cliCommand TEXT NOT NULL,      -- which CLI binary to use
+  cliArgs TEXT,                  -- JSON array of additional CLI args
+  spawnedAt TEXT NOT NULL,
+  FOREIGN KEY (projectId) REFERENCES projects(id)
+);
+
+-- New table: active delegations (persisted on every delegate/complete)
+CREATE TABLE activeDelegations (
+  id TEXT PRIMARY KEY,
+  parentAgentId TEXT NOT NULL,
+  childAgentId TEXT NOT NULL,
+  leadId TEXT NOT NULL,
+  task TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active',  -- active | completed | failed
+  createdAt TEXT NOT NULL,
+  completedAt TEXT,
+  FOREIGN KEY (parentAgentId) REFERENCES agentRoster(id),
+  FOREIGN KEY (childAgentId) REFERENCES agentRoster(id)
+);
+```
+
+These tables are written on every agent spawn/terminate and delegation create/complete — NOT as a batch on shutdown. This ensures state is always current, even on hard crashes (SIGKILL, OOM) where graceful shutdown doesn't run.
+
+#### Daemon Filesystem State (Minimal)
+
+The daemon owns a small amount of state that doesn't belong in the server's SQLite:
+
+```
+~/.flightdeck/run/
+  daemon.sock                    # Unix domain socket (or named pipe on Windows)
+  daemon.pid                     # PID file (informational)
+  daemon.token                   # Per-session auth token
+  daemon-manifest.json           # Shutdown manifest (written on graceful exit)
+```
+
+The `daemon-manifest.json` is written ONLY during graceful shutdown and contains the daemon's view of what was running:
+
+```json
+{
+  "version": "1.0.0",
+  "shutdownAt": "2026-03-07T17:00:00.000Z",
+  "shutdownReason": "12h-timeout",
+  "agents": [
+    {
+      "id": "cc29bb0d",
+      "sessionId": "sess-abc123",
+      "pid": 48291,
+      "role": "architect",
+      "status": "running",
+      "lastEventId": "evt-789"
+    }
+  ]
+}
+```
+
+This manifest is a **hint file** for faster resume — the authoritative state is always SQLite. If the manifest is missing (hard crash), the server reconstructs entirely from SQLite. If the manifest exists, the server can cross-reference it with SQLite for faster reconciliation.
+
+#### Graceful Shutdown Sequence
+
+When the daemon receives a shutdown signal:
+
+```
+1. Stop accepting new connections
+2. If server is connected: send 'daemon:shutting_down' event
+3. For each agent:
+   a. Persist final state to daemon-manifest.json
+   b. If agent has a sessionId: state is already preserved in SDK session files
+   c. Send graceful terminate (SIGTERM on Unix, stdin.end() on Windows)
+   d. Wait up to 5s for clean exit
+   e. If still running: force terminate (SIGKILL / TerminateProcess)
+4. Write daemon-manifest.json with shutdown metadata
+5. Clean up socket file and PID file (keep token file for audit)
+6. Exit
+```
+
+**Key insight:** SDK session state (`~/.copilot/session-state/{sessionId}/`) is managed by the CLI process itself, not by the daemon. The daemon's job is to give each agent enough time to flush its session state to disk before termination. The 5s graceful window allows the CLI to persist conversation history, tool state, and planning artifacts.
+
+#### Resume from Preserved State
+
+On next startup, the server + daemon resume agents:
+
+```
+1. Server starts, connects to daemon (or starts new daemon)
+2. Server reads agentRoster table from SQLite
+3. Server reads daemon-manifest.json (if exists) for cross-reference
+4. For each agent in roster with status != 'terminated':
+   a. Server calls daemon.spawn(agentId, { resume: sessionId, role, model, cwd })
+   b. Daemon spawns CLI process with --resume <sessionId>
+   c. CLI loads session state from disk, resumes conversation
+   d. Agent reconnects to server via ACP protocol
+5. Server reads activeDelegations table, rebuilds delegation tree
+6. Server reads dagTasks, fileLocks, etc. from existing tables
+7. UI shows "Resuming N agents..." with per-agent progress
+8. All agents back online with full context
+```
+
+**The server can also call `daemon.resumeAll()` as a convenience method** that reads the manifest and spawns all agents in parallel.
+
+#### What Happens on Hard Crash (No Graceful Shutdown)
+
+If the daemon is killed by SIGKILL, OOM, or power loss:
+- No `daemon-manifest.json` written (that's fine — it's a hint, not authoritative)
+- Agent CLI processes may or may not have flushed session state to disk
+- SQLite `agentRoster` and `activeDelegations` tables have the last-known state
+- On next startup: server reads SQLite, attempts `--resume` for each agent
+- Agents whose SDK sessions survived: resume with full context
+- Agents whose SDK sessions are corrupted: start fresh with role + task (graceful degradation)
+
+This is the same recovery path as "daemon crash → Phase 1 fallback" but with better state reconstruction thanks to the new SQLite tables.
+
+#### Directory Structure Summary
+
+```
+~/.flightdeck/
+  run/                                  # Daemon runtime (ephemeral)
+    daemon.sock                         # IPC socket
+    daemon.pid                          # PID file
+    daemon.token                        # Auth token
+    daemon-manifest.json                # Shutdown hint (written on graceful exit)
+    EMERGENCY_STOP                      # Kill sentinel (created by user)
+
+flightdeck.db                           # SQLite (authoritative state)
+  → agentRoster table                   # NEW: active agent instances
+  → activeDelegations table             # NEW: parent→child task assignments
+  → dagTasks, fileLocks, agentPlans...  # EXISTING: business state
+
+~/.copilot/session-state/{sessionId}/   # SDK session files (managed by CLI)
+  → conversation history, tool state, planning artifacts
+```
+
+**Design principle: SQLite is the single source of truth.** The filesystem manifest is a performance optimization for faster resume. The SDK session files are managed by the CLI, not by Flightdeck. The daemon's only filesystem state is runtime artifacts (socket, PID, token) that are ephemeral by nature.
+
 ### SDK Resume Analysis: Copilot, Claude, and Impact on Daemon Architecture
 
 Both major CLI SDKs now support native session resume. This section analyzes the implications for the daemon design.
