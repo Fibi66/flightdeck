@@ -262,7 +262,7 @@ export async function createContainer(opts: ContainerConfig): Promise<ServiceCon
     run: () => {
       const { warning } = db.checkWalSize(100 * 1024 * 1024); // 100MB threshold
       if (warning) {
-        db.walCheckpoint('TRUNCATE');
+        db.walCheckpoint('PASSIVE');
       }
     },
   });
