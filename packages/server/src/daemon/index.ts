@@ -67,3 +67,12 @@ export {
   type MassFailureCallback,
   type MassFailureCause,
 } from './MassFailureDetector.js';
+export {
+  ReconnectProtocol,
+  type ReconnectProtocolOptions,
+  type ReconnectProtocolEvents,
+  type ConnectionState,
+  type ReconciliationResult,
+  type ReconciledAgent,
+  type AdapterReconnector,
+} from './ReconnectProtocol.js';
