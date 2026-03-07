@@ -329,6 +329,67 @@ $XDG_RUNTIME_DIR/flightdeck/     # typically /run/user/<uid>/flightdeck/
 
 This connect-test approach is immune to PID recycling and also validates the auth layer end-to-end. The PID file is retained for human debugging only (e.g., `cat agent-host.pid` to find the daemon in `ps`).
 
+### Stale Socket Cleanup
+
+If the daemon is killed non-gracefully (`SIGKILL`, OOM killer, kernel panic, power loss), the Unix socket file is left behind as an orphan. The next daemon startup must handle this — otherwise `listen()` fails with `EADDRINUSE`.
+
+**Detection strategy:** Attempt `connect()` on the existing socket. The kernel returns a definitive answer:
+
+| `connect()` result | Meaning | Action |
+|---|---|---|
+| Success | A live daemon is already listening | Don't start a new daemon; connect to existing |
+| `ECONNREFUSED` | Socket file exists but nothing is listening (stale) | `unlink()` the socket, start fresh daemon |
+| `ENOENT` | No socket file | Start fresh daemon (clean startup) |
+| `EACCES` | Socket exists but wrong permissions | Log error, refuse to start (security concern) |
+
+```typescript
+// In dev.mjs or AgentHostDaemon startup
+import { connect } from 'net';
+import { unlinkSync, existsSync } from 'fs';
+
+async function ensureCleanSocket(socketPath: string): Promise<'fresh' | 'existing'> {
+  if (!existsSync(socketPath)) return 'fresh';
+
+  return new Promise((resolve) => {
+    const probe = connect(socketPath);
+    probe.on('connect', () => {
+      // A live daemon is already listening — don't start a new one
+      probe.destroy();
+      resolve('existing');
+    });
+    probe.on('error', (err: NodeJS.ErrnoException) => {
+      if (err.code === 'ECONNREFUSED') {
+        // Stale socket from crashed daemon — safe to clean up
+        unlinkSync(socketPath);
+        resolve('fresh');
+      } else {
+        // EACCES or other error — log and refuse to start
+        throw new Error(`Cannot probe daemon socket: ${err.code} — ${err.message}`);
+      }
+    });
+  });
+}
+```
+
+**Why not just always unlink before listen()?** Because if a live daemon IS running (e.g., user ran `npm run dev` in two terminals), blindly unlinking would disconnect the first server from the daemon. The connect-probe ensures we only unlink genuinely stale sockets.
+
+**Daemon-side cleanup on graceful shutdown:**
+
+```typescript
+// In AgentHostDaemon.ts — signal handlers
+process.on('SIGTERM', async () => {
+  // Graceful: stop all agents, close socket, clean up files
+  await terminateAllAgents();
+  server.close();
+  unlinkSync(socketPath);
+  unlinkSync(tokenPath);
+  unlinkSync(pidPath);
+  process.exit(0);
+});
+```
+
+On graceful shutdown (`SIGTERM`), the daemon removes its socket/token/pid files. On non-graceful death, the stale socket is detected and cleaned by the next startup via the connect-probe above.
+
 **Fallback chain** (for systems without `XDG_RUNTIME_DIR`):
 1. `$XDG_RUNTIME_DIR/flightdeck/` — Linux with systemd (per-user tmpfs, correct permissions, auto-cleaned on logout)
 2. `$TMPDIR/flightdeck-$UID/` — macOS (see security note below)
@@ -500,6 +561,146 @@ Daemon running → Daemon crashes
 
 Same as today: SQLite has the roster, file locks, DAG state. On next `npm run dev`, everything recovers via Phase 1 auto-resume. The daemon adds zero new failure modes beyond what already exists — it only adds a new recovery path (reconnect without re-spawn) for the common case (server restart, not daemon death).
 
+### Emergency Kill Switch
+
+When agents go rogue (runaway file writes, infinite loops, budget burn), the user needs a reliable way to stop everything immediately. Three escalation levels:
+
+#### Level 1: CLI Command (Recommended)
+
+```bash
+# Graceful stop — agents get SIGTERM, 5s to finish, then SIGKILL
+flightdeck daemon stop
+
+# Immediate stop — SIGKILL to daemon (kills all agents instantly)
+flightdeck daemon stop --force
+
+# Status check — see daemon PID, uptime, agent count
+flightdeck daemon status
+```
+
+Implementation in `bin/flightdeck.mjs`:
+
+```typescript
+// 'flightdeck daemon stop' command
+async function daemonStop(force: boolean) {
+  const socketDir = getSocketDir();
+  const pidPath = join(socketDir, 'agent-host.pid');
+  const socketPath = join(socketDir, 'agent-host.sock');
+
+  if (force) {
+    // Level 2: read PID file and send SIGKILL directly
+    const pid = parseInt(readFileSync(pidPath, 'utf-8').trim(), 10);
+    process.kill(pid, 'SIGKILL');
+    // Clean up stale files since daemon can't do it after SIGKILL
+    for (const f of [socketPath, join(socketDir, 'agent-host.token'), pidPath]) {
+      try { unlinkSync(f); } catch {}
+    }
+    console.log(`🛑 Daemon (PID ${pid}) force-killed. All agents terminated.`);
+    return;
+  }
+
+  // Graceful: connect to daemon and send shutdown command
+  const token = readFileSync(join(socketDir, 'agent-host.token'), 'utf-8').trim();
+  const socket = connect(socketPath);
+  socket.write(JSON.stringify({
+    jsonrpc: '2.0', method: 'auth', params: { token }, id: 0,
+  }) + '\n');
+  socket.write(JSON.stringify({
+    jsonrpc: '2.0', method: 'shutdown', params: { timeoutMs: 5000 }, id: 1,
+  }) + '\n');
+  // Daemon will: SIGTERM all agents → wait 5s → SIGKILL stragglers → exit
+}
+```
+
+#### Level 2: Direct Signal (Fallback)
+
+If the CLI doesn't work (e.g., Node.js is broken), users can send signals directly:
+
+```bash
+# Read the PID
+cat ~/.flightdeck/run/agent-host.pid   # or $XDG_RUNTIME_DIR/flightdeck/agent-host.pid
+
+# Graceful stop (SIGTERM → daemon shuts down agents, cleans up)
+kill <pid>
+
+# Nuclear option (SIGKILL → daemon dies instantly, agents die via SIGHUP)
+kill -9 <pid>
+```
+
+#### Level 3: Kill File Sentinel (Last Resort)
+
+For situations where neither CLI nor signals work (e.g., the daemon is stuck in a syscall, or the user doesn't know the PID):
+
+```bash
+# Create a kill sentinel — daemon watches for this file every 2s
+touch ~/.flightdeck/run/EMERGENCY_STOP
+
+# Daemon detects the sentinel and initiates forced shutdown:
+#   1. SIGKILL all agent child processes
+#   2. Unlink socket/token/pid files
+#   3. Unlink the sentinel file
+#   4. Exit with code 99
+```
+
+The daemon polls for the sentinel file alongside its normal health checks (every 2s via the same poll loop). This is the most reliable kill mechanism because it works even when:
+- The daemon's event loop is blocked
+- The socket is unresponsive
+- PID is unknown
+- The daemon is in an uninterruptible sleep (will trigger on next poll wakeup)
+
+#### Daemon Signal Handling
+
+```typescript
+// In AgentHostDaemon.ts
+process.on('SIGTERM', async () => {
+  // Graceful: give agents 5s to finish, then force-kill
+  console.log('[daemon] SIGTERM received — graceful shutdown...');
+  await terminateAllAgents({ timeoutMs: 5000 });
+  cleanup();  // remove socket, token, pid files
+  process.exit(0);
+});
+
+process.on('SIGINT', () => {
+  // Immediate: kill agents now, no grace period
+  console.log('[daemon] SIGINT received — immediate shutdown');
+  killAllAgents();  // SIGKILL to all child processes
+  cleanup();
+  process.exit(0);
+});
+
+// Kill file sentinel check (runs on 2s poll interval)
+function checkKillSentinel() {
+  const sentinel = join(socketDir, 'EMERGENCY_STOP');
+  if (existsSync(sentinel)) {
+    console.log('[daemon] 🛑 EMERGENCY_STOP sentinel detected');
+    killAllAgents();
+    cleanup();
+    try { unlinkSync(sentinel); } catch {}
+    process.exit(99);
+  }
+}
+```
+
+#### Emergency Procedure (User Documentation)
+
+```
+🛑 EMERGENCY: Stop all agents immediately
+═══════════════════════════════════════════
+
+Option A (recommended):
+  $ flightdeck daemon stop --force
+
+Option B (if CLI unavailable):
+  $ kill -9 $(cat ~/.flightdeck/run/agent-host.pid)
+
+Option C (if PID unknown):
+  $ touch ~/.flightdeck/run/EMERGENCY_STOP
+  (daemon auto-detects within 2 seconds)
+
+Option D (nuclear — kills everything):
+  $ pkill -9 -f flightdeck-agent-host
+```
+
 ---
 
 ## Decision Matrix
@@ -527,34 +728,34 @@ Same as today: SQLite has the roster, file locks, DAG state. On next `npm run de
 
 ## Implementation Timeline (AI-Assisted, 12 Agents)
 
-The original estimates (1-2 days for Phase 1, 2-3 weeks for Phase 2) assumed a single developer working sequentially. With 12 AI agents available for parallel development, the critical path compresses dramatically.
+The original estimates (1-2 days for Phase 1, 2-3 weeks for Phase 2) assumed a single developer working sequentially. With 12 AI agents working in parallel, the critical path compresses to hours.
 
-### Phase 1: Enhanced Auto-Resume — 0.5 days
+### Phase 1: Enhanced Auto-Resume — ~1 hour
 
-Already a small task. Three agents in parallel:
+Three agents in parallel, all workstreams independent:
 
 | Agent | Task | Estimated |
 |-------|------|-----------|
-| Developer A | Roster persistence in `gracefulShutdown()` + auto-resume on startup | 2-3 hours |
-| Developer B | UI banner ("🔄 Resuming N agents...") + WebSocket notification | 2-3 hours |
-| QA Tester | Integration test: restart server during active session, verify resume | 2-3 hours |
+| Developer A | Roster persistence in `gracefulShutdown()` + auto-resume on startup | ~1 hour |
+| Developer B | UI banner ("🔄 Resuming N agents...") + WebSocket notification | ~1 hour |
+| QA Tester | Integration test: restart server during active session, verify resume | ~1 hour |
 
-**Critical path:** 3 hours. All three workstreams are independent.
+**Critical path:** ~1 hour.
 
-### Phase 2: Agent Host Daemon — 4-6 days
+### Phase 2: Agent Host Daemon — ~4-6 hours
 
-The daemon has ~8 independent workstreams, most parallelizable after a short shared-protocol design phase. The extra day (vs a minimal estimate) accounts for integration testing complexity — the daemon↔server↔agent pipeline has multiple async failure modes that require careful end-to-end validation.
+The daemon has ~8 independent workstreams. With 12 agents, the constraint is dependency sequencing, not headcount.
 
-#### Day 1: Protocol Design + Foundation (3-4 agents)
+#### Hour 1: Protocol Design + Foundation (4 agents in parallel)
 
 | Agent | Task |
 |-------|------|
-| Architect | Design `AgentHostProtocol.ts` — JSON-RPC message types, Zod schemas, event stream format |
-| Developer A | `AgentHostDaemon.ts` skeleton — socket listener, connection lifecycle, auth handshake |
-| Developer B | Security module — token generation, file permissions, socket directory management |
+| Architect | Design `AgentHostProtocol.ts` — JSON-RPC types, Zod schemas, event stream format |
+| Developer A | `AgentHostDaemon.ts` skeleton — socket listener, connection lifecycle, auth handshake, stale socket cleanup |
+| Developer B | Security module — token generation, file permissions, socket directory, kill sentinel |
 | Developer C | `AgentHostClient.ts` skeleton — connect, authenticate, reconnect-on-disconnect |
 
-#### Day 2-3: Core Implementation (6-8 agents, after protocol types land)
+#### Hour 2-3: Core Implementation (8 agents, after protocol types land)
 
 | Agent | Task |
 |-------|------|
@@ -564,28 +765,28 @@ The daemon has ~8 independent workstreams, most parallelizable after a short sha
 | Developer D | Client: event demuxing, reconnect with re-subscription |
 | Developer E | `AgentAcpBridge.ts` refactor — swap AcpAdapter for AgentHostClient when daemon detected |
 | Developer F | `scripts/dev.mjs` update — daemon lifecycle (check, start, health, leave running on server stop) |
-| QA Tester A | Unit tests: daemon protocol, auth, spawn/terminate |
-| QA Tester B | Unit tests: client reconnect, event streaming |
+| Developer G | `flightdeck daemon stop/status` CLI commands + emergency kill switch |
+| QA Tester A | Unit tests: daemon protocol, auth, spawn/terminate, stale socket cleanup |
 
-#### Day 4-6: Integration + Polish (4-6 agents)
+#### Hour 4-6: Integration + Polish (6 agents)
 
 | Agent | Task |
 |-------|------|
 | Developer A | `AgentManager.ts` refactor — delegate to client, handle daemon-not-available fallback |
-| Developer B | Daemon health monitoring — PID file, heartbeat, auto-cleanup of stale sockets |
+| Developer B | Daemon health monitoring — heartbeat, auto-cleanup of stale sockets, kill sentinel polling |
 | QA Tester A | End-to-end: start daemon → start server → spawn agents → restart server → verify agents alive |
-| QA Tester B | Edge cases: daemon crash recovery, auth failure, concurrent server instances |
-| Tech Writer | Update README, add `docs/daemon-architecture.md` |
+| QA Tester B | Edge cases: daemon crash recovery, auth failure, stale socket cleanup, emergency kill switch |
+| Tech Writer | Update README, add `docs/daemon-architecture.md`, emergency procedure docs |
 | Code Reviewer | Review all daemon PRs before merge |
 
-**Critical path:** 6 days (protocol → daemon core → integration testing → edge case hardening). Most work parallelizes after the Day 1 protocol design. Integration testing gets an extra day because the daemon↔server reconnect flow and daemon crash recovery need thorough async testing.
+**Critical path:** ~6 hours (protocol → daemon/client core → integration testing). Most work parallelizes after the Hour 1 protocol design.
 
 ### Phase Comparison
 
 | | Single Developer | 12 AI Agents | Speedup |
 |---|---|---|---|
-| Phase 1 | 1-2 days | 0.5 days | 2-4x |
-| Phase 2 | 2-3 weeks | 4-6 days | 2.5-4x |
-| **Total** | **2.5-3.5 weeks** | **4.5-6.5 days** | **~3.5x** |
+| Phase 1 | 1-2 days | ~1 hour | ~12x |
+| Phase 2 | 2-3 weeks | ~4-6 hours | ~20-30x |
+| **Total** | **2.5-3.5 weeks** | **~5-7 hours** | **~25x** |
 
-**Why not faster?** The critical path is constrained by integration dependencies (protocol types must land before daemon/client, daemon/client must work before AgentManager refactor, integration tests must cover daemon crash recovery and reconnect). Parallelism helps within phases but can't eliminate sequential dependencies between phases.
+12 agents working in parallel with clear dependency ordering and independent workstreams compress what would be weeks of sequential development into a single focused session.
