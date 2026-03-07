@@ -23,6 +23,7 @@ import {
 } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { connect } from 'node:net';
+import { logger } from '../utils/logger.js';
 
 // ── Platform Detection ──────────────────────────────────────────────
 
@@ -316,6 +317,17 @@ class WindowsTransport implements TransportAdapter {
   ensureSocketDir(): void {
     mkdirSync(this.socketDir, { recursive: true });
     this.restrictDirectoryDacl();
+
+    // Security advisory: Windows named pipes have no DACL by default.
+    // Any local user can enumerate pipe names and attempt connection.
+    // Token authentication is the SOLE security boundary on Windows.
+    logger.warn({
+      module: 'daemon',
+      msg: 'Windows named pipes have no OS-level access control — ' +
+           'security relies solely on 256-bit token authentication. ' +
+           'Do not run in shared/multi-user environments without additional hardening.',
+      platform: 'win32',
+    });
   }
 
   private restrictDirectoryDacl(): void {
@@ -327,9 +339,13 @@ class WindowsTransport implements TransportAdapter {
         '/grant:r',
         `${username}:(OI)(CI)F`,
       ], { stdio: 'ignore' });
-    } catch {
-      // icacls may fail in some environments (CI, containers)
-      // Token auth is the primary security boundary on Windows
+    } catch (err) {
+      logger.warn({
+        module: 'daemon',
+        msg: 'Failed to restrict directory DACL via icacls — token auth is the sole security boundary',
+        dir: this.socketDir,
+        err: String(err),
+      });
     }
   }
 
@@ -352,8 +368,13 @@ class WindowsTransport implements TransportAdapter {
         '/grant:r',
         `${username}:R`,
       ], { stdio: 'ignore' });
-    } catch {
-      // Fallback: token auth is the primary security boundary on Windows
+    } catch (err) {
+      logger.warn({
+        module: 'daemon',
+        msg: 'Failed to restrict file ACL via icacls — token auth is the sole security boundary',
+        file: filePath,
+        err: String(err),
+      });
     }
   }
 
