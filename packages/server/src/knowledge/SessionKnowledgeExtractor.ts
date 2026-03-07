@@ -1,4 +1,5 @@
 import type { KnowledgeStore } from './KnowledgeStore.js';
+import { sanitizeContent } from './KnowledgeInjector.js';
 import type {
   SessionData,
   SessionMessage,
@@ -43,7 +44,8 @@ export class SessionKnowledgeExtractor {
 
     for (const entry of allEntries) {
       try {
-        this.store.put(projectId, entry.category, entry.key, entry.content, entry.metadata);
+        const safeContent = sanitizeContent(entry.content);
+        this.store.put(projectId, entry.category, entry.key, safeContent, entry.metadata);
         entriesStored++;
       } catch (err) {
         logger.warn({
