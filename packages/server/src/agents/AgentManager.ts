@@ -529,7 +529,7 @@ export class AgentManager extends TypedEmitter<AgentManagerEvents> {
         agent.dispose();
       }, 30_000);
 
-      if (code !== null && code !== 0) {
+      if (code !== null && code !== 0 && !isTerminalStatus(agent.status)) {
         const agentRole = agent.role?.id ?? 'unknown';
         const crashKey = `${agentRole}:${agent.task ?? ''}`;
 
