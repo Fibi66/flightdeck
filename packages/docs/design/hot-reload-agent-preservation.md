@@ -158,6 +158,11 @@ Spawn agents with `detached: true`, communicate via filesystem FIFOs instead of 
 
 Ship **Phase 1** (Enhanced Auto-Resume) immediately for developer relief, then build **Phase 2** (Agent Host Daemon) as the correct long-term architecture.
 
+**Core design principle: The daemon is an optimization, not a dependency.** The server MUST work without the daemon — spawning ACP processes directly (current behavior). The daemon adds zero-downtime server restarts as an enhancement, but its absence or failure must never prevent the server from functioning. This means:
+- Server startup: attempt daemon connection → if unavailable, fall back to direct ACP spawn
+- Daemon crash mid-session: server detects socket EOF → switches to direct spawn → Phase 1 auto-resume for existing agents
+- No daemon installed: server works exactly as it does today
+
 ### Phase 1: Enhanced Auto-Resume (1-2 days)
 
 Persist the full agent roster to SQLite before shutdown. On dev-mode startup, detect the persisted roster and automatically resume all agents.
