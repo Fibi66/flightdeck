@@ -396,6 +396,9 @@ export class DaemonProcess {
       const mfEvent = EventBuffer.createEvent('daemon:mass_failure', massFailure as unknown as Record<string, unknown>);
       this.emitEvent(mfEvent);
     }
+
+    // Prune dead agents to cap map size and prevent memory leaks
+    this.pruneDeadAgents();
   }
 
   /** Get all agent descriptors. */
