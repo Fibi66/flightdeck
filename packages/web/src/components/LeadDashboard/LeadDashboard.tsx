@@ -1642,8 +1642,10 @@ export function LeadDashboard({ api, ws }: Props) {
                 // Agent (lead) messages: no bubble, just flowing text
                 // Merge consecutive agent text messages so split command blocks render correctly.
                 // Only the first message in a run gets the timestamp and renders the merged text.
+                // NOTE: Parallel merge logic exists in AcpOutput.tsx (TimelineRow agent-group rendering).
                 const prevMsg = i > 0 ? filtered[i - 1] : null;
-                const isFirstInRun = !prevMsg || prevMsg.sender !== 'agent' || prevMsg.queued;
+                const isFirstInRun = !prevMsg || prevMsg.sender !== 'agent' || prevMsg.queued
+                  || (prevMsg.contentType && prevMsg.contentType !== 'text');
                 const agentTs = isFirstInRun ? ts : '';
 
                 if (!isFirstInRun && (!msg.contentType || msg.contentType === 'text')) {

@@ -332,7 +332,8 @@ const TimelineRow = memo(function TimelineRow({ item }: { item: GroupedTimelineI
       <div className="py-1" {...mentionAttr}>
         <div className="flex items-start gap-2">
           <div className="flex-1 min-w-0">
-            {/* Merge adjacent agent text messages so split command blocks render correctly */}
+            {/* Merge adjacent agent text messages so split command blocks render correctly.
+                NOTE: Parallel merge logic exists in LeadDashboard.tsx (agent message rendering). */}
             {(() => {
               const runs: { kind: 'agent' | 'thinking'; text: string; key: string }[] = [];
               for (const m of group.messages) {
