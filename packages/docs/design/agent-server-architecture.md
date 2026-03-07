@@ -927,39 +927,143 @@ class ForkTransport implements AgentServerTransport {
 ```
 
 **This means we need a minimal socket for reconnection.** However, it's dramatically simpler than the full daemon:
-- No auth needed (socket file permissions = 0o600, same as before)
-- No cross-platform named pipes (can use TCP localhost as fallback)
+- Lightweight token auth (one random secret, ~15 lines — not the full daemon auth flow)
+- No cross-platform named pipes (TCP localhost is cross-platform natively)
 - NDJSON only for the reconnect path, not the primary path
-- ~50 lines of socket code, not 600
+- ~80 lines of socket code total, not 600
 
-**Alternative: Use TCP localhost.** Even simpler — the agent server listens on a random localhost port, writes port to a file. New orchestration server reads the file and connects. Cross-platform, no UDS, ~30 lines.
+**Implementation: TCP localhost with shared secret.**
+
+The agent server listens on a random localhost port and generates a per-session auth token. Both are written to files with `0o600` permissions (readable only by the same OS user).
 
 ```typescript
 // Agent server: listen on localhost for reconnection
-const reconnectServer = net.createServer(handleReconnect);
+const token = crypto.randomBytes(32).toString('hex');  // 256-bit random token
+const reconnectServer = net.createServer((conn) => handleReconnect(conn, token));
 reconnectServer.listen(0, '127.0.0.1', () => {
   const port = reconnectServer.address().port;
-  fs.writeFileSync(portFilePath, String(port), { mode: 0o600 });
+  const runDir = getRunDir();
+  fs.writeFileSync(path.join(runDir, 'agent-server.port'), String(port), { mode: 0o600 });
+  fs.writeFileSync(path.join(runDir, 'agent-server.token'), token, { mode: 0o600 });
 });
 ```
 
-## Discovery and Reconnection
+## Discovery, Authentication, and Reconnection
 
-How the orchestration server finds and reconnects to an existing agent server:
+How the orchestration server finds, authenticates with, and reconnects to an existing agent server:
 
 ```
 ~/.flightdeck/run/
   agent-server.pid          # PID of agent server process
-  agent-server.port         # TCP port for reconnection (0o600 permissions)
+  agent-server.port         # TCP port for reconnection (0o600)
+  agent-server.token        # Shared secret for auth (0o600, 256-bit hex)
 ```
 
-**Discovery flow:**
-```typescript
-function discoverAgentServer(): { pid: number; port: number } | null {
-  const pidFile = path.join(getRunDir(), 'agent-server.pid');
-  const portFile = path.join(getRunDir(), 'agent-server.port');
+All three files are written with `mode: 0o600` — only the owning OS user can read them. This prevents other users on the machine from discovering the port or token. Same-user processes CAN read the files, which is why the token exists: knowing the port isn't enough, you must also present the token.
 
-  if (!fs.existsSync(pidFile) || !fs.existsSync(portFile)) return null;
+### Authentication Handshake
+
+When the orchestration server connects to the agent server's TCP port, the first message must be an `auth` message containing the token. The agent server validates before accepting any other commands.
+
+```typescript
+// Agent server: handleReconnect()
+function handleReconnect(conn: net.Socket, expectedToken: string): void {
+  let authenticated = false;
+
+  // 5-second auth timeout — reject slow/hanging connections
+  const authTimeout = setTimeout(() => {
+    if (!authenticated) {
+      conn.end(JSON.stringify({ type: 'error', code: 'auth_timeout', message: 'Auth timeout' }) + '\n');
+      conn.destroy();
+    }
+  }, 5_000);
+
+  conn.once('data', (data) => {
+    clearTimeout(authTimeout);
+    try {
+      const msg = JSON.parse(data.toString().trim());
+      if (msg.type !== 'auth' || !msg.token) {
+        conn.end(JSON.stringify({ type: 'error', code: 'auth_required', message: 'First message must be auth' }) + '\n');
+        conn.destroy();
+        return;
+      }
+
+      // Timing-safe comparison to prevent timing attacks
+      const expected = Buffer.from(expectedToken, 'utf8');
+      const received = Buffer.from(msg.token, 'utf8');
+      if (expected.length !== received.length || !crypto.timingSafeEqual(expected, received)) {
+        conn.end(JSON.stringify({ type: 'error', code: 'auth_failed', message: 'Invalid token' }) + '\n');
+        conn.destroy();
+        return;
+      }
+
+      authenticated = true;
+      // Accept connection — wire up message handling
+      conn.write(JSON.stringify({ type: 'auth_ok', pid: process.pid, agentCount: agents.size }) + '\n');
+      this.acceptReconnection(conn);
+    } catch {
+      conn.end(JSON.stringify({ type: 'error', code: 'parse_error', message: 'Invalid JSON' }) + '\n');
+      conn.destroy();
+    }
+  });
+}
+```
+
+```typescript
+// Orchestration server: ForkTransport.reconnectViaTcp()
+async reconnectViaTcp(port: number, tokenPath: string): Promise<void> {
+  const token = fs.readFileSync(tokenPath, 'utf8').trim();
+  const conn = net.createConnection({ host: '127.0.0.1', port });
+
+  await new Promise<void>((resolve, reject) => {
+    conn.on('connect', () => {
+      // Send auth as first message
+      conn.write(JSON.stringify({ type: 'auth', token }) + '\n');
+    });
+
+    conn.once('data', (data) => {
+      const response = JSON.parse(data.toString().trim());
+      if (response.type === 'auth_ok') {
+        resolve();
+      } else {
+        reject(new Error(`Auth failed: ${response.message}`));
+      }
+    });
+
+    conn.on('error', reject);
+    setTimeout(() => reject(new Error('Connection timeout')), 5_000);
+  });
+
+  // Authenticated — wire up message handling on this connection
+  this.setupMessageHandler(conn);
+  this.setState('connected');
+}
+```
+
+### Security Properties
+
+| Threat | Mitigation |
+|--------|------------|
+| Other OS user reads port/token files | `0o600` file permissions — only owning user can read |
+| Same-user rogue process connects without token | Connection rejected — `auth_required` error |
+| Same-user rogue process reads token file and connects | ⚠️ **Possible** — same security boundary as the daemon design. Token file is the sole barrier for same-user processes. This is acceptable for a local dev tool. |
+| Timing attack on token comparison | `crypto.timingSafeEqual()` prevents timing-based token extraction |
+| Slow/hanging connection | 5-second auth timeout — connection destroyed if no auth received |
+| Replay attack (stale token from previous session) | Token is regenerated on every agent server startup. Old tokens are invalid. |
+| Network sniffing (remote attacker) | TCP bound to `127.0.0.1` — not reachable from network |
+
+**Security boundary:** Same as the daemon design — the token file (0o600) is the sole barrier against same-user attackers. For a local dev tool running on the developer's own machine, this is the appropriate security level. The WebSocketTransport (future) adds TLS for network scenarios.
+
+### Discovery Flow
+
+```typescript
+function discoverAgentServer(): { pid: number; port: number; tokenPath: string } | null {
+  const runDir = getRunDir();
+  const pidFile = path.join(runDir, 'agent-server.pid');
+  const portFile = path.join(runDir, 'agent-server.port');
+  const tokenFile = path.join(runDir, 'agent-server.token');
+
+  if (!fs.existsSync(pidFile) || !fs.existsSync(portFile) || !fs.existsSync(tokenFile)) return null;
 
   const pid = parseInt(fs.readFileSync(pidFile, 'utf8'));
   const port = parseInt(fs.readFileSync(portFile, 'utf8'));
@@ -967,11 +1071,12 @@ function discoverAgentServer(): { pid: number; port: number } | null {
   // Verify process is alive
   try {
     process.kill(pid, 0);  // Signal 0 = check existence
-    return { pid, port };
+    return { pid, port, tokenPath: tokenFile };
   } catch {
-    // Stale PID file — clean up
-    fs.unlinkSync(pidFile);
-    fs.unlinkSync(portFile);
+    // Stale files — clean up
+    for (const f of [pidFile, portFile, tokenFile]) {
+      try { fs.unlinkSync(f); } catch {}
+    }
     return null;
   }
 }
@@ -988,7 +1093,9 @@ Orchestration Server                  Agent Server
        │                                   │ Events buffered
        │                                   │  (EventBuffer: 100/agent, 30s)
        │                                   │
-       │  ── connect (new process) ────────│
+       │  ── TCP connect (new process) ────│
+       │  ── auth(token) ─────────────────→│  Token validated (timingSafeEqual)
+       │  ←── auth_ok(pid, agentCount) ────│
        │                                   │
        │  ── subscribe(agent1,             │
        │       lastSeenEventId: 'evt-42')──│
@@ -1158,7 +1265,7 @@ async function main() {
 | **DaemonProcess.ts** (socket/auth) | 400 | fork() IPC + TCP reconnect replaces UDS server |
 | **DaemonProtocol.ts** (entire) | 266 | TypeScript types replace JSON-RPC |
 | **DaemonClient.ts** (connection/auth) | 200 | AgentServerClient is simpler |
-| **Token auth** | 100 | TCP on localhost + file permissions is sufficient |
+| **Token auth** | 100 | Simplified to connect-time-only (not per-request) |
 | **Single-client enforcement** | 80 | fork() is inherently 1:1 |
 
 ### What We Write New
@@ -1193,11 +1300,11 @@ Result:          ~1,600 LOC total (vs 3,726)
 | **Total LOC** | 3,726 | ~1,600 | 57% less code |
 | **Agent survival** | ✅ | ✅ | Both solve the core problem |
 | **Cross-platform** | Custom per platform | Node handles it | TCP localhost works everywhere |
-| **Security** | UDS + 256-bit token + umask | File permissions + localhost | Adequate for local dev tool |
+| **Security** | UDS + 256-bit token + umask | Token file (0o600) + localhost | Same security boundary, less ceremony |
 | **Network-capable** | ✅ TCP fallback | ✅ Via WebSocketTransport | Pluggable transport enables this |
 | **Reconnection** | UDS socket (always available) | TCP reconnect (port file) | Slightly more moving parts |
 | **Independent lifecycle** | ✅ Standalone process | ✅ Detached fork | Equivalent |
-| **Auth overhead** | Per-request token verification | None (localhost trust) | Simpler |
+| **Auth overhead** | Per-request token verification | Token on connect only (not per-message) | Simpler |
 | **Maintenance** | Higher (custom protocol, 4 transports) | Lower (Node builtins + TCP) | Less to go wrong |
 | **Remote agent pools** | Possible but not designed | ✅ WebSocketTransport ready | Better architecture for future |
 | **Implementation** | Mostly done (~3,700 LOC) | ~2 days refactor | Reuses 621 LOC |
@@ -1230,7 +1337,7 @@ This is the path from "local dev tool" to "production infrastructure" — and th
 
 ## Open Questions
 
-1. **TCP vs UDS for reconnection?** TCP localhost is simpler and cross-platform. UDS is marginally more secure (file permissions). Recommendation: TCP — simplicity wins for a local dev tool.
+1. **TCP vs UDS for reconnection?** TCP localhost is simpler and cross-platform. UDS is marginally more secure (file permissions on the socket itself). Recommendation: TCP with token auth — simplicity wins, and the token provides equivalent security to UDS file permissions.
 
 2. **Should the agent server have its own SQLite connection?** Currently: no — all DB writes go through the orchestration server. The agent server is stateless (roster is in-memory, persisted by the orchestration server via AgentRosterRepository). If the agent server needs to write directly (e.g., crash-safe state), it could open its own read-only or write-ahead connection.
 
