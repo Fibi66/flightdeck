@@ -429,6 +429,11 @@ export function wireHttpLayer(
   container.alertEngine?.on('alert:new', (alert: any) => {
     wsServer.broadcastEvent({ type: 'alert:new', alert }, alert.projectId);
   });
+
+  // Wire agent server health → WS broadcast for UI status banner (AS17)
+  if (container.agentServerHealth) {
+    wsServer.wireAgentServerHealth(container.agentServerHealth);
+  }
 }
 
 // ── Event Wiring ───────────────────────────────────────────
