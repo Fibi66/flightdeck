@@ -581,6 +581,35 @@ describe('TaskDAG', () => {
       expect(status.tasks).toHaveLength(0);
       expect(status.summary.pending).toBe(0);
     });
+
+    it('computes coverage metric when activeAgents provided', () => {
+      dag.declareTaskBatch('lead-1', [
+        { taskId: 'a', role: 'Dev' },
+        { taskId: 'b', role: 'Des' },
+      ]);
+      dag.startTask('lead-1', 'a', 'agent-1');
+      dag.startTask('lead-1', 'b', 'agent-2');
+
+      const activeAgents = [
+        { id: 'agent-1', role: 'Dev' },
+        { id: 'agent-2', role: 'Des' },
+        { id: 'agent-3', role: 'Dev' },  // untracked
+      ];
+
+      const status = dag.getStatus('lead-1', activeAgents);
+      expect(status.coverage).toBeDefined();
+      expect(status.coverage!.tracked).toBe(2);
+      expect(status.coverage!.untracked).toBe(1);
+      expect(status.coverage!.total).toBe(3);
+      expect(status.coverage!.percentage).toBe(67);
+      expect(status.coverage!.untrackedAgents).toEqual([{ id: 'agent-3', role: 'Dev' }]);
+    });
+
+    it('returns no coverage when activeAgents not provided', () => {
+      dag.declareTaskBatch('lead-1', [{ taskId: 'a', role: 'Dev' }]);
+      const status = dag.getStatus('lead-1');
+      expect(status.coverage).toBeUndefined();
+    });
   });
 
   describe('getTaskByAgent', () => {
@@ -1547,6 +1576,27 @@ describe('TaskDAG', () => {
       expect(task.title).toBe('Auth System Implementation');
       expect(task.files).toContain('src/auth.ts');
       expect(task.priority).toBe(5);
+    });
+
+    it('does not dedup similar-but-distinct descriptions (raised threshold 0.85)', () => {
+      // Auto-created task with a moderately similar description
+      dag.addTask('lead-1', {
+        taskId: 'auto-developer-fix-auth-abc1',
+        role: 'developer',
+        description: 'Fix the login bug in the auth module',
+      });
+      dag.startTask('lead-1', 'auto-developer-fix-auth-abc1', 'agent-1');
+
+      // Declare a task with similar but distinct description (~0.75 similarity)
+      const result = dag.declareTaskBatch('lead-1', [{
+        taskId: 'fix-signup-bugs',
+        role: 'developer',
+        description: 'Fix the signup validation in the auth module',
+      }]);
+
+      // Should NOT link — descriptions are similar but below 0.85 threshold
+      expect(result.linkedAutoTasks.length).toBe(0);
+      expect(dag.getTasks('lead-1').length).toBe(2);
     });
   });
 

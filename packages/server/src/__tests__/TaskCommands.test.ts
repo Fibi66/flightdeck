@@ -197,10 +197,11 @@ describe('COMPLETE_TASK from non-lead agents (DAG relay)', () => {
     const parent = makeLeadAgent({ id: 'lead-001' });
     const ctx = makeCtx({
       getAgent: vi.fn().mockReturnValue(parent),
+      getAllAgents: vi.fn().mockReturnValue([]),
       taskDAG: {
         ...makeCtx().taskDAG,
         getTransitionError: vi.fn().mockReturnValue(null),
-        completeTask: vi.fn().mockReturnValue([{ id: 'deploy-task' }, { id: 'review-task' }]),
+        completeTask: vi.fn().mockReturnValue([{ id: 'deploy-task', role: 'developer' }, { id: 'review-task', role: 'reviewer' }]),
       },
     });
     const agent = makeChildAgent('lead-001', { dagTaskId: 'build-task' });
@@ -256,8 +257,9 @@ describe('COMPLETE_TASK from non-lead agents (DAG relay)', () => {
     cmd.handler(agent, '⟦⟦ COMPLETE_TASK {"summary": "Done again"} ⟧⟧');
 
     expect(ctx.taskDAG.completeTask).not.toHaveBeenCalled();
-    expect(parent.sendMessage).toHaveBeenCalledWith(expect.stringContaining('completed task "already-done"'));
-    expect(agent.sendMessage).toHaveBeenCalledWith(expect.stringContaining('could not be marked done in DAG'));
+    // Fix 2: "already done" gets a friendly message instead of an error
+    expect(agent.sendMessage).toHaveBeenCalledWith(expect.stringContaining('already done'));
+    expect(agent.sendMessage).toHaveBeenCalledWith(expect.stringContaining('No action needed'));
   });
 
   it('emits agent:message_sent event on successful relay', () => {
@@ -810,5 +812,69 @@ describe('REASSIGN_TASK', () => {
     expect(taskDelegation.status).toBe('cancelled');
     // Other delegation should remain active
     expect(otherDelegation.status).toBe('active');
+  });
+});
+
+describe('Fix 2: UX Message for already-done tasks', () => {
+  it('lead gets friendly message when completing an already-done task', () => {
+    const ctx = makeCtx({
+      taskDAG: {
+        ...makeCtx().taskDAG,
+        getTransitionError: vi.fn().mockReturnValue({ currentStatus: 'done', attemptedAction: 'complete', validStatuses: ['running', 'ready'] }),
+      },
+    });
+    const agent = makeLeadAgent();
+    const cmd = getCompleteHandler(ctx);
+
+    cmd.handler(agent, '⟦⟦ COMPLETE_TASK {"taskId": "task-1"} ⟧⟧');
+
+    expect(agent.sendMessage).toHaveBeenCalledWith(expect.stringContaining('already done'));
+    expect(agent.sendMessage).toHaveBeenCalledWith(expect.stringContaining('No action needed'));
+    expect(ctx.taskDAG.completeTask).not.toHaveBeenCalled();
+  });
+
+  it('lead still gets error for truly invalid transition (e.g. pending)', () => {
+    const ctx = makeCtx({
+      taskDAG: {
+        ...makeCtx().taskDAG,
+        getTransitionError: vi.fn().mockReturnValue({ taskId: 'task-1', currentStatus: 'pending', attemptedAction: 'complete', validStatuses: ['running', 'ready'] }),
+      },
+    });
+    const agent = makeLeadAgent();
+    const cmd = getCompleteHandler(ctx);
+
+    cmd.handler(agent, '⟦⟦ COMPLETE_TASK {"taskId": "task-1"} ⟧⟧');
+
+    expect(agent.sendMessage).toHaveBeenCalledWith(expect.stringContaining('Cannot complete'));
+    expect(agent.sendMessage).not.toHaveBeenCalledWith(expect.stringContaining('already done'));
+  });
+});
+
+describe('Fix 6: Coverage metric in TASK_STATUS', () => {
+  it('includes coverage metric when active agents exist', () => {
+    const ctx = makeCtx({
+      getAllAgents: vi.fn().mockReturnValue([
+        { id: 'agent-1', parentId: 'lead-001', status: 'running', role: { id: 'developer', name: 'Developer' } },
+        { id: 'agent-2', parentId: 'lead-001', status: 'idle', role: { id: 'reviewer', name: 'Reviewer' } },
+      ]),
+      taskDAG: {
+        ...makeCtx().taskDAG,
+        getStatus: vi.fn().mockReturnValue({
+          tasks: [{ id: 'task-1', role: 'developer', dagStatus: 'running', assignedAgentId: 'agent-1', description: 'Build API', dependsOn: [], files: [] }],
+          fileLockMap: {},
+          summary: { pending: 0, ready: 0, running: 1, done: 0, failed: 0, blocked: 0, paused: 0, skipped: 0 },
+          coverage: { tracked: 1, untracked: 1, total: 2, percentage: 50, untrackedAgents: [{ id: 'agent-2', role: 'reviewer' }] },
+        }),
+      },
+    });
+    const agent = makeLeadAgent();
+    const cmds = getTaskCommands(ctx);
+    const cmd = cmds.find(c => c.name === 'TASK_STATUS')!;
+
+    cmd.handler(agent, '⟦⟦ TASK_STATUS ⟧⟧');
+
+    expect(agent.sendMessage).toHaveBeenCalledWith(expect.stringContaining('DAG Coverage: 50%'));
+    expect(agent.sendMessage).toHaveBeenCalledWith(expect.stringContaining('Untracked agents'));
+    expect(agent.sendMessage).toHaveBeenCalledWith(expect.stringContaining('reviewer'));
   });
 });
