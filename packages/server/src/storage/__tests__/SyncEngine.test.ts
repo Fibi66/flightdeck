@@ -255,5 +255,39 @@ describe('SyncEngine', () => {
       const modified = engine.reverseSync('test-proj-a1b2');
       expect(modified).toEqual([]);
     });
+
+    it('throws on path traversal in manifest entries', () => {
+      const engine = new SyncEngine(storage, createMockProvider());
+      engine.syncNow();
+
+      // Poison the manifest with a traversal path
+      const projectDir = storage.getProjectDir('test-proj-a1b2');
+      const manifest = storage.readSyncManifest('test-proj-a1b2');
+      manifest.files['../../../etc/passwd'] = 'deadbeef';
+      storage.writeSyncManifest('test-proj-a1b2', manifest);
+
+      expect(() => engine.reverseSync('test-proj-a1b2')).toThrow(/Path traversal/);
+    });
+  });
+
+  describe('reentrancy guard', () => {
+    it('returns 0 if sync is already running', () => {
+      // Create a provider that calls syncNow() recursively
+      const provider = createMockProvider();
+      const originalGetIds = provider.getActiveProjectIds.bind(provider);
+      let recursiveResult: number | undefined;
+
+      const engine = new SyncEngine(storage, {
+        ...provider,
+        getActiveProjectIds() {
+          // Attempt reentrant call during sync
+          recursiveResult = engine.syncNow();
+          return originalGetIds();
+        },
+      });
+
+      engine.syncNow();
+      expect(recursiveResult).toBe(0);
+    });
   });
 });

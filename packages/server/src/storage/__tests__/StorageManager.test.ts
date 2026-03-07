@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync
 import { join } from 'path';
 import { tmpdir } from 'os';
 import YAML from 'yaml';
-import { StorageManager, atomicWriteFile } from '../StorageManager.js';
+import { StorageManager, atomicWriteFile, assertWithinDir } from '../StorageManager.js';
 import type { ProjectMetadata } from '../types.js';
 import { PROJECT_SUBDIRS } from '../types.js';
 
@@ -151,5 +151,61 @@ describe('atomicWriteFile', () => {
     atomicWriteFile(target, 'first');
     atomicWriteFile(target, 'second');
     expect(readFileSync(target, 'utf-8')).toBe('second');
+  });
+});
+
+describe('path traversal protection', () => {
+  let storage: StorageManager;
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), 'storage-sec-'));
+    storage = new StorageManager({ userRoot: tempDir });
+  });
+
+  afterEach(() => {
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it('rejects projectId with path separators', () => {
+    expect(() => storage.getProjectDir('../escape')).toThrow(/path traversal/);
+    expect(() => storage.getProjectDir('foo/bar')).toThrow(/path traversal/);
+    expect(() => storage.getProjectDir('foo\\bar')).toThrow(/path traversal/);
+  });
+
+  it('rejects ".." as projectId', () => {
+    expect(() => storage.getProjectDir('..')).toThrow(/path traversal/);
+  });
+
+  it('rejects "." as projectId', () => {
+    expect(() => storage.getProjectDir('.')).toThrow(/path traversal/);
+  });
+
+  it('rejects empty projectId', () => {
+    expect(() => storage.getProjectDir('')).toThrow(/path traversal/);
+  });
+
+  it('allows valid projectId with hyphens and alphanumeric', () => {
+    expect(() => storage.getProjectDir('my-project-a1b2')).not.toThrow();
+  });
+});
+
+describe('assertWithinDir', () => {
+  it('allows paths within parent directory', () => {
+    const result = assertWithinDir('/projects/my-proj', 'knowledge/core/rules.md');
+    expect(result).toBe('/projects/my-proj/knowledge/core/rules.md');
+  });
+
+  it('rejects paths that escape via ../', () => {
+    expect(() => assertWithinDir('/projects/my-proj', '../../../etc/passwd')).toThrow(/Path traversal/);
+  });
+
+  it('rejects paths that escape via absolute path', () => {
+    expect(() => assertWithinDir('/projects/my-proj', '/etc/passwd')).toThrow(/Path traversal/);
+  });
+
+  it('allows deeply nested valid paths', () => {
+    const result = assertWithinDir('/root', 'a/b/c/d.txt');
+    expect(result).toBe('/root/a/b/c/d.txt');
   });
 });

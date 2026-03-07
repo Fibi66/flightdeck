@@ -3,7 +3,7 @@ import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import YAML from 'yaml';
 import type { StorageManager } from './StorageManager.js';
-import { atomicWriteFile } from './StorageManager.js';
+import { atomicWriteFile, assertWithinDir } from './StorageManager.js';
 import type { ProjectMetadata, SyncManifest } from './types.js';
 import { SYNC_SCHEMA_VERSION } from './types.js';
 import { logger } from '../utils/logger.js';
@@ -42,6 +42,7 @@ const DEFAULT_SYNC_INTERVAL_MS = 30_000;
 export class SyncEngine {
   private timer: ReturnType<typeof setInterval> | null = null;
   private intervalMs: number;
+  private syncing = false;
 
   constructor(
     private storage: StorageManager,
@@ -85,22 +86,28 @@ export class SyncEngine {
 
   /**
    * Run a single sync cycle: SQLite → Filesystem for all active projects.
-   * Returns the number of projects synced.
+   * Returns the number of projects synced. Reentrant-safe — concurrent calls are no-ops.
    */
   syncNow(): number {
-    const projectIds = this.provider.getActiveProjectIds();
-    let synced = 0;
+    if (this.syncing) return 0;
+    this.syncing = true;
+    try {
+      const projectIds = this.provider.getActiveProjectIds();
+      let synced = 0;
 
-    for (const projectId of projectIds) {
-      try {
-        this.syncProject(projectId);
-        synced++;
-      } catch (err) {
-        logger.warn({ module: 'storage', msg: 'Failed to sync project', projectId, err: (err as Error).message });
+      for (const projectId of projectIds) {
+        try {
+          this.syncProject(projectId);
+          synced++;
+        } catch (err) {
+          logger.warn({ module: 'storage', msg: 'Failed to sync project', projectId, err: (err as Error).message });
+        }
       }
-    }
 
-    return synced;
+      return synced;
+    } finally {
+      this.syncing = false;
+    }
   }
 
   /**
@@ -178,6 +185,7 @@ export class SyncEngine {
     const existingHash = manifest.files[relPath];
 
     if (hash !== existingHash) {
+      assertWithinDir(projectDir, relPath);
       atomicWriteFile(join(projectDir, relPath), content);
     }
     newFiles[relPath] = hash;
@@ -196,7 +204,8 @@ export class SyncEngine {
     const modified: string[] = [];
 
     for (const [relPath, lastHash] of Object.entries(manifest.files)) {
-      const absPath = join(projectDir, relPath);
+      // Validate that the manifest path doesn't escape the project directory
+      const absPath = assertWithinDir(projectDir, relPath);
       if (!existsSync(absPath)) {
         // File was deleted by user
         modified.push(relPath);

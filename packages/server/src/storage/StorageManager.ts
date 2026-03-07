@@ -1,5 +1,5 @@
 import { homedir } from 'os';
-import { join, dirname } from 'path';
+import { join, dirname, resolve } from 'path';
 import { mkdirSync, readFileSync, writeFileSync, renameSync, existsSync } from 'fs';
 import { randomBytes } from 'crypto';
 import YAML from 'yaml';
@@ -47,6 +47,7 @@ export class StorageManager {
 
   /** Resolve the root directory for a specific project's filesystem mirror. */
   getProjectDir(projectId: string): string {
+    validatePathSegment(projectId, 'projectId');
     const override = this.modeOverrides.get(projectId);
     const root = override?.localRoot ?? this.userRoot;
     return join(root, projectId);
@@ -113,4 +114,27 @@ export function atomicWriteFile(targetPath: string, content: string): void {
   const tmpPath = `${targetPath}.${randomBytes(4).toString('hex')}.tmp`;
   writeFileSync(tmpPath, content, 'utf-8');
   renameSync(tmpPath, targetPath);
+}
+
+/**
+ * Validate that a path segment (e.g., projectId) does not contain
+ * path traversal characters or OS-specific separators.
+ */
+function validatePathSegment(segment: string, label: string): void {
+  if (!segment || /[/\\]/.test(segment) || segment === '..' || segment === '.') {
+    throw new Error(`Invalid ${label}: path traversal detected in '${segment}'`);
+  }
+}
+
+/**
+ * Assert that a resolved path is within the expected parent directory.
+ * Prevents path traversal via poisoned relative paths in manifests or user input.
+ */
+export function assertWithinDir(parentDir: string, filePath: string): string {
+  const resolved = resolve(parentDir, filePath);
+  const normalizedParent = resolve(parentDir);
+  if (!resolved.startsWith(normalizedParent + '/') && resolved !== normalizedParent) {
+    throw new Error(`Path traversal detected: '${filePath}' escapes '${normalizedParent}'`);
+  }
+  return resolved;
 }
