@@ -23,6 +23,8 @@ export interface ProviderPreset {
   args: string[];
   /** Environment variables needed by this provider */
   env?: Record<string, string>;
+  /** Environment variables needed by this provider (keys only — values come from user's env) */
+  requiredEnvVars?: string[];
   /** Transport protocol (all use stdio for now) */
   transport: 'stdio';
   /** Whether the CLI supports session resume via session/load */
@@ -58,7 +60,7 @@ export const PROVIDER_PRESETS: Record<ProviderId, ProviderPreset> = {
     name: 'Google Gemini CLI',
     binary: 'gemini',
     args: ['--experimental-acp'],
-    env: { GEMINI_API_KEY: '' },
+    requiredEnvVars: ['GEMINI_API_KEY'],
     transport: 'stdio',
     supportsResume: false,
     modelFlag: '--model',
@@ -80,6 +82,7 @@ export const PROVIDER_PRESETS: Record<ProviderId, ProviderPreset> = {
     name: 'Cursor',
     binary: 'agent',
     args: ['acp'],
+    requiredEnvVars: ['CURSOR_API_KEY'],
     transport: 'stdio',
     supportsResume: true,
     agentFileFormat: '.cursorrules',
@@ -90,7 +93,7 @@ export const PROVIDER_PRESETS: Record<ProviderId, ProviderPreset> = {
     name: 'Codex CLI',
     binary: 'codex',
     args: ['--acp'],
-    env: { OPENAI_API_KEY: '' },
+    requiredEnvVars: ['OPENAI_API_KEY'],
     transport: 'stdio',
     supportsResume: false,
     modelFlag: '--model',
@@ -102,7 +105,7 @@ export const PROVIDER_PRESETS: Record<ProviderId, ProviderPreset> = {
     name: 'Claude Code',
     binary: 'claude',
     args: ['--acp', '--stdio'],
-    env: { ANTHROPIC_API_KEY: '' },
+    requiredEnvVars: ['ANTHROPIC_API_KEY'],
     transport: 'stdio',
     supportsResume: true,
     modelFlag: '--model',

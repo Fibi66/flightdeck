@@ -46,12 +46,18 @@ const budgetSchema = z.object({
 
 // ── Provider schema ────────────────────────────────────────
 
+// Provider IDs are the single source of truth from presets.ts.
+// We duplicate the list here as a Zod literal for schema validation
+// since Zod .enum() requires a const tuple, not a runtime import.
 const VALID_PROVIDERS = ['copilot', 'gemini', 'opencode', 'cursor', 'codex', 'claude'] as const;
 
 const providerSchema = z.object({
   id: z.enum(VALID_PROVIDERS).default('copilot'),
+  /** Override the preset's default binary path */
   binaryOverride: z.string().optional(),
+  /** Override the preset's default spawn args */
   argsOverride: z.array(z.string()).optional(),
+  /** Extra environment variables to pass to the CLI process */
   envOverride: z.record(z.string(), z.string()).optional(),
 });
 

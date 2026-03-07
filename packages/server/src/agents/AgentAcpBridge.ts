@@ -65,6 +65,16 @@ export function startAcp(agent: Agent, config: ServerConfig, initialPrompt?: str
     });
   }
 
+  // Apply config overrides (binaryOverride, argsOverride, envOverride)
+  const binary = config.providerBinaryOverride || preset?.binary || config.cliCommand;
+  const baseArgs = config.providerArgsOverride || preset?.args;
+
+  // Merge env: config overrides take precedence, filter out empty/falsy values
+  const rawEnv = { ...preset?.env, ...config.providerEnvOverride };
+  const env = Object.fromEntries(
+    Object.entries(rawEnv).filter(([, v]) => v),
+  );
+
   const cliArgs = [
     ...config.cliArgs,
     `--agent=${agentFlagForRole(agent.role.id)}`,
@@ -73,11 +83,11 @@ export function startAcp(agent: Agent, config: ServerConfig, initialPrompt?: str
   ];
 
   conn.start({
-    cliCommand: preset?.binary || config.cliCommand,
-    baseArgs: preset?.args,
+    cliCommand: binary,
+    baseArgs,
     cliArgs,
     cwd: agent.cwd || process.cwd(),
-    env: preset?.env,
+    env: Object.keys(env).length > 0 ? env : undefined,
     sessionId: agent.resumeSessionId,
   }).then((sessionId) => {
     agent.sessionId = sessionId;

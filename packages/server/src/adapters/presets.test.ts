@@ -59,7 +59,7 @@ describe('Provider Presets', () => {
       expect(preset.binary).toBe('gemini');
       expect(preset.args).toEqual(['--experimental-acp']);
       expect(preset.supportsResume).toBe(false);
-      expect(preset.env).toHaveProperty('GEMINI_API_KEY');
+      expect(preset.requiredEnvVars).toContain('GEMINI_API_KEY');
     });
   });
 
@@ -87,7 +87,7 @@ describe('Provider Presets', () => {
       expect(preset.binary).toBe('codex');
       expect(preset.args).toEqual(['--acp']);
       expect(preset.supportsResume).toBe(false);
-      expect(preset.env).toHaveProperty('OPENAI_API_KEY');
+      expect(preset.requiredEnvVars).toContain('OPENAI_API_KEY');
     });
   });
 
@@ -97,7 +97,7 @@ describe('Provider Presets', () => {
       expect(preset.binary).toBe('claude');
       expect(preset.args).toEqual(['--acp', '--stdio']);
       expect(preset.supportsResume).toBe(true);
-      expect(preset.env).toHaveProperty('ANTHROPIC_API_KEY');
+      expect(preset.requiredEnvVars).toContain('ANTHROPIC_API_KEY');
       expect(preset.agentFileFormat).toBe('CLAUDE.md');
     });
   });

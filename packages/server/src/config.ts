@@ -11,6 +11,12 @@ export interface ServerConfig {
   cliArgs: string[];
   /** Provider ID for the CLI adapter (e.g., 'copilot', 'gemini', 'claude') */
   provider: string;
+  /** Override the preset binary (from config YAML provider.binaryOverride) */
+  providerBinaryOverride?: string;
+  /** Override the preset args (from config YAML provider.argsOverride) */
+  providerArgsOverride?: string[];
+  /** Extra env vars for the CLI process (from config YAML provider.envOverride) */
+  providerEnvOverride?: Record<string, string>;
   maxConcurrentAgents: number;
   dbPath: string;
 }
