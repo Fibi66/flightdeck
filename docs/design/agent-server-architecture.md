@@ -24,7 +24,7 @@
 11. [Lifecycle Modes](#lifecycle-modes)
 12. [Integration with dev.mjs](#integration-with-devmjs)
 13. [State Persistence Ownership](#state-persistence-ownership)
-    - [Write-on-Mutation](#principle-write-on-mutation-not-write-on-shutdown) · [Shared Database](#shared-database-with-ownership-boundaries) · [Multi-Orchestrator Write Contention](#multi-orchestrator-write-contention-sqlite_busy) · [Filesystem Mirroring](#filesystem-mirroring-ownership)
+    - [Write-on-Mutation](#principle-write-on-mutation-not-write-on-shutdown) · [Shared Database](#shared-database-with-ownership-boundaries) · [Filesystem Mirroring](#filesystem-mirroring-ownership)
 14. [Recovery Responsibilities](#recovery-responsibilities)
     - [Who Restarts What](#who-restarts-what) · [Agent Server Self-Recovery](#agent-server-self-recovery-on-startup) · [Orchestration Server Reconciliation](#orchestration-server-reconciliation)
 15. [Multi-Team, Multi-Project Model](#multi-team-multi-project-model)
@@ -284,9 +284,9 @@ class ForkListener implements AgentServerListener {
  * Same AgentServerTransport interface — drop-in replacement for ForkTransport.
  *
  * Use cases:
- * - Agent Server on a GPU machine, Orchestration Server on a laptop
- * - Shared agent pool across multiple orchestration servers
+ * - Agent Server on a remote machine, Orchestration Server on a laptop
  * - Cloud deployment: Agent Server in a container, UI server on edge
+ * - Future multi-user: multiple users sharing an agent server
  */
 class WebSocketTransport implements AgentServerTransport {
   constructor(private url: string, private authToken: string) {}
@@ -1060,7 +1060,6 @@ function handleReconnect(conn: net.Socket, expectedToken: string): void {
       const connectionScope: ConnectionScope = {
         projectId: msg.projectId,
         teamId: msg.teamId,
-        permission: this.resolvePermission(msg.projectId, msg.teamId),
       };
 
       conn.write(JSON.stringify({
@@ -1081,7 +1080,6 @@ function handleReconnect(conn: net.Socket, expectedToken: string): void {
 interface ConnectionScope {
   projectId: string;
   teamId: string;
-  permission: TeamPermission;
 }
 ```
 
@@ -1149,9 +1147,9 @@ async reconnectViaTcp(port: number, tokenPath: string, scope: TeamContext): Prom
 | Slow/hanging connection | 5-second auth timeout — connection destroyed if no auth received |
 | Replay attack (stale token from previous session) | Token is regenerated on every agent server startup. Old tokens are invalid. |
 | Network sniffing (remote attacker) | TCP bound to `127.0.0.1` — not reachable from network |
-| **Global list leaking all team data** | `ListAgentsMessage` **requires** `(projectId, teamId)` — connection scope is enforced. No unscoped listing without `server_admin` permission (local-only, resolved at auth time). |
+| **Global list leaking all team data** | `ListAgentsMessage` **requires** `(projectId, teamId)` — connection scope is enforced. Unscoped listing is available since this is a single-user tool (the user owns all teams). |
 
-**Security boundary:** Same as the daemon design — the token file (0o600) is the sole barrier against same-user attackers. For a local dev tool running on the developer's own machine, this is the appropriate security level. The WebSocketTransport (future) adds TLS for network scenarios and per-team tokens for team isolation.
+**Security boundary:** Single-user local dev tool. The token file (0o600) prevents other OS users from connecting. There is no multi-user auth — one human operates the system. The WebSocketTransport (future) adds TLS for network scenarios.
 
 ### Discovery Flow
 
@@ -1476,82 +1474,9 @@ A single shared SQLite database (WAL mode, already configured) with clear write 
 - Existing 25+ tables and migrations work unchanged
 - Single backup, single migration path
 
-### Multi-Orchestrator Write Contention (SQLITE_BUSY)
-
-**Problem:** The two-process model assumes exactly one agent server and one orchestration server. But in the multi-team scenario with WebSocketTransport, multiple orchestration servers connect simultaneously. If each opens its own SQLite connection and writes to "orchestration-owned" tables (dagTasks, knowledge, messageQueue, etc.), SQLite WAL mode only allows **one writer at a time** — concurrent writes cause `SQLITE_BUSY` errors.
-
-**This is a fundamental constraint.** SQLite is an embedded database designed for single-process or single-writer use. Our options:
-
-| Approach | Complexity | Latency | Correctness |
-|----------|-----------|---------|-------------|
-| **A. Agent server as DB write proxy** | Medium | +1 IPC hop per write | ✅ Single writer guaranteed |
-| **B. Separate DBs per team** | High | None | ✅ But loses shared reads |
-| **C. Write-ahead queue via agent server** | Medium | Async batched | ✅ Ordered, single writer |
-| **D. SQLite busy timeout + retry** | Low | Unpredictable | ⚠️ Works under low contention |
-
-**Chosen approach: A + D hybrid — Agent server as the sole DB writer, with busy timeout as a safety net.**
-
-**Rationale:**
-- The agent server is already a singleton shared process. It's the natural home for the single DB writer.
-- All orchestration servers send write requests to the agent server via IPC/WebSocket. The agent server executes writes sequentially.
-- This extends the existing "sole agent owner" invariant: the agent server is also the **sole DB writer**.
-- The orchestration server becomes a **read-only DB client** with writes proxied through the agent server.
-- The `busy_timeout` pragma (already set at 5000ms) handles the edge case where the agent server and a read query collide in WAL mode.
-
-```typescript
-// Updated architecture: agent server owns ALL DB writes
-
-// Orchestration → Agent Server (new message types for DB writes)
-type DbWriteMessage =
-  | { type: 'db_write'; requestId: string; table: string; operation: 'insert' | 'update' | 'delete'; data: unknown }
-  | { type: 'db_batch_write'; requestId: string; writes: DbWriteMessage[] };
-
-// Agent server processes writes sequentially — no SQLITE_BUSY possible
-class AgentServer {
-  private writeQueue = new AsyncQueue<DbWriteMessage>();
-
-  async processWrites(): Promise<void> {
-    for await (const msg of this.writeQueue) {
-      // Single-threaded write processing — no contention
-      await this.executeDbWrite(msg);
-      this.sendWriteResult(msg.requestId, { success: true });
-    }
-  }
-}
-
-// Orchestration server: read directly, write via agent server
-class OrchestrationDbClient {
-  private db: BetterSqlite3.Database;  // Read-only connection
-  private agentServer: AgentServerClient;
-
-  read<T>(query: () => T): T {
-    return query();  // Direct read — WAL mode allows concurrent readers
-  }
-
-  async write(table: string, operation: string, data: unknown): Promise<void> {
-    // Proxy write through agent server
-    await this.agentServer.sendAndWait({
-      type: 'db_write',
-      requestId: nanoid(),
-      table,
-      operation,
-      data,
-    });
-  }
-}
-```
-
-**Impact on the existing table ownership model:**
-- The "Agent Server Owns / Orchestration Server Owns" table split remains conceptually correct — it determines which process **initiates** writes.
-- But physically, ALL writes flow through the agent server's DB connection.
-- Orchestration-initiated writes (dagTasks, knowledge, etc.) are sent as messages to the agent server, which executes them.
-- This adds ~1ms latency per write (IPC round-trip) — negligible for a dev tool.
-
-**Phase 1 (ForkTransport, single orchestrator):** Both processes can write directly — there's only one orchestration server, so no contention. The busy timeout handles rare WAL collisions.
-
-**Phase 2 (WebSocketTransport, multi orchestrator):** All orchestration writes proxy through the agent server. This is a transport-layer concern — the application code uses the same `OrchestrationDbClient` interface regardless.
-
 > **Note:** Tables are scoped by `(projectId, teamId)` or `(projectId)` only. See the **Multi-Team, Multi-Project Model** section for full scoping rules, schema changes, and index strategy.
+
+**Write contention:** With exactly one agent server process and one orchestration server process, each writing to their own tables, there is no SQLite write contention. WAL mode handles concurrent reads from both processes. The `busy_timeout` pragma (already set at 5000ms) handles the rare case where both processes attempt a write in the same instant.
 
 #### Agent Server Owns (writes):
 
@@ -1644,7 +1569,7 @@ class AgentServer {
 
 ### Orchestration Server Reconciliation
 
-After the agent server restarts (or on initial connection), the orchestration server reconciles what SHOULD be running vs what IS running. **Reconciliation is team-scoped** — each orchestration server only reconciles its own `(projectId, teamId)` scope:
+After the agent server restarts (or on initial connection), the orchestration server reconciles what SHOULD be running vs what IS running. **Reconciliation is team-scoped** — the orchestration server reconciles one `(projectId, teamId)` scope at a time:
 
 ```typescript
 async function reconcileAgents(
@@ -1876,40 +1801,41 @@ Everything works as before. The `teamId = 'default'` is implicit — solo develo
 #### Scenario 2: One Developer, Multiple Projects
 
 ```
-Alice opens two terminal tabs, each running a different project.
-
-Agent Server:
-  Project: acme-app (tab 1)
-    Team: alice-lead-x7k2
-      architect, dev-1, dev-2, qa
-  Project: billing-service (tab 2)
-    Team: alice-lead-m4n9
-      dev-1, dev-2
-
-Alice's agent budget: 6 total agents across both projects.
-She switches tabs — the orchestration server in each tab connects
-to the same agent server with different (projectId, teamId) scopes.
-```
-
-The agent server manages both project's agents simultaneously. Each orchestration server only sees its own scope. When Alice closes tab 1, she can choose to terminate acme-app agents or let them keep running.
-
-#### Scenario 3: Team Collaboration (Same Project)
-
-```
-Alice and Bob both work on acme-app.
-Alice runs her own Flightdeck instance, Bob runs his.
-Both connect to the same agent server (via WebSocketTransport, future).
+Alice works on two projects. She uses the UI to switch between them.
 
 Agent Server:
   Project: acme-app
-    Team: alice-lead-x7k2
-      architect, dev-1, dev-2       # Alice's crew
-    Team: bob-lead-j8p5
-      dev-1, dev-2, qa              # Bob's crew
+    Team: dev-team
+      architect, dev-1, dev-2, qa
+  Project: billing-service
+    Team: dev-team
+      dev-1, dev-2
+
+Alice's agent budget: 6 total agents across both projects.
+She switches projects in the UI — the orchestration server sends
+a new configure message with the new (projectId, teamId) scope.
+```
+
+The agent server manages both project's agents simultaneously. The UI shows the agents for the currently selected scope. When Alice switches away from acme-app, those agents keep running — she can switch back anytime.
+
+#### Scenario 3: Multiple Teams, Same Project
+
+> **Current scope:** A single user manages multiple teams on the same project, switching between them in the UI. **Future (WebSocket):** Multiple users could each run their own orchestrator.
+
+```
+Single user manages two teams on acme-app.
+One Flightdeck instance, user switches team context in UI.
+
+Agent Server:
+  Project: acme-app
+    Team: frontend-team
+      architect, dev-1, dev-2       # Frontend crew
+    Team: backend-team
+      dev-1, dev-2, qa              # Backend crew
 
 Shared across teams:
   - Knowledge store (projectId = acme-app)
-  - File locks (projectId = acme-app) — prevents Alice and Bob editing same files
+  - File locks (projectId = acme-app)
 
 Isolated per team:
   - Agent roster (each team's agents are independent)
@@ -1917,29 +1843,29 @@ Isolated per team:
   - Delegations (each team's delegation chain)
 ```
 
-**File lock contention:** File locks are project-scoped. If Alice's dev-1 locks `src/api.ts`, Bob's dev-2 sees the lock and cannot acquire it. This is the coordination mechanism between teams — they share the lock table even though they have separate agents.
+**File lock contention:** File locks are project-scoped. If frontend-team's dev-1 locks `src/api.ts`, backend-team's dev-2 sees the lock and cannot acquire it. This is the coordination mechanism between teams — they share the lock table even though they have separate agents.
 
-**Knowledge sharing:** When Alice's architect writes to knowledge ("the auth module uses JWT"), Bob's agents see it when they query knowledge. Knowledge flows between teams automatically.
+**Knowledge sharing:** When frontend-team's architect writes to knowledge ("the auth module uses JWT"), backend-team's agents see it when they query knowledge. Knowledge flows between teams automatically.
 
-#### Scenario 4: Enterprise (Many Teams, Many Projects)
+#### Scenario 4: Power User (Many Teams, Many Projects)
+
+> **Future scenario** — achievable with the current single-orchestrator architecture. The user manages multiple teams and projects from a single Flightdeck instance, switching scope via the UI.
 
 ```
-Agent Server (centralized, running on a shared machine):
+Agent Server (local):
   Project: platform-api
-    Team: alice-lead    (3 agents)
-    Team: bob-lead      (4 agents)
+    Team: dev-team      (3 agents)
     Team: ci-pipeline   (2 agents, automated)
   Project: mobile-app
-    Team: carol-lead    (5 agents)
-    Team: alice-lead    (2 agents — Alice works on both)
+    Team: dev-team      (5 agents — same team, different project)
   Project: data-pipeline
-    Team: dave-lead     (3 agents)
+    Team: data-team     (3 agents)
 
-Total: 19 agents, 4 projects, 5 teams
-Some teams span multiple projects (alice-lead on both platform-api and mobile-app).
+Total: 13 agents, 3 projects, 3 teams
+The user switches between projects in the UI — all agents keep running.
 ```
 
-This requires the WebSocketTransport (multiple orchestration servers connecting over the network). The ForkTransport (single parent) works only for local/solo scenarios.
+The orchestration server manages all scopes. No WebSocketTransport needed — the single orchestrator sends `configure` messages to switch its active scope.
 
 ### Agent Server API Changes
 
@@ -1984,7 +1910,6 @@ interface ListAgentsMessage {
   projectId: string;            // ← REQUIRED: always scoped (enforced by connection scope)
   teamId: string;               // ← REQUIRED: always scoped (enforced by connection scope)
   // Connection scope is validated — clients cannot list outside their bound scope.
-  // Cross-team listing requires server_admin permission (resolved at auth time).
 }
 
 interface SubscribeMessage {
@@ -2058,14 +1983,10 @@ class AgentServer {
     const key = `${conn.scope.projectId}:${conn.scope.teamId}`;
     const ids = this.projectTeamIndex.get(key) ?? new Set();
     return [...ids].map(id => this.toDescriptor(this.agents.get(id)!));
-
-    // Cross-team view (project admin) is a separate message type:
-    // ListAllProjectAgentsMessage — requires server_admin permission,
-    // validated at auth time. Never exposed through standard ListAgentsMessage.
   }
 
   routeEvent(event: AgentEventMessage): void {
-    // Only send events to orchestration servers subscribed to the matching scope
+    // Only send events matching the active scope (future: supports multiple subscribers)
     for (const subscriber of this.subscribers) {
       if (subscriber.scope.projectId === event.projectId &&
           subscriber.scope.teamId === event.teamId) {
@@ -2249,27 +2170,21 @@ handleList(msg: ListAgentsMessage, conn: ScopedConnection): void {
 }
 ```
 
-**Cross-team visibility** (e.g., for a project dashboard) requires a separate `AdminListMessage` type that is only processed for connections with `server_admin` permission. This permission is resolved at auth time based on the token — the agent-server.token grants `server_admin` for local ForkTransport connections (single-user dev tool). The future WebSocketTransport can issue per-team tokens with `team_member` permission only.
+**Cross-team visibility:** Since this is a **single-user** tool, the user owns all teams and can see all agents. The connection scope primarily serves as a default filter (show me agents for THIS team) rather than a security boundary. The user can view agents across teams via the UI's cross-project view.
 
-```typescript
-type TeamPermission = 'team_member' | 'project_admin' | 'server_admin';
-
-// team_member: see/control own team's agents only (default for WebSocket)
-// project_admin: see (not control) all teams' agents on a project
-// server_admin: see/control everything (default for ForkTransport / local)
-```
+> **Future (multi-user):** If multiple users share an agent server, the scope would become a security boundary with per-user tokens. This is out of scope for the current design.
 
 #### Can Team A Control Team B's Agents?
 
-**No.** Even project admins can only view, not control other teams' agents. Agent operations (spawn, terminate, prompt) are always scoped to `(projectId, teamId)` and the agent server enforces this:
+In the current **isolated teams** model, each team's orchestrator operates in its own scope. Since there's a single user, they can switch between teams freely. However, agent operations (spawn, terminate, prompt) are always scoped to the connection's `(projectId, teamId)` to prevent accidental cross-team interference:
 
 ```typescript
 handleTerminate(msg: TerminateAgentMessage): void {
   const agent = this.agents.get(msg.agentId);
   if (!agent) return this.sendError(msg.requestId, 'AGENT_NOT_FOUND');
-  // Enforce team ownership
+  // Scope check prevents accidental cross-team operations
   if (agent.teamId !== msg.teamId || agent.projectId !== msg.projectId) {
-    return this.sendError(msg.requestId, 'TEAM_SCOPE_VIOLATION',
+    return this.sendError(msg.requestId, 'SCOPE_MISMATCH',
       `Agent ${msg.agentId} belongs to team ${agent.teamId}, not ${msg.teamId}`);
   }
   this.doTerminate(agent, msg.reason);
@@ -2336,7 +2251,7 @@ async deleteKnowledge(id: number, conn: ScopedConnection): Promise<boolean> {
 }
 ```
 
-**Cross-team knowledge disputes:** If Team A believes Team B wrote incorrect knowledge, Team A can create a `dispute` entry (a special knowledge category) referencing the disputed entry. The orchestration server can surface disputes in the Knowledge Panel for human review. This models real-world disagreement without allowing destructive cross-team actions.
+> **Note on cross-team knowledge:** In the current isolated-teams model, teams don't interact with each other's knowledge. Each team reads and writes within its own scope. Cross-team knowledge sharing and disputes are explored in the separate [Cross-Team Collaboration](cross-team-collaboration.md) design doc (not for implementation).
 
 ### Filesystem Mirroring with Multi-Team
 
@@ -2406,33 +2321,27 @@ This prevents attacks like `teamId: '../../../etc/passwd'` or `teamId: '..\\..\\
 
 ### Agent Server as Shared Service
 
-The agent server is infrastructure that outlives any single project or team session:
+The agent server is infrastructure that outlives any single project or team session. A single orchestration server and a single agent server manage ALL teams and projects:
 
 - **User switches projects:** The orchestration server sends a new `configure` message with the new `(projectId, teamId)`. Old agents keep running. The user can explicitly terminate them or leave them.
 - **User switches teams:** Same mechanism — the orchestration server re-configures its scope.
-- **Agent server restart:** All teams lose agents simultaneously. Recovery (via reconciliation) is per-team — each orchestration server reconciles its own team's agents.
-- **Multiple orchestration servers:** With WebSocketTransport, multiple orchestration servers connect simultaneously, each with their own `(projectId, teamId)` scope. Events are routed only to the matching subscriber.
+- **Agent server restart:** All teams lose agents simultaneously. Recovery (via reconciliation) is per-team — the orchestration server reconciles each team's agents.
 
 ```
-Multi-Team Architecture (WebSocketTransport, future):
+Single-User Architecture:
 
-  Alice's Orchestrator ──────────┐  scope: (acme-app, alice-lead)
-                                 │
-  Bob's Orchestrator ────────────┤  scope: (acme-app, bob-lead)
-                                 │
-  Alice's 2nd Orchestrator ──────┤  scope: (billing-svc, alice-lead)
-                                 │
-         Agent Server ───────────┘
-           ├─ acme-app / alice-lead: 3 agents
-           ├─ acme-app / bob-lead: 4 agents
-           └─ billing-svc / alice-lead: 2 agents
-
-  Events for alice-lead's agents on acme-app → only Alice's 1st orchestrator
-  Events for bob-lead's agents on acme-app → only Bob's orchestrator
-  Alice's 2nd orchestrator only sees billing-svc agents
+  Orchestration Server ──── Agent Server
+    (one process)            (one process)
+    manages UI, DAG,          manages agents across:
+    knowledge, coordination    ├─ acme-app / alice-team: 3 agents
+                               ├─ acme-app / ci-team: 2 agents
+    User switches scope        └─ billing-svc / alice-team: 2 agents
+    via configure message
 ```
 
-This is the natural evolution of the architecture. No redesign needed — only the WebSocketTransport implementation and multi-client support in the agent server listener.
+The orchestration server manages multiple `(projectId, teamId)` scopes sequentially — the user works on one team at a time in the UI, but all agents across all teams continue running in the agent server.
+
+> **Future (multi-user):** Multiple orchestration servers connecting to a shared agent server (via WebSocketTransport) is an architectural possibility but is NOT in scope. See the separate [Cross-Team Collaboration](cross-team-collaboration.md) design doc.
 
 ## Portable Teams (Export/Import)
 
@@ -3247,31 +3156,29 @@ Result:          ~1,600 LOC total (vs 3,726)
 
 ## Future: WebSocket Transport for Network Separation
 
+> **Status:** Future — not in scope for current implementation. The pluggable transport interface is designed to support this without a rewrite.
+
 The pluggable transport interface enables a clean evolution path:
 
 ```
-Phase 1 (now):   ForkTransport — local dev, Node IPC + TCP reconnect, single team
-Phase 2 (next):  WebSocketTransport — network separation, multi-team collaboration
+Now:     ForkTransport — single user, local dev, Node IPC + TCP reconnect
+Future:  WebSocketTransport — network separation, remote agent servers
 ```
 
-**WebSocket transport enables the multi-team scenarios** described in "Multi-Team, Multi-Project Model":
-- **Team collaboration:** Alice and Bob each run their own orchestration server, both connect to a shared agent server. Each operates in their own `(projectId, teamId)` scope.
-- **Multi-machine:** Agent server on a GPU machine, orchestration servers on laptops
-- **Shared agent pools:** Multiple developers share a pool of persistent agents
-- **Cloud deployment:** Agent server in a container, UI servers on edge/CDN
-- **Enterprise:** Many teams, many projects, centralized agent infrastructure
+**WebSocket transport would enable:**
+- **Multi-machine:** Agent server on a powerful remote machine, orchestration on a laptop
+- **Cloud deployment:** Agent server in a container, UI server on edge/CDN
+- **Multi-user:** Multiple users sharing a remote agent server (requires auth model extension)
 
-**The interface is already correct for this.** `AgentServerTransport.send()` and `.onMessage()` work identically whether the transport is a fork IPC channel, a TCP socket, or a WebSocket. The message protocol (typed TypeScript objects) serializes to JSON for network transport. The `(projectId, teamId)` scoping in all messages means the agent server can route events to the correct subscriber regardless of transport.
+**The interface is already correct for this.** `AgentServerTransport.send()` and `.onMessage()` work identically whether the transport is a fork IPC channel, a TCP socket, or a WebSocket. The `(projectId, teamId)` scoping in all messages means the agent server can route events correctly regardless of transport.
 
-**What WebSocketTransport adds:**
+**What WebSocketTransport would add:**
 - TLS encryption (wss://)
 - Token authentication (Bearer header per connection)
 - Reconnect with exponential backoff
-- **Connection multiplexing** (multiple orchestration servers, one per team)
-- Event routing by `(projectId, teamId)` scope
-- ~300-400 LOC
+- ~200-300 LOC
 
-This is the path from "local dev tool" to "team infrastructure" — and the transport interface makes it a clean addition, not a rewrite.
+This is the path from "local dev tool" to "remote infrastructure" — and the transport interface makes it a clean addition, not a rewrite.
 
 ## Team Management UI
 
@@ -3841,10 +3748,10 @@ These endpoints are served by the orchestration server, which reads from the sha
 
 2. **~~Should the agent server have its own SQLite connection?~~** **RESOLVED:** Yes — the agent server opens its own connection to the shared SQLite database (WAL mode). It owns writes to agent-scoped tables (agentRoster, activeDelegations, conversations/messages for agents). The orchestration server owns writes to coordination tables (taskDag, knowledge, messageQueue, etc.). Both read each other's tables. See "Shared Database with Ownership Boundaries" section.
 
-3. **In-process Claude SDK agents?** ClaudeSdkAdapter runs in-process (no subprocess). These agents die with the orchestration server, not the agent server. Should they move to the agent server? Probably yes — but that requires the agent server to have the Claude SDK dependency and API key. For now, in-process agents use SDK resume as their survival mechanism.
+3. **~~In-process Claude SDK agents?~~** **RESOLVED:** All adapter logic (ACP + Claude SDK) lives in the agent server. The orchestration server has NO adapter code — it sends spawn requests to the agent server, which selects and runs the appropriate adapter. ClaudeSdkAdapter agents run in the agent server process, so they survive orchestration server restarts just like subprocess-based agents. The agent server holds the Claude SDK dependency and API key.
 
 4. **How does the agent server get config updates?** When the user changes `flightdeck.config.yaml`, the orchestration server's ConfigStore detects it. It should forward relevant config (provider presets, model overrides, mass failure thresholds) to the agent server via a `configure` message. The agent server doesn't watch config files itself.
 
-5. **Agent naming: auto-generated vs user-assigned?** Persistent agents need human-readable names (e.g., "Arch-Alpha"). Should names be auto-generated (role + NATO alphabet suffix), user-assigned at creation, or auto-generated with user-rename? Recommendation: auto-generated with rename — lowers friction for casual use while supporting personalization for long-lived agents.
+5. **~~Agent naming: auto-generated vs user-assigned?~~** **RESOLVED:** Keep the existing convention: role + short UUID (e.g., `developer-903df314`). No change needed. Human-readable names are a future nice-to-have, not a requirement.
 
 6. **Knowledge attribution granularity?** The `metadata.source.agentId` field on knowledge entries enables per-agent knowledge views. But existing entries (created before agent tracking) won't have this field. Backfill strategy: tag existing entries as `mechanism: 'legacy'` with no agent attribution, or attempt to infer from `activityLog`.
