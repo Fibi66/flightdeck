@@ -1,0 +1,236 @@
+import { eq, and, sql, desc } from 'drizzle-orm';
+import type { Database } from '../db/database.js';
+import { knowledge } from '../db/schema.js';
+import type { KnowledgeEntry, KnowledgeCategory, KnowledgeMetadata, SearchOptions } from './types.js';
+import { KNOWLEDGE_CATEGORIES } from './types.js';
+import { logger } from '../utils/logger.js';
+
+/**
+ * KnowledgeStore — CRUD + FTS5 full-text search for per-project knowledge.
+ *
+ * Uses Drizzle ORM for regular CRUD and raw SQL for FTS5 queries
+ * (Drizzle doesn't support virtual tables natively).
+ *
+ * Knowledge is organized into 4 categories:
+ * - core: Agent identity, user preferences, project rules (written once)
+ * - episodic: Session summaries, milestones, key decisions (auto-captured)
+ * - procedural: Learned patterns, corrections, how-to (from user feedback)
+ * - semantic: Facts, entity relationships, technical context (extracted)
+ */
+export class KnowledgeStore {
+  constructor(private db: Database) {}
+
+  /**
+   * Upsert a knowledge entry.
+   * If (projectId, category, key) already exists, updates content + metadata.
+   */
+  put(
+    projectId: string,
+    category: KnowledgeCategory,
+    key: string,
+    content: string,
+    metadata?: KnowledgeMetadata,
+  ): KnowledgeEntry {
+    this.validateCategory(category);
+
+    const metadataJson = metadata ? JSON.stringify(metadata) : null;
+    const now = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+
+    const result = this.db.drizzle
+      .insert(knowledge)
+      .values({
+        projectId,
+        category,
+        key,
+        content,
+        metadata: metadataJson,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: [knowledge.projectId, knowledge.category, knowledge.key],
+        set: {
+          content,
+          metadata: metadataJson,
+          updatedAt: now,
+        },
+      })
+      .returning()
+      .get();
+
+    logger.debug({ module: 'project', msg: 'Knowledge entry upserted', projectId, category, key });
+    return this.rowToEntry(result);
+  }
+
+  /** Get a specific knowledge entry by (projectId, category, key). */
+  get(projectId: string, category: KnowledgeCategory, key: string): KnowledgeEntry | undefined {
+    const row = this.db.drizzle
+      .select()
+      .from(knowledge)
+      .where(
+        and(
+          eq(knowledge.projectId, projectId),
+          eq(knowledge.category, category),
+          eq(knowledge.key, key),
+        ),
+      )
+      .get();
+
+    return row ? this.rowToEntry(row) : undefined;
+  }
+
+  /** Get all knowledge entries for a project in a specific category. */
+  getByCategory(projectId: string, category: KnowledgeCategory): KnowledgeEntry[] {
+    this.validateCategory(category);
+
+    const rows = this.db.drizzle
+      .select()
+      .from(knowledge)
+      .where(
+        and(
+          eq(knowledge.projectId, projectId),
+          eq(knowledge.category, category),
+        ),
+      )
+      .orderBy(desc(knowledge.updatedAt))
+      .all();
+
+    return rows.map((r) => this.rowToEntry(r));
+  }
+
+  /** Get all knowledge entries for a project across all categories. */
+  getAll(projectId: string): KnowledgeEntry[] {
+    const rows = this.db.drizzle
+      .select()
+      .from(knowledge)
+      .where(eq(knowledge.projectId, projectId))
+      .orderBy(knowledge.category, desc(knowledge.updatedAt))
+      .all();
+
+    return rows.map((r) => this.rowToEntry(r));
+  }
+
+  /**
+   * Full-text search using FTS5.
+   * Returns entries ranked by relevance (BM25 scoring).
+   */
+  search(projectId: string, query: string, options?: SearchOptions): KnowledgeEntry[] {
+    const limit = options?.limit ?? 20;
+    const category = options?.category;
+
+    // Sanitize query for FTS5 — double-quote terms to avoid syntax errors
+    const safeQuery = query.replace(/"/g, '""');
+
+    let results: Array<{ id: number }>;
+    if (category) {
+      results = this.db.all<{ id: number }>(
+        `SELECT k.id FROM knowledge k
+         JOIN knowledge_fts fts ON k.id = fts.rowid
+         WHERE knowledge_fts MATCH ?
+           AND k.project_id = ?
+           AND k.category = ?
+         ORDER BY bm25(knowledge_fts)
+         LIMIT ?`,
+        [`"${safeQuery}"`, projectId, category, limit],
+      );
+    } else {
+      results = this.db.all<{ id: number }>(
+        `SELECT k.id FROM knowledge k
+         JOIN knowledge_fts fts ON k.id = fts.rowid
+         WHERE knowledge_fts MATCH ?
+           AND k.project_id = ?
+         ORDER BY bm25(knowledge_fts)
+         LIMIT ?`,
+        [`"${safeQuery}"`, projectId, limit],
+      );
+    }
+
+    if (results.length === 0) return [];
+
+    // Fetch full rows by ID
+    const ids = results.map((r) => r.id);
+    const rows = this.db.drizzle
+      .select()
+      .from(knowledge)
+      .where(
+        and(
+          eq(knowledge.projectId, projectId),
+          sql`${knowledge.id} IN (${sql.join(ids.map(id => sql`${id}`), sql`, `)})`,
+        ),
+      )
+      .all();
+
+    // Preserve FTS5 rank ordering
+    const rowMap = new Map(rows.map((r) => [r.id, r]));
+    return ids.map((id) => rowMap.get(id)).filter(Boolean).map((r) => this.rowToEntry(r!));
+  }
+
+  /** Delete a specific knowledge entry. Returns true if an entry was deleted. */
+  delete(projectId: string, category: KnowledgeCategory, key: string): boolean {
+    const result = this.db.drizzle
+      .delete(knowledge)
+      .where(
+        and(
+          eq(knowledge.projectId, projectId),
+          eq(knowledge.category, category),
+          eq(knowledge.key, key),
+        ),
+      )
+      .run();
+
+    return result.changes > 0;
+  }
+
+  /** Delete all knowledge for a project. Returns number of entries deleted. */
+  deleteAll(projectId: string): number {
+    const result = this.db.drizzle
+      .delete(knowledge)
+      .where(eq(knowledge.projectId, projectId))
+      .run();
+
+    return result.changes;
+  }
+
+  /** Count entries by project + optional category. */
+  count(projectId: string, category?: KnowledgeCategory): number {
+    if (category) {
+      const row = this.db.drizzle
+        .select({ count: sql<number>`count(*)` })
+        .from(knowledge)
+        .where(
+          and(
+            eq(knowledge.projectId, projectId),
+            eq(knowledge.category, category),
+          ),
+        )
+        .get();
+      return row?.count ?? 0;
+    }
+
+    const row = this.db.drizzle
+      .select({ count: sql<number>`count(*)` })
+      .from(knowledge)
+      .where(eq(knowledge.projectId, projectId))
+      .get();
+    return row?.count ?? 0;
+  }
+
+  private validateCategory(category: string): asserts category is KnowledgeCategory {
+    if (!KNOWLEDGE_CATEGORIES.includes(category as KnowledgeCategory)) {
+      throw new Error(`Invalid knowledge category '${category}'. Must be one of: ${KNOWLEDGE_CATEGORIES.join(', ')}`);
+    }
+  }
+
+  private rowToEntry(row: typeof knowledge.$inferSelect): KnowledgeEntry {
+    return {
+      id: row.id,
+      projectId: row.projectId,
+      category: row.category as KnowledgeCategory,
+      key: row.key,
+      content: row.content,
+      metadata: row.metadata ? JSON.parse(row.metadata) : null,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    };
+  }
+}

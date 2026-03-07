@@ -8,6 +8,17 @@ import type { ProjectMetadata, SyncManifest } from './types.js';
 import { SYNC_SCHEMA_VERSION } from './types.js';
 import { logger } from '../utils/logger.js';
 
+import type { KnowledgeCategory } from '../knowledge/types.js';
+
+/** A knowledge entry for sync purposes. */
+export interface SyncKnowledgeEntry {
+  category: KnowledgeCategory;
+  key: string;
+  content: string;
+  metadata?: Record<string, unknown> | null;
+  updatedAt: string;
+}
+
 /** Data provider interface — abstracts SQLite reads for the sync engine. */
 export interface SyncDataProvider {
   /** Get all active project IDs */
@@ -16,6 +27,8 @@ export interface SyncDataProvider {
   getProject(id: string): { id: string; name: string; cwd: string | null; status: string; createdAt: string; updatedAt: string } | undefined;
   /** Get agents for a project (id, role, status) */
   getAgentRoster(projectId: string): Array<{ id: string; role: string; status: string; model?: string; task?: string }>;
+  /** Get knowledge entries for a project (optional — if not provided, knowledge sync is skipped) */
+  getKnowledge?(projectId: string): SyncKnowledgeEntry[];
 }
 
 const DEFAULT_SYNC_INTERVAL_MS = 30_000;
@@ -91,7 +104,7 @@ export class SyncEngine {
   }
 
   /**
-   * Sync a single project: write project.yaml and agents/roster.yaml.
+   * Sync a single project: write project.yaml, agents/roster.yaml, and knowledge markdown files.
    */
   private syncProject(projectId: string): void {
     const project = this.provider.getProject(projectId);
@@ -113,27 +126,35 @@ export class SyncEngine {
       updatedAt: project.updatedAt,
     };
     const yamlContent = YAML.stringify(metadata, { lineWidth: 0 });
-    const yamlHash = contentHash(yamlContent);
-    const existingYamlHash = manifest.files['project.yaml'];
-
-    if (yamlHash !== existingYamlHash) {
-      atomicWriteFile(join(projectDir, 'project.yaml'), yamlContent);
-      newFiles['project.yaml'] = yamlHash;
-    } else {
-      newFiles['project.yaml'] = existingYamlHash;
-    }
+    this.syncFile(projectDir, 'project.yaml', yamlContent, manifest, newFiles);
 
     // 2. Write agents/roster.yaml
     const agents = this.provider.getAgentRoster(projectId);
     const rosterContent = YAML.stringify({ agents }, { lineWidth: 0 });
-    const rosterHash = contentHash(rosterContent);
-    const existingRosterHash = manifest.files['agents/roster.yaml'];
+    this.syncFile(projectDir, 'agents/roster.yaml', rosterContent, manifest, newFiles);
 
-    if (rosterHash !== existingRosterHash) {
-      atomicWriteFile(join(projectDir, 'agents', 'roster.yaml'), rosterContent);
-      newFiles['agents/roster.yaml'] = rosterHash;
-    } else {
-      newFiles['agents/roster.yaml'] = existingRosterHash;
+    // 3. Write knowledge entries as markdown files
+    if (this.provider.getKnowledge) {
+      const entries = this.provider.getKnowledge(projectId);
+      const seenPaths = new Set<string>();
+
+      for (const entry of entries) {
+        const relPath = `knowledge/${entry.category}/${entry.key}.md`;
+        seenPaths.add(relPath);
+        const mdContent = knowledgeToMarkdown(entry);
+        this.syncFile(projectDir, relPath, mdContent, manifest, newFiles);
+      }
+
+      // Carry forward non-knowledge file hashes, mark deleted knowledge files
+      for (const [relPath, hash] of Object.entries(manifest.files)) {
+        if (relPath.startsWith('knowledge/') && !seenPaths.has(relPath)) {
+          // Knowledge entry was deleted from DB — don't carry forward (file gets orphaned)
+          continue;
+        }
+        if (!newFiles[relPath]) {
+          newFiles[relPath] = hash;
+        }
+      }
     }
 
     // Update manifest
@@ -143,6 +164,23 @@ export class SyncEngine {
       schemaVersion: SYNC_SCHEMA_VERSION,
     };
     this.storage.writeSyncManifest(projectId, newManifest);
+  }
+
+  /** Write a file if its content hash has changed. */
+  private syncFile(
+    projectDir: string,
+    relPath: string,
+    content: string,
+    manifest: SyncManifest,
+    newFiles: Record<string, string>,
+  ): void {
+    const hash = contentHash(content);
+    const existingHash = manifest.files[relPath];
+
+    if (hash !== existingHash) {
+      atomicWriteFile(join(projectDir, relPath), content);
+    }
+    newFiles[relPath] = hash;
   }
 
   /**
@@ -187,4 +225,26 @@ export class SyncEngine {
 /** SHA-256 content hash, truncated to 16 hex chars for compactness. */
 function contentHash(content: string): string {
   return createHash('sha256').update(content).digest('hex').slice(0, 16);
+}
+
+/** Convert a knowledge entry to a human-readable markdown file. */
+function knowledgeToMarkdown(entry: SyncKnowledgeEntry): string {
+  const lines: string[] = [];
+  lines.push(`---`);
+  lines.push(`category: ${entry.category}`);
+  lines.push(`key: ${entry.key}`);
+  if (entry.metadata) {
+    const meta = entry.metadata;
+    if (meta.source) lines.push(`source: ${meta.source}`);
+    if (meta.confidence != null) lines.push(`confidence: ${meta.confidence}`);
+    if (Array.isArray(meta.tags) && meta.tags.length > 0) {
+      lines.push(`tags: [${meta.tags.join(', ')}]`);
+    }
+  }
+  lines.push(`updatedAt: ${entry.updatedAt}`);
+  lines.push(`---`);
+  lines.push('');
+  lines.push(entry.content);
+  lines.push('');
+  return lines.join('\n');
 }

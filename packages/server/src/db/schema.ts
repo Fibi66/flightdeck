@@ -365,3 +365,19 @@ export const activeDelegations = sqliteTable('active_delegations', {
   index('idx_ad_status').on(table.status),
   index('idx_ad_dag_task').on(table.dagTaskId),
 ]);
+
+// ── Knowledge (per-project 4-tier memory) ──────────────────────────
+
+export const knowledge = sqliteTable('knowledge', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  projectId: text('project_id').notNull(),
+  category: text('category').notNull(), // 'core' | 'episodic' | 'procedural' | 'semantic'
+  key: text('key').notNull(),
+  content: text('content').notNull(),
+  metadata: text('metadata'), // JSON: { source, confidence, tags, ... }
+  createdAt: text('created_at').notNull().default(utcNow),
+  updatedAt: text('updated_at').notNull().default(utcNow),
+}, (table) => [
+  uniqueIndex('idx_knowledge_project_cat_key').on(table.projectId, table.category, table.key),
+  index('idx_knowledge_project_category').on(table.projectId, table.category),
+]);
