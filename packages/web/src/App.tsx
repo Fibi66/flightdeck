@@ -26,6 +26,7 @@ import { VersionBadge } from './components/VersionBadge';
 import { PulseStrip } from './components/Pulse';
 import { ApprovalBadge, ApprovalSlideOver } from './components/ApprovalQueue';
 import { CatchUpBanner } from './components/CatchUp';
+import { AgentServerStatus } from './components/AgentServerStatus';
 import { useLeadStore } from './stores/leadStore';
 import type { AcpTextChunk, Project } from './types';
 import { apiFetch } from './hooks/useApi';
@@ -254,6 +255,7 @@ export function App() {
 
           <div data-tour="pulse-strip"><PulseStrip /></div>
           <MobilePulse />
+          <AgentServerStatus />
 
           <main id="main-content" className="flex-1 overflow-hidden flex flex-col">
           <ErrorBoundary>
