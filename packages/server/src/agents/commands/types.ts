@@ -20,6 +20,7 @@ import type { TimerRegistry } from '../../coordination/scheduling/TimerRegistry.
 import type { CapabilityInjector } from '../capabilities/CapabilityInjector.js';
 import type { TaskTemplateRegistry } from '../../tasks/TaskTemplates.js';
 import type { TaskDecomposer } from '../../tasks/TaskDecomposer.js';
+import type { GovernancePipeline } from '../../governance/GovernancePipeline.js';
 
 // ── Delegation record ────────────────────────────────────────────────
 
@@ -52,6 +53,7 @@ export interface CommandContext {
   taskDecomposer?: TaskDecomposer;
   maxConcurrent: number;
   markHumanInterrupt(agentId: string): void;
+  governancePipeline?: GovernancePipeline;
 }
 
 // ── CommandHandlerContext — CommandContext + shared mutable state ──────

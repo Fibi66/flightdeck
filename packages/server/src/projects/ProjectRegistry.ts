@@ -4,27 +4,8 @@ import { projects, projectSessions, dagTasks, decisions, agentMemory } from '../
 import { randomUUID } from 'crypto';
 import { DEFAULT_MODEL_CONFIG, type ProjectModelConfig } from './ModelConfigDefaults.js';
 
-export interface Project {
-  id: string;
-  name: string;
-  description: string;
-  cwd: string | null;
-  status: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface ProjectSession {
-  id: number;
-  projectId: string;
-  leadId: string;
-  sessionId: string | null;
-  role: string | null;
-  task: string | null;
-  status: string;
-  startedAt: string;
-  endedAt: string | null;
-}
+import type { Project, ProjectSession } from '@flightdeck/shared';
+export type { Project, ProjectSession } from '@flightdeck/shared';
 
 export interface ProjectBriefing {
   project: Project;
