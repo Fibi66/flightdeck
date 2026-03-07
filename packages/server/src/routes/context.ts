@@ -16,6 +16,10 @@ import type { ModelSelector } from '../agents/ModelSelector.js';
 import type { TokenBudgetOptimizer } from '../agents/TokenBudgetOptimizer.js';
 import type { ReportGenerator } from '../coordination/reporting/ReportGenerator.js';
 import type { StorageManager } from '../storage/StorageManager.js';
+import type { KnowledgeStore } from '../knowledge/KnowledgeStore.js';
+import type { HybridSearchEngine } from '../knowledge/HybridSearchEngine.js';
+import type { MemoryCategoryManager } from '../knowledge/MemoryCategoryManager.js';
+import type { TrainingCapture } from '../knowledge/TrainingCapture.js';
 import { rateLimit } from '../middleware/rateLimit.js';
 import { execSync } from 'node:child_process';
 
@@ -56,6 +60,10 @@ export interface AppContext {
   eventPipeline?: import('../coordination/events/EventPipeline.js').EventPipeline;
   costTracker?: import('../agents/CostTracker.js').CostTracker;
   storageManager?: StorageManager;
+  knowledgeStore?: KnowledgeStore;
+  hybridSearchEngine?: HybridSearchEngine;
+  memoryCategoryManager?: MemoryCategoryManager;
+  trainingCapture?: TrainingCapture;
 }
 
 // Rate limiters for expensive operations

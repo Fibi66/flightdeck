@@ -27,6 +27,10 @@ import { MessageQueueStore } from './persistence/MessageQueueStore.js';
 import { AgentRosterRepository } from './db/AgentRosterRepository.js';
 import { ActiveDelegationRepository } from './db/ActiveDelegationRepository.js';
 import { StorageManager } from './storage/StorageManager.js';
+import { KnowledgeStore } from './knowledge/KnowledgeStore.js';
+import { HybridSearchEngine } from './knowledge/HybridSearchEngine.js';
+import { MemoryCategoryManager } from './knowledge/MemoryCategoryManager.js';
+import { TrainingCapture } from './knowledge/TrainingCapture.js';
 
 // ── Imports: Tier 2 (Stateless Services) ───────────────────
 import { MessageBus } from './comms/MessageBus.js';
@@ -157,6 +161,10 @@ export async function createContainer(opts: ContainerConfig): Promise<ServiceCon
   const deferredIssueRegistry = new DeferredIssueRegistry(db);
   const projectRegistry = new ProjectRegistry(db);
   const storageManager = new StorageManager();
+  const knowledgeStore = new KnowledgeStore(db);
+  const memoryCategoryManager = new MemoryCategoryManager(knowledgeStore);
+  const hybridSearchEngine = new HybridSearchEngine(knowledgeStore);
+  const trainingCapture = new TrainingCapture(knowledgeStore);
   const timerRegistry = new TimerRegistry(db.drizzle);
   const costTracker = new CostTracker(db);
   const messageQueueStore = new MessageQueueStore(db);
@@ -332,6 +340,10 @@ export async function createContainer(opts: ContainerConfig): Promise<ServiceCon
     eventPipeline,
     costTracker,
     storageManager,
+    knowledgeStore,
+    hybridSearchEngine,
+    memoryCategoryManager,
+    trainingCapture,
 
     // Lifecycle
     async shutdown() {
