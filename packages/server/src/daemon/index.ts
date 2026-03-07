@@ -17,6 +17,7 @@ export {
   isLinux,
   type TransportAdapter,
   type Platform,
+  type ListenOptions,
 } from './platform.js';
 export {
   // Protocol types

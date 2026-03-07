@@ -146,7 +146,12 @@ export class DaemonProcess {
    * Dev mode if tsx watch, ts-node-dev, nodemon, or NODE_ENV=development.
    */
   static detectMode(): DaemonLifecycleMode {
+    // Explicit flightdeck mode override takes precedence
+    if (process.env.FLIGHTDECK_MODE === 'production') return 'production';
+    if (process.env.FLIGHTDECK_MODE === 'development') return 'development';
+
     if (
+      process.env.FLIGHTDECK_DEV ||
       process.env.TSX_WATCH ||
       process.env.TS_NODE_DEV ||
       process.env.NODEMON ||
@@ -187,15 +192,49 @@ export class DaemonProcess {
     return this._mode;
   }
 
-  /** Switch lifecycle mode at runtime. Throws if mode is invalid. */
+  /** Switch lifecycle mode at runtime. Clears stale timers and restarts for new mode if orphaned. */
   setMode(mode: DaemonLifecycleMode): void {
     if (mode !== 'production' && mode !== 'development') {
       throw new Error(`Invalid lifecycle mode: '${String(mode)}'. Must be 'production' or 'development'.`);
     }
     const previous = this._mode;
+    if (previous === mode) return;
+
+    // Clear ALL lifecycle timers from the old mode before switching
+    this.clearOrphanTimers();
+
     this._mode = mode;
-    if (previous !== mode) {
-      logger.info({ module: 'daemon', msg: 'Lifecycle mode changed', from: previous, to: mode });
+    logger.info({ module: 'daemon', msg: 'Lifecycle mode changed', from: previous, to: mode });
+
+    // If currently orphaned (no client, server running), start timers for the new mode
+    if (!this.client && this.server) {
+      this.startOrphanedTimersForCurrentMode();
+    }
+  }
+
+  /** Start the appropriate lifecycle timers for the current mode (without re-emitting events). */
+  private startOrphanedTimersForCurrentMode(): void {
+    if (this._mode === 'production') {
+      this.orphanTimer = setTimeout(() => {
+        this.stop({ persist: false, reason: 'production-disconnect' }).catch(err => {
+          logger.error({ module: 'daemon', msg: 'Production shutdown failed', err: String(err) });
+        });
+      }, this.productionGracePeriodMs);
+    } else {
+      this.startOrphanWarnings();
+      if (this.orphanTimeoutMs > 0) {
+        this.orphanTimer = setTimeout(() => {
+          logger.warn({
+            module: 'daemon',
+            msg: 'Orphan timeout — no server reconnected, shutting down',
+            timeoutMs: this.orphanTimeoutMs,
+            agentCount: this.agents.size,
+          });
+          this.stop({ persist: true, reason: '12h-timeout' }).catch(err => {
+            logger.error({ module: 'daemon', msg: 'Orphan shutdown failed', err: String(err) });
+          });
+        }, this.orphanTimeoutMs);
+      }
     }
   }
 
@@ -455,10 +494,18 @@ export class DaemonProcess {
       // Apply platform-specific security before listen()
       const restoreUmask = this.transport.secureBefore();
 
-      this.server.listen(this.socketPath, () => {
+      // Use platform-aware listen: UDS/pipe use path, TCP uses host:port
+      const opts = this.transport.getListenOptions(this.socketName);
+      const listenCallback = () => {
         restoreUmask();
         resolve();
-      });
+      };
+
+      if (opts.type === 'tcp') {
+        this.server.listen(opts.port, opts.host, listenCallback);
+      } else {
+        this.server.listen(opts.path, listenCallback);
+      }
     });
   }
 
@@ -618,13 +665,6 @@ export class DaemonProcess {
         clientPid,
         gracePeriodMs: this.productionGracePeriodMs,
       });
-
-      this.orphanTimer = setTimeout(() => {
-        this.stop({ persist: false, reason: 'production-disconnect' }).catch(err => {
-          logger.error({ module: 'daemon', msg: 'Production shutdown failed', err: String(err) });
-        });
-      }, this.productionGracePeriodMs);
-
     } else {
       // Dev mode: enter orphaned mode, agents survive for hot-reload
       logger.info({
@@ -633,25 +673,9 @@ export class DaemonProcess {
         clientPid,
         orphanTimeoutMs: this.orphanTimeoutMs,
       });
-
-      // Start orphan warning timers
-      this.startOrphanWarnings();
-
-      // Start orphan auto-shutdown timer (12h default)
-      if (this.orphanTimeoutMs > 0) {
-        this.orphanTimer = setTimeout(() => {
-          logger.warn({
-            module: 'daemon',
-            msg: 'Orphan timeout — no server reconnected, shutting down',
-            timeoutMs: this.orphanTimeoutMs,
-            agentCount: this.agents.size,
-          });
-          this.stop({ persist: true, reason: '12h-timeout' }).catch(err => {
-            logger.error({ module: 'daemon', msg: 'Orphan shutdown failed', err: String(err) });
-          });
-        }, this.orphanTimeoutMs);
-      }
     }
+
+    this.startOrphanedTimersForCurrentMode();
   }
 
   // ── Orphan Warning Timers ─────────────────────────────────────

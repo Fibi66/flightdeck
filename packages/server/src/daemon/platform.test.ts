@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, mkdirSync, existsSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, existsSync, writeFileSync, readFileSync, rmSync, statSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir, platform as osPlatform } from 'node:os';
+import { tmpdir, platform as osPlatform, userInfo } from 'node:os';
 import { createServer, type Server } from 'node:net';
 import {
   detectPlatform,
@@ -12,6 +12,7 @@ import {
   getSocketDir,
   type TransportAdapter,
   type Platform,
+  type ListenOptions,
 } from '../daemon/platform.js';
 
 // ── Test helpers ────────────────────────────────────────────────────
@@ -211,7 +212,6 @@ describe.skipIf(!isUnix)('Unix Transport', () => {
       const filePath = join(tempDir, 'test-file');
       writeFileSync(filePath, 'test content');
       transport.secureFile(filePath);
-      const { statSync } = require('node:fs');
       const stat = statSync(filePath);
       expect(stat.mode & 0o777).toBe(0o600);
     });
@@ -233,7 +233,7 @@ describe.skipIf(!isUnix)('Unix Transport', () => {
         expect(result).toBe('live-daemon');
       } finally {
         await new Promise<void>((resolve) => server.close(() => resolve()));
-        try { require('node:fs').unlinkSync(addr); } catch { /* ignore */ }
+        try { unlinkSync(addr); } catch { /* ignore */ }
       }
     });
 
@@ -336,7 +336,6 @@ describe.skipIf(!isWindows())('Windows Transport', () => {
 
   it('getAddress includes username', () => {
     const addr = transport.getAddress();
-    const { userInfo } = require('node:os');
     expect(addr).toContain(userInfo().username);
   });
 
@@ -433,5 +432,24 @@ describe('TransportAdapter contract', () => {
   it('cleanupStale returns clean for non-existent address', async () => {
     const result = await transport.cleanupStale(transport.getAddress());
     expect(result).toBe('clean');
+  });
+
+  it('getListenOptions returns path type on Unix/Windows', () => {
+    const opts = transport.getListenOptions();
+    // On known platforms (Unix/Windows), transport uses path-based IPC
+    if (transport.platform !== 'unsupported') {
+      expect(opts.type).toBe('path');
+      if (opts.type === 'path') {
+        expect(typeof opts.path).toBe('string');
+        expect(opts.path.length).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it('getListenOptions path matches getAddress for path transports', () => {
+    const opts = transport.getListenOptions();
+    if (opts.type === 'path') {
+      expect(opts.path).toBe(transport.getAddress());
+    }
   });
 });

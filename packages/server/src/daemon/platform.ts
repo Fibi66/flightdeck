@@ -63,6 +63,13 @@ export interface TransportAdapter {
   /** Platform-specific IPC address (socket path or pipe name). */
   getAddress(socketName?: string): string;
 
+  /**
+   * Options to pass to `server.listen()`.
+   * UDS/pipe transports return `{ path: string }`.
+   * TCP transports return `{ host: string, port: number }`.
+   */
+  getListenOptions(socketName?: string): ListenOptions;
+
   /** Token file path for this platform. */
   getTokenPath(tokenName?: string): string;
 
@@ -123,6 +130,15 @@ export interface TransportAdapter {
   setupSignalHandlers(callback: (signal: string) => void): () => void;
 }
 
+/**
+ * Discriminated union for server.listen() options.
+ * Path-based: UDS on Unix, named pipes on Windows.
+ * TCP-based: localhost fallback for unsupported platforms.
+ */
+export type ListenOptions =
+  | { readonly type: 'path'; readonly path: string }
+  | { readonly type: 'tcp'; readonly host: string; readonly port: number };
+
 // ── Unix Transport (shared base for Linux and macOS) ────────────────
 
 class UnixTransport implements TransportAdapter {
@@ -159,6 +175,10 @@ class UnixTransport implements TransportAdapter {
 
   getAddress(socketName = 'agent-host.sock'): string {
     return join(this.socketDir, socketName);
+  }
+
+  getListenOptions(socketName = 'agent-host.sock'): ListenOptions {
+    return { type: 'path', path: this.getAddress(socketName) };
   }
 
   getTokenPath(tokenName = 'agent-host.token'): string {
@@ -302,6 +322,10 @@ class WindowsTransport implements TransportAdapter {
     return `\\\\.\\pipe\\flightdeck-${socketName}-${username}`;
   }
 
+  getListenOptions(socketName = 'agent-host'): ListenOptions {
+    return { type: 'path', path: this.getAddress(socketName) };
+  }
+
   getTokenPath(tokenName = 'agent-host.token'): string {
     return join(this.socketDir, tokenName);
   }
@@ -437,10 +461,16 @@ class TcpFallbackTransport implements TransportAdapter {
     return this.socketDir;
   }
 
-  /** TCP address — returns host:port string stored in a port file. */
+  /**
+   * TCP address string for display/logging purposes.
+   * For actual server.listen() args, use getListenOptions().
+   */
   getAddress(): string {
-    // For TCP fallback, we use localhost. The actual port is set dynamically.
-    return '127.0.0.1';
+    return `127.0.0.1:${this.port}`;
+  }
+
+  getListenOptions(): ListenOptions {
+    return { type: 'tcp', host: '127.0.0.1', port: this.port };
   }
 
   /** Get the TCP port (0 = auto-assign). */
