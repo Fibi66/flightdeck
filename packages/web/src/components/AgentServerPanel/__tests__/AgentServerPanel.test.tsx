@@ -88,6 +88,14 @@ describe('AgentServerPanel', () => {
     });
   });
 
+  it('shows friendly message on JSON parse error (server not mounted)', async () => {
+    mockApiFetch.mockRejectedValue(new SyntaxError('Unexpected token \'<\', "<!DOCTYPE "... is not valid JSON'));
+    renderPanel();
+    await waitFor(() => {
+      expect(screen.getByText(/unable to connect to agent server/i)).toBeInTheDocument();
+    });
+  });
+
   it('renders status card with correct info', async () => {
     setupMocks();
     renderPanel();

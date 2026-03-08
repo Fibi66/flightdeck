@@ -214,7 +214,13 @@ export function AgentServerPanel() {
       setStatus(statusData);
       setAgents(Array.isArray(agentsData) ? agentsData : []);
     } catch (err: any) {
-      setError(err.message ?? 'Failed to fetch agent server status');
+      const msg = err.message ?? '';
+      // JSON parse errors mean the server returned HTML (e.g. 404 fallback) — not a useful error
+      if (err instanceof SyntaxError || msg.includes('Unexpected token')) {
+        setError('Unable to connect to agent server. The server may not be running.');
+      } else {
+        setError(msg || 'Failed to fetch agent server status');
+      }
     } finally {
       setLoading(false);
     }
