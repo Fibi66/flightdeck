@@ -586,6 +586,71 @@ describe('ClaudeSdkAdapter', () => {
       // Should not throw
       adapter.resolvePermission(true);
     });
+
+    it('should not clobber first request when second arrives (C-6 race)', async () => {
+      vi.useFakeTimers();
+      adapter = new ClaudeSdkAdapter({ autopilot: false });
+      await adapter.start({ cliCommand: 'claude' });
+
+      const abortSignal = { aborted: false, addEventListener: () => {} };
+
+      // First permission request
+      const result1 = adapter.handlePermission(
+        { tool_name: 'bash', tool_input: { command: 'first' } },
+        'perm-first',
+        { signal: abortSignal },
+      );
+
+      // Second permission request
+      const result2 = adapter.handlePermission(
+        { tool_name: 'write', tool_input: { path: 'second' } },
+        'perm-second',
+        { signal: abortSignal },
+      );
+
+      // Resolve the latest (second)
+      adapter.resolvePermission(true);
+      expect(await result2).toEqual({ result: 'allow' });
+
+      // First request auto-denies on timeout
+      vi.advanceTimersByTime(60_001);
+      expect(await result1).toEqual({ result: 'deny', reason: 'Permission timeout' });
+
+      vi.useRealTimers();
+    });
+
+    it('should resolve pending permission as deny on terminate', async () => {
+      adapter = new ClaudeSdkAdapter({ autopilot: false });
+      await adapter.start({ cliCommand: 'claude' });
+
+      const result = adapter.handlePermission(
+        { tool_name: 'bash', tool_input: {} },
+        'perm-term',
+        { signal: { aborted: false, addEventListener: () => {} } },
+      );
+
+      adapter.terminate();
+      expect(await result).toEqual({ result: 'deny', reason: 'User denied' });
+    });
+
+    it('should not double-resolve on terminate during timeout window (C-6 race)', async () => {
+      vi.useFakeTimers();
+      adapter = new ClaudeSdkAdapter({ autopilot: false });
+      await adapter.start({ cliCommand: 'claude' });
+
+      const result = adapter.handlePermission(
+        { tool_name: 'shell', tool_input: {} },
+        'perm-race',
+        { signal: { aborted: false, addEventListener: () => {} } },
+      );
+
+      adapter.terminate();
+      expect(await result).toEqual({ result: 'deny', reason: 'User denied' });
+
+      // Timeout fires but permission already resolved — should not double-resolve
+      vi.advanceTimersByTime(60_001);
+      vi.useRealTimers();
+    });
   });
 
   // ── Cancel / Terminate ─────────────────────────────────────

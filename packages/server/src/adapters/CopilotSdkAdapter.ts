@@ -83,10 +83,11 @@ export class CopilotSdkAdapter extends EventEmitter implements AgentAdapter {
   private autopilot: boolean;
   private maxTurns?: number;
   private systemPrompt?: string;
-  private pendingPermission: {
+  private pendingPermissions = new Map<string, {
     resolve: (result: { allow: boolean }) => void;
-  } | null = null;
-  private permissionTimeout: ReturnType<typeof setTimeout> | null = null;
+    timeout: ReturnType<typeof setTimeout>;
+  }>();
+  private latestPermissionId: string | null = null;
   private abortController: AbortController | null = null;
   private sendTimeout: number;
 
@@ -402,15 +403,14 @@ export class CopilotSdkAdapter extends EventEmitter implements AgentAdapter {
   // ── Permission Handling ────────────────────────────────────
 
   resolvePermission(approved: boolean): void {
-    if (this.pendingPermission) {
-      const { resolve } = this.pendingPermission;
-      this.pendingPermission = null;
-      if (this.permissionTimeout) {
-        clearTimeout(this.permissionTimeout);
-        this.permissionTimeout = null;
-      }
-      resolve({ allow: approved });
-    }
+    const id = this.latestPermissionId;
+    if (!id) return;
+    const entry = this.pendingPermissions.get(id);
+    if (!entry) return;
+    this.pendingPermissions.delete(id);
+    this.latestPermissionId = null;
+    clearTimeout(entry.timeout);
+    entry.resolve({ allow: approved });
   }
 
   /**
@@ -422,29 +422,31 @@ export class CopilotSdkAdapter extends EventEmitter implements AgentAdapter {
     invocation: { sessionId: string },
   ): Promise<'allow' | 'deny' | 'allow-always'> {
     return new Promise<'allow' | 'deny' | 'allow-always'>((resolve) => {
-      this.pendingPermission = {
-        resolve: ({ allow }) => {
-          this.permissionTimeout = null;
-          resolve(allow ? 'allow' : 'deny');
-        },
+      const permId = request.toolCallId ?? `perm-${Date.now()}-${randomUUID().slice(0, 8)}`;
+
+      const wrappedResolve = ({ allow }: { allow: boolean }) => {
+        resolve(allow ? 'allow' : 'deny');
       };
 
+      // Auto-deny after 60s timeout
+      const timeout = setTimeout(() => {
+        if (this.pendingPermissions.has(permId)) {
+          this.pendingPermissions.delete(permId);
+          if (this.latestPermissionId === permId) this.latestPermissionId = null;
+          resolve('deny');
+        }
+      }, 60_000);
+
+      this.pendingPermissions.set(permId, { resolve: wrappedResolve, timeout });
+      this.latestPermissionId = permId;
+
       const permReq: PermissionRequest = {
-        id: request.toolCallId ?? `perm-${Date.now()}`,
+        id: permId,
         toolName: request.kind,
         arguments: request as Record<string, unknown>,
         timestamp: new Date().toISOString(),
       };
       this.emit('permission_request', permReq);
-
-      // Auto-deny after 60s timeout
-      this.permissionTimeout = setTimeout(() => {
-        if (this.pendingPermission) {
-          this.pendingPermission = null;
-          this.permissionTimeout = null;
-          resolve('deny');
-        }
-      }, 60_000);
     });
   }
 
@@ -490,14 +492,13 @@ export class CopilotSdkAdapter extends EventEmitter implements AgentAdapter {
       this.client = null;
     }
 
-    if (this.permissionTimeout) {
-      clearTimeout(this.permissionTimeout);
-      this.permissionTimeout = null;
+    // Resolve all pending permissions as denied and clear timeouts
+    for (const [id, entry] of this.pendingPermissions) {
+      clearTimeout(entry.timeout);
+      entry.resolve({ allow: false });
     }
-    if (this.pendingPermission) {
-      this.pendingPermission.resolve({ allow: false });
-      this.pendingPermission = null;
-    }
+    this.pendingPermissions.clear();
+    this.latestPermissionId = null;
     this._isConnected = false;
     this._isPrompting = false;
     this._promptingStartedAt = null;

@@ -101,10 +101,12 @@ export class AcpAdapter extends EventEmitter implements AgentAdapter {
   private promptQueuePriorityCount = 0;
   private autopilot: boolean;
   private agentCapabilities: acp.AgentCapabilities | null = null;
-  private pendingPermission: {
+  private pendingPermissions = new Map<string, {
     resolve: (result: acp.RequestPermissionResponse) => void;
     options: acp.PermissionOption[];
-  } | null = null;
+    timeout: ReturnType<typeof setTimeout>;
+  }>();
+  private latestPermissionId: string | null = null;
 
   constructor(opts?: { autopilot?: boolean }) {
     super();
@@ -217,20 +219,25 @@ export class AcpAdapter extends EventEmitter implements AgentAdapter {
         }
 
         return new Promise<acp.RequestPermissionResponse>((resolve) => {
-          this.pendingPermission = { resolve, options: params.options };
+          const permId = `perm-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
+          const timeout = setTimeout(() => {
+            if (this.pendingPermissions.has(permId)) {
+              this.pendingPermissions.delete(permId);
+              if (this.latestPermissionId === permId) this.latestPermissionId = null;
+              resolve({ outcome: { outcome: 'cancelled' } });
+            }
+          }, 60_000);
+
+          this.pendingPermissions.set(permId, { resolve, options: params.options, timeout });
+          this.latestPermissionId = permId;
+
           this.emit('permission_request', {
-            id: `perm-${Date.now()}`,
+            id: permId,
             toolName: params.title ?? params.description ?? 'Tool action',
             arguments: params.metadata ?? {},
             timestamp: new Date().toISOString(),
           });
-
-          setTimeout(() => {
-            if (this.pendingPermission?.resolve === resolve) {
-              this.pendingPermission = null;
-              resolve({ outcome: { outcome: 'cancelled' } });
-            }
-          }, 60_000);
         });
       },
 
@@ -400,20 +407,23 @@ export class AcpAdapter extends EventEmitter implements AgentAdapter {
   }
 
   resolvePermission(approved: boolean): void {
-    if (this.pendingPermission) {
-      const { resolve, options } = this.pendingPermission;
-      this.pendingPermission = null;
+    const id = this.latestPermissionId;
+    if (!id) return;
+    const entry = this.pendingPermissions.get(id);
+    if (!entry) return;
+    this.pendingPermissions.delete(id);
+    this.latestPermissionId = null;
+    clearTimeout(entry.timeout);
 
-      if (approved) {
-        const allowOption = options.find((o) => o.kind === 'allow_once');
-        resolve({
-          outcome: allowOption
-            ? { outcome: 'selected', optionId: allowOption.optionId }
-            : { outcome: 'cancelled' },
-        });
-      } else {
-        resolve({ outcome: { outcome: 'cancelled' } });
-      }
+    if (approved) {
+      const allowOption = entry.options.find((o) => o.kind === 'allow_once');
+      entry.resolve({
+        outcome: allowOption
+          ? { outcome: 'selected', optionId: allowOption.optionId }
+          : { outcome: 'cancelled' },
+      });
+    } else {
+      entry.resolve({ outcome: { outcome: 'cancelled' } });
     }
   }
 
@@ -424,6 +434,14 @@ export class AcpAdapter extends EventEmitter implements AgentAdapter {
   }
 
   terminate(): void {
+    // Resolve all pending permissions as cancelled and clear timeouts
+    for (const [id, entry] of this.pendingPermissions) {
+      clearTimeout(entry.timeout);
+      entry.resolve({ outcome: { outcome: 'cancelled' } });
+    }
+    this.pendingPermissions.clear();
+    this.latestPermissionId = null;
+
     if (this.process) {
       this.process.stdin?.end();
       this.process.kill();
@@ -432,5 +450,6 @@ export class AcpAdapter extends EventEmitter implements AgentAdapter {
     this._isConnected = false;
     this._isPrompting = false;
     this._promptingStartedAt = null;
+    this.emit('exit', 0);
   }
 }

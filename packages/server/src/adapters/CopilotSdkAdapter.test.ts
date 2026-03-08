@@ -727,6 +727,51 @@ describe('CopilotSdkAdapter', () => {
       adapter.resolvePermission(true);
       adapter.resolvePermission(false);
     });
+
+    it('should not clobber first request when second arrives (C-6 race)', async () => {
+      vi.useFakeTimers();
+      await adapter.start(defaultStartOpts());
+
+      // First permission request
+      const result1 = mockPermissionHandler!(
+        { kind: 'shell', toolCallId: 'perm-first' },
+        { sessionId: 'sdk-session-123' },
+      );
+
+      // Second permission request overwrites — first should still get resolved by timeout
+      const result2 = mockPermissionHandler!(
+        { kind: 'write', toolCallId: 'perm-second' },
+        { sessionId: 'sdk-session-123' },
+      );
+
+      // Resolve the latest (second) — first stays pending for timeout
+      adapter.resolvePermission(true);
+      expect(await result2).toBe('allow');
+
+      // First request's timeout fires — should auto-deny (not hang)
+      vi.advanceTimersByTime(60_001);
+      expect(await result1).toBe('deny');
+
+      vi.useRealTimers();
+    });
+
+    it('should not double-resolve on terminate during timeout window (C-6 race)', async () => {
+      vi.useFakeTimers();
+      await adapter.start(defaultStartOpts());
+
+      const result = mockPermissionHandler!(
+        { kind: 'shell', toolCallId: 'perm-race' },
+        { sessionId: 'sdk-session-123' },
+      );
+
+      // Terminate clears timeout and resolves with deny
+      adapter.terminate();
+      expect(await result).toBe('deny');
+
+      // Advancing past timeout should NOT cause double-resolve
+      vi.advanceTimersByTime(60_001);
+      vi.useRealTimers();
+    });
   });
 
   // ── Cancel ──────────────────────────────────────────────

@@ -82,10 +82,11 @@ export class ClaudeSdkAdapter extends EventEmitter implements AgentAdapter {
   private autopilot: boolean;
   private maxTurns?: number;
   private systemPrompt?: string;
-  private pendingPermission: {
+  private pendingPermissions = new Map<string, {
     resolve: (result: { allow: boolean }) => void;
-  } | null = null;
-  private permissionTimeout: ReturnType<typeof setTimeout> | null = null;
+    timeout: ReturnType<typeof setTimeout>;
+  }>();
+  private latestPermissionId: string | null = null;
 
   private promptQueue: PromptContent[] = [];
   private promptQueuePriorityCount = 0;
@@ -293,15 +294,14 @@ export class ClaudeSdkAdapter extends EventEmitter implements AgentAdapter {
   // ── Permission Handling ────────────────────────────────────
 
   resolvePermission(approved: boolean): void {
-    if (this.pendingPermission) {
-      const { resolve } = this.pendingPermission;
-      this.pendingPermission = null;
-      if (this.permissionTimeout) {
-        clearTimeout(this.permissionTimeout);
-        this.permissionTimeout = null;
-      }
-      resolve({ allow: approved });
-    }
+    const id = this.latestPermissionId;
+    if (!id) return;
+    const entry = this.pendingPermissions.get(id);
+    if (!entry) return;
+    this.pendingPermissions.delete(id);
+    this.latestPermissionId = null;
+    clearTimeout(entry.timeout);
+    entry.resolve({ allow: approved });
   }
 
   /**
@@ -314,31 +314,33 @@ export class ClaudeSdkAdapter extends EventEmitter implements AgentAdapter {
     }
 
     return new Promise<{ result: 'allow' | 'deny'; reason?: string }>((resolve) => {
-      this.pendingPermission = {
-        resolve: ({ allow }) => {
-          this.permissionTimeout = null;
-          resolve({
-            result: allow ? 'allow' : 'deny',
-            reason: allow ? undefined : 'User denied',
-          });
-        },
+      const permId = toolUseId ?? `perm-${Date.now()}-${randomUUID().slice(0, 8)}`;
+
+      const wrappedResolve = ({ allow }: { allow: boolean }) => {
+        resolve({
+          result: allow ? 'allow' : 'deny',
+          reason: allow ? undefined : 'User denied',
+        });
       };
 
+      // Auto-deny after 60s timeout (ref stored for cleanup on terminate)
+      const timeout = setTimeout(() => {
+        if (this.pendingPermissions.has(permId)) {
+          this.pendingPermissions.delete(permId);
+          if (this.latestPermissionId === permId) this.latestPermissionId = null;
+          resolve({ result: 'deny', reason: 'Permission timeout' });
+        }
+      }, 60_000);
+
+      this.pendingPermissions.set(permId, { resolve: wrappedResolve, timeout });
+      this.latestPermissionId = permId;
+
       this.emit('permission_request', {
-        id: toolUseId ?? `perm-${Date.now()}`,
+        id: permId,
         toolName: input.tool_name,
         arguments: input.tool_input,
         timestamp: new Date().toISOString(),
       } satisfies PermissionRequest);
-
-      // Auto-deny after 60s timeout (ref stored for cleanup on terminate)
-      this.permissionTimeout = setTimeout(() => {
-        if (this.pendingPermission) {
-          this.pendingPermission = null;
-          this.permissionTimeout = null;
-          resolve({ result: 'deny', reason: 'Permission timeout' });
-        }
-      }, 60_000);
     });
   };
 
@@ -356,11 +358,13 @@ export class ClaudeSdkAdapter extends EventEmitter implements AgentAdapter {
       this.activeQuery.close();
       this.activeQuery = null;
     }
-    if (this.permissionTimeout) {
-      clearTimeout(this.permissionTimeout);
-      this.permissionTimeout = null;
+    // Resolve all pending permissions as denied and clear timeouts
+    for (const [id, entry] of this.pendingPermissions) {
+      clearTimeout(entry.timeout);
+      entry.resolve({ allow: false });
     }
-    this.pendingPermission = null;
+    this.pendingPermissions.clear();
+    this.latestPermissionId = null;
     this._isConnected = false;
     this._isPrompting = false;
     this._promptingStartedAt = null;
