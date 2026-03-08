@@ -1,97 +1,114 @@
 /**
- * ProviderManager — Detect provider availability and test connections.
+ * ProviderManager — Detect CLI availability and manage provider preferences.
  *
- * Detection strategy per provider:
- * - claude: check ANTHROPIC_API_KEY env var
- * - codex: check OPENAI_API_KEY env var
- * - copilot: check `gh auth status` (GitHub CLI authenticated)
- * - gemini/opencode/cursor: check if CLI binary is installed (which <binary>)
+ * All providers manage their own authentication. ProviderManager only:
+ * 1. Detects if a CLI binary is installed on PATH
+ * 2. Checks if the provider is authenticated (via status command)
+ * 3. Gets/sets model preferences per provider
+ * 4. Toggles providers enabled/disabled
  */
 
 import { execSync } from 'node:child_process';
 import type { Database } from '../db/database.js';
-import { PROVIDER_PRESETS, type ProviderId, type ProviderPreset } from '../adapters/presets.js';
+import { PROVIDER_PRESETS, type ProviderId } from '../adapters/presets.js';
 
 // ── Types ────────────────────────────────────────────────────────
-
-export type DetectionMethod = 'env_var' | 'cli_auth' | 'cli_installed';
 
 export interface ProviderStatus {
   id: ProviderId;
   name: string;
-  /** Whether the provider is available (key set, CLI installed, or CLI authenticated). */
-  configured: boolean;
-  /** How availability was determined. */
-  detectionMethod: DetectionMethod;
-  /** Masked API key for env-var providers, CLI version for binary providers, or null. */
-  detail: string | null;
+  /** Whether the CLI binary is on PATH. */
+  installed: boolean;
+  /** Whether the provider reports authenticated (null if not checked). */
+  authenticated: boolean | null;
   /** Whether the provider is enabled in settings. */
   enabled: boolean;
+  /** Path to the binary, or null if not installed. */
+  binaryPath: string | null;
 }
 
-export interface ConnectionTestResult {
-  success: boolean;
+export interface AuthCheckResult {
+  authenticated: boolean;
   error?: string;
-  latencyMs: number;
 }
 
-// ── Detection strategies ─────────────────────────────────────────
-
-interface DetectionStrategy {
-  method: DetectionMethod;
-  envVar?: string;
+export interface ModelPreferences {
+  defaultModel?: string;
+  preferredModels?: string[];
 }
 
-const DETECTION_STRATEGIES: Record<ProviderId, DetectionStrategy> = {
-  claude:   { method: 'env_var', envVar: 'ANTHROPIC_API_KEY' },
-  codex:    { method: 'env_var', envVar: 'OPENAI_API_KEY' },
-  copilot:  { method: 'cli_auth' },
-  gemini:   { method: 'cli_installed' },
-  opencode: { method: 'cli_installed' },
-  cursor:   { method: 'cli_installed' },
+// ── Auth status commands per provider ────────────────────────────
+
+const AUTH_COMMANDS: Partial<Record<ProviderId, string>> = {
+  copilot: 'gh auth status',
+  claude:  'claude --version',
+  gemini:  'gemini --version',
+  codex:   'codex --version',
+  cursor:  'agent --version',
+  opencode: 'opencode --version',
 };
 
 // ── Constants ────────────────────────────────────────────────────
 
 const SETTING_PREFIX = 'provider:';
-const SETTING_SUFFIX = ':enabled';
-const CONNECTION_TIMEOUT_MS = 10_000;
 
 // ── ProviderManager ──────────────────────────────────────────────
 
 export class ProviderManager {
   private readonly db: Database | undefined;
-  private readonly env: Record<string, string | undefined>;
-  /** Override for testing — avoids calling real `which`/`gh auth status`. */
-  private readonly execCommand: (cmd: string) => string;
+  private readonly exec: (cmd: string) => string;
 
   constructor(opts: {
     db?: Database;
-    env?: Record<string, string | undefined>;
     execCommand?: (cmd: string) => string;
   } = {}) {
     this.db = opts.db;
-    this.env = opts.env ?? process.env;
-    this.execCommand = opts.execCommand ?? ((cmd) => execSync(cmd, { encoding: 'utf8', timeout: 5_000 }).trim());
+    this.exec = opts.execCommand ?? ((cmd) => execSync(cmd, { encoding: 'utf8', timeout: 5_000 }).trim());
   }
 
-  // ── Status ───────────────────────────────────────────────
+  // ── Detection ────────────────────────────────────────────
 
-  /** Get status for a single provider. */
+  /** Check if a provider's CLI binary is on PATH. */
+  detectInstalled(provider: ProviderId): { installed: boolean; binaryPath: string | null } {
+    const preset = PROVIDER_PRESETS[provider];
+    if (!preset) throw new Error(`Unknown provider: ${provider}`);
+
+    try {
+      const path = this.exec(`which ${preset.binary}`);
+      return { installed: true, binaryPath: path };
+    } catch {
+      return { installed: false, binaryPath: null };
+    }
+  }
+
+  /** Run a quick auth/status check for a provider. */
+  checkAuthenticated(provider: ProviderId): AuthCheckResult {
+    const cmd = AUTH_COMMANDS[provider];
+    if (!cmd) return { authenticated: false, error: `No auth check for ${provider}` };
+
+    try {
+      this.exec(cmd);
+      return { authenticated: true };
+    } catch (err: any) {
+      return { authenticated: false, error: err.message || String(err) };
+    }
+  }
+
+  /** Get full status for a single provider. */
   getProviderStatus(provider: ProviderId): ProviderStatus {
     const preset = PROVIDER_PRESETS[provider];
     if (!preset) throw new Error(`Unknown provider: ${provider}`);
 
-    const strategy = DETECTION_STRATEGIES[provider];
-    const { configured, detail } = this.detect(provider, preset, strategy);
+    const { installed, binaryPath } = this.detectInstalled(provider);
+    const auth = installed ? this.checkAuthenticated(provider) : null;
 
     return {
       id: provider,
       name: preset.name,
-      configured,
-      detectionMethod: strategy.method,
-      detail,
+      installed,
+      authenticated: auth?.authenticated ?? null,
       enabled: this.isProviderEnabled(provider),
+      binaryPath,
     };
   }
 
@@ -104,133 +121,27 @@ export class ProviderManager {
 
   // ── Enabled/Disabled ─────────────────────────────────────
 
-  /** Check if a provider is enabled. Defaults to true if no setting. */
   isProviderEnabled(provider: ProviderId): boolean {
     if (!this.db) return true;
-    const val = this.db.getSetting(`${SETTING_PREFIX}${provider}${SETTING_SUFFIX}`);
-    return val !== 'false';
+    return this.db.getSetting(`${SETTING_PREFIX}${provider}:enabled`) !== 'false';
   }
 
-  /** Set whether a provider is enabled. */
   setProviderEnabled(provider: ProviderId, enabled: boolean): void {
     if (!this.db) return;
-    this.db.setSetting(`${SETTING_PREFIX}${provider}${SETTING_SUFFIX}`, String(enabled));
+    this.db.setSetting(`${SETTING_PREFIX}${provider}:enabled`, String(enabled));
   }
 
-  // ── Connection Testing ───────────────────────────────────
+  // ── Model Preferences ────────────────────────────────────
 
-  /**
-   * Test connectivity to a provider.
-   * - env_var providers: call their API (list models)
-   * - cli_auth: run `gh auth status`
-   * - cli_installed: run `<binary> --version`
-   */
-  async testConnection(provider: ProviderId): Promise<ConnectionTestResult> {
-    const preset = PROVIDER_PRESETS[provider];
-    if (!preset) return { success: false, error: `Unknown provider: ${provider}`, latencyMs: 0 };
-
-    const strategy = DETECTION_STRATEGIES[provider];
-    const start = Date.now();
-
-    try {
-      switch (strategy.method) {
-        case 'env_var': {
-          const apiKey = this.env[strategy.envVar!];
-          if (!apiKey) return { success: false, error: `${strategy.envVar} not set`, latencyMs: 0 };
-          await this.testApiConnection(provider, apiKey);
-          break;
-        }
-        case 'cli_auth':
-          this.execCommand('gh auth status');
-          break;
-        case 'cli_installed':
-          this.execCommand(`which ${preset.binary}`);
-          break;
-      }
-      return { success: true, latencyMs: Date.now() - start };
-    } catch (err: any) {
-      return { success: false, error: err.message || String(err), latencyMs: Date.now() - start };
-    }
+  getModelPreferences(provider: ProviderId): ModelPreferences {
+    if (!this.db) return {};
+    const raw = this.db.getSetting(`${SETTING_PREFIX}${provider}:models`);
+    if (!raw) return {};
+    try { return JSON.parse(raw); } catch { return {}; }
   }
 
-  // ── Detection logic ──────────────────────────────────────
-
-  private detect(
-    provider: ProviderId,
-    preset: ProviderPreset,
-    strategy: DetectionStrategy,
-  ): { configured: boolean; detail: string | null } {
-    switch (strategy.method) {
-      case 'env_var': {
-        const val = this.env[strategy.envVar!];
-        return { configured: !!val, detail: val ? maskApiKey(val) : null };
-      }
-      case 'cli_auth':
-        return this.detectCliAuth();
-      case 'cli_installed':
-        return this.detectCliBinary(preset.binary);
-    }
+  setModelPreferences(provider: ProviderId, prefs: ModelPreferences): void {
+    if (!this.db) return;
+    this.db.setSetting(`${SETTING_PREFIX}${provider}:models`, JSON.stringify(prefs));
   }
-
-  /** Check if `gh auth status` succeeds (copilot). */
-  private detectCliAuth(): { configured: boolean; detail: string | null } {
-    try {
-      const output = this.execCommand('gh auth status');
-      return { configured: true, detail: output.split('\n')[0] || 'authenticated' };
-    } catch {
-      return { configured: false, detail: null };
-    }
-  }
-
-  /** Check if a CLI binary is on PATH. */
-  private detectCliBinary(binary: string): { configured: boolean; detail: string | null } {
-    try {
-      const path = this.execCommand(`which ${binary}`);
-      return { configured: true, detail: path };
-    } catch {
-      return { configured: false, detail: null };
-    }
-  }
-
-  /** API-based connection test for env_var providers. */
-  private async testApiConnection(provider: ProviderId, apiKey: string): Promise<void> {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), CONNECTION_TIMEOUT_MS);
-
-    try {
-      let res: Response;
-      switch (provider) {
-        case 'claude':
-          res = await fetch('https://api.anthropic.com/v1/models', {
-            headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-            signal: controller.signal,
-          });
-          break;
-        case 'codex':
-          res = await fetch('https://api.openai.com/v1/models', {
-            headers: { Authorization: `Bearer ${apiKey}` },
-            signal: controller.signal,
-          });
-          break;
-        default:
-          return; // No API test for other providers
-      }
-      if (!res.ok) throw new Error(`API returned ${res.status}: ${res.statusText}`);
-    } finally {
-      clearTimeout(timeout);
-    }
-  }
-}
-
-// ── Utility functions ────────────────────────────────────────────
-
-/**
- * Mask an API key for display: show first 8 and last 4 characters.
- * Short keys (< 16 chars) show first 4 + last 2.
- */
-export function maskApiKey(key: string): string {
-  if (!key) return '****';
-  if (key.length < 8) return '****';
-  if (key.length < 16) return `${key.slice(0, 4)}...${key.slice(-2)}`;
-  return `${key.slice(0, 8)}...${key.slice(-4)}`;
 }
