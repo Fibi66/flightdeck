@@ -21,6 +21,7 @@ function createMockAdapter(): MessagingAdapter & { sentMessages: OutboundMessage
     sentMessages,
     start: vi.fn().mockResolvedValue(undefined),
     stop: vi.fn().mockResolvedValue(undefined),
+    isRunning: vi.fn().mockReturnValue(true),
     sendMessage: vi.fn(async (msg: OutboundMessage) => { sentMessages.push(msg); }),
     onMessage: vi.fn(),
   };
