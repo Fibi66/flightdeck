@@ -70,6 +70,8 @@ export interface AppContext {
   hybridSearchEngine?: HybridSearchEngine;
   memoryCategoryManager?: MemoryCategoryManager;
   trainingCapture?: TrainingCapture;
+  sessionKnowledgeExtractor?: import('../knowledge/SessionKnowledgeExtractor.js').SessionKnowledgeExtractor;
+  collectiveMemory?: import('../coordination/knowledge/CollectiveMemory.js').CollectiveMemory;
   agentServerClient?: AgentServerClient;
   agentServerHealth?: AgentServerHealth;
   massFailureDetector?: MassFailureDetector;

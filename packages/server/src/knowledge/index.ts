@@ -49,6 +49,12 @@ export type {
   ExtractionResult,
 } from './types.js';
 export { SharedMemory } from './SharedMemory.js';
+export { SkillsLoader, parseFrontmatter } from './SkillsLoader.js';
+export type {
+  SkillMetadata,
+  LoadedSkill,
+  SkillsLoadResult,
+} from './SkillsLoader.js';
 export type {
   SharedEntry,
   ShareResult,
