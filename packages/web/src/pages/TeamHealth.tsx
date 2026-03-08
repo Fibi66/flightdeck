@@ -117,6 +117,16 @@ export function TeamHealth({ teamId = 'default' }: Props) {
   }
 
   if (error) {
+    // Friendly empty state for team-not-found
+    if (error.includes('404') || error.includes('not found') || error.toLowerCase().includes('no team')) {
+      return (
+        <div className="p-6 text-center" data-testid="team-health-empty">
+          <Users className="w-10 h-10 mx-auto mb-3 text-th-text-muted/40" />
+          <h2 className="text-th-text font-medium mb-1">No team found</h2>
+          <p className="text-sm text-th-text-muted">Team &quot;{teamId}&quot; doesn&apos;t exist yet. Create a team to see health data.</p>
+        </div>
+      );
+    }
     return (
       <div className="p-6" data-testid="team-health-error">
         <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4 text-red-400 text-sm">

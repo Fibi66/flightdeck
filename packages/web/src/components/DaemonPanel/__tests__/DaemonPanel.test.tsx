@@ -27,12 +27,12 @@ function renderPanel() {
 
 const daemonStatus = {
   running: true,
-  mode: 'development',
+  connected: true,
+  state: 'connected',
   agentCount: 3,
-  uptimeMs: 8100000,
-  uptimeFormatted: '2h 15m',
-  spawningPaused: false,
-  transport: { type: 'unix' },
+  latencyMs: 5,
+  pendingRequests: 0,
+  trackedAgents: 3,
 };
 
 const daemonAgents = [
@@ -41,7 +41,7 @@ const daemonAgents = [
     role: 'architect',
     model: 'claude-sonnet-4-6',
     status: 'running',
-    taskSummary: 'Designing auth module',
+    task: 'Designing auth module',
     spawnedAt: '2026-03-07T14:52:00Z',
   },
   {
@@ -49,36 +49,20 @@ const daemonAgents = [
     role: 'developer',
     model: 'claude-sonnet-4-6',
     status: 'idle',
-    taskSummary: null,
+    task: null,
     spawnedAt: '2026-03-07T14:48:00Z',
   },
 ];
 
-const reconnectState = {
-  state: 'connected',
-  expectedAgentCount: 3,
-};
-
-const massFailureState = {
-  available: true,
-  isPaused: false,
-};
-
 function setupMocks(overrides: Partial<{
   status: any;
   agents: any;
-  reconnect: any;
-  massFailure: any;
 }> = {}) {
   mockApiFetch.mockImplementation((path: string) => {
-    if (path === '/daemon/status') return Promise.resolve(overrides.status ?? daemonStatus);
-    if (path === '/daemon/agents') return Promise.resolve(overrides.agents ?? daemonAgents);
-    if (path === '/daemon/reconnect') return Promise.resolve(overrides.reconnect ?? reconnectState);
-    if (path === '/daemon/mass-failure') return Promise.resolve(overrides.massFailure ?? massFailureState);
+    if (path === '/agent-server/status') return Promise.resolve(overrides.status ?? daemonStatus);
+    if (path === '/agent-server/agents') return Promise.resolve(overrides.agents ?? daemonAgents);
     if (path.includes('/terminate')) return Promise.resolve({ terminated: true });
-    if (path === '/daemon/stop') return Promise.resolve({ acknowledged: true });
-    if (path === '/daemon/mode') return Promise.resolve({ mode: 'production' });
-    if (path === '/daemon/resume-spawning') return Promise.resolve({ resumed: true });
+    if (path === '/agent-server/stop') return Promise.resolve({ acknowledged: true, message: 'stopped', terminatedCount: 2 });
     return Promise.resolve({});
   });
 }
@@ -93,7 +77,7 @@ describe('DaemonPanel', () => {
   it('shows loading state initially', () => {
     mockApiFetch.mockImplementation(() => new Promise(() => {})); // never resolves
     renderPanel();
-    expect(screen.getByText(/loading daemon status/i)).toBeInTheDocument();
+    expect(screen.getByText(/loading agent server status/i)).toBeInTheDocument();
   });
 
   it('shows error state on API failure', async () => {
@@ -104,32 +88,23 @@ describe('DaemonPanel', () => {
     });
   });
 
-  it('renders daemon status card with correct info', async () => {
+  it('renders status card with correct info', async () => {
     setupMocks();
     renderPanel();
     await waitFor(() => {
-      expect(screen.getByText('Agent Host Daemon')).toBeInTheDocument();
+      expect(screen.getAllByText('Agent Server').length).toBeGreaterThanOrEqual(2);
     });
     expect(screen.getAllByText('Running').length).toBeGreaterThan(0);
-    expect(screen.getByText('2h 15m')).toBeInTheDocument();
-  });
-
-  it('renders transport info with type label', async () => {
-    setupMocks();
-    renderPanel();
-    await waitFor(() => {
-      expect(screen.getByText('Transport')).toBeInTheDocument();
-    });
-    expect(screen.getByText('Unix Domain Socket')).toBeInTheDocument();
-  });
-
-  it('renders reconnect status', async () => {
-    setupMocks();
-    renderPanel();
-    await waitFor(() => {
-      expect(screen.getByText('Connection')).toBeInTheDocument();
-    });
     expect(screen.getByText('Connected')).toBeInTheDocument();
+    expect(screen.getByText('5ms')).toBeInTheDocument();
+  });
+
+  it('renders connection state inline in status card', async () => {
+    setupMocks({ status: { ...daemonStatus, connected: false, state: 'disconnected' } });
+    renderPanel();
+    await waitFor(() => {
+      expect(screen.getAllByText('Disconnected').length).toBeGreaterThanOrEqual(1);
+    });
   });
 
   it('renders agent list with expand/collapse', async () => {
@@ -157,9 +132,9 @@ describe('DaemonPanel', () => {
     });
   });
 
-  it('shows stopped state when daemon is not running', async () => {
+  it('shows stopped state when server is not running', async () => {
     setupMocks({
-      status: { ...daemonStatus, running: false, mode: 'unavailable', agentCount: 0, uptimeFormatted: null },
+      status: { ...daemonStatus, running: false, connected: false, state: 'disconnected', agentCount: 0 },
     });
     renderPanel();
     await waitFor(() => {
@@ -167,38 +142,24 @@ describe('DaemonPanel', () => {
     });
   });
 
-  it('shows spawning paused warning when mass failure detected', async () => {
-    setupMocks({
-      status: { ...daemonStatus, spawningPaused: true },
-      massFailure: { available: true, isPaused: true },
-    });
-    renderPanel();
-    await waitFor(() => {
-      expect(screen.getByText(/spawning is paused/i)).toBeInTheDocument();
-    });
-    expect(screen.getByText('Spawning Paused')).toBeInTheDocument();
-    expect(screen.getByText('Resume Spawning')).toBeInTheDocument();
-  });
-
-  it('shows lifecycle controls with mode toggle', async () => {
+  it('shows lifecycle controls with stop button', async () => {
     setupMocks();
     renderPanel();
     await waitFor(() => {
       expect(screen.getByText('Controls')).toBeInTheDocument();
     });
-    expect(screen.getByText('Development')).toBeInTheDocument();
-    expect(screen.getByText('Stop Daemon')).toBeInTheDocument();
+    expect(screen.getByText('Stop Server')).toBeInTheDocument();
   });
 
   it('shows stop confirmation dialog', async () => {
     setupMocks();
     renderPanel();
     await waitFor(() => {
-      expect(screen.getByText('Stop Daemon')).toBeInTheDocument();
+      expect(screen.getByText('Stop Server')).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByText('Stop Daemon'));
+    fireEvent.click(screen.getByText('Stop Server'));
     await waitFor(() => {
-      expect(screen.getByText(/stop daemon\? agents will be preserved/i)).toBeInTheDocument();
+      expect(screen.getByText(/stop agent server\? all agents will be terminated/i)).toBeInTheDocument();
     });
     expect(screen.getByText('Confirm Stop')).toBeInTheDocument();
   });
@@ -223,33 +184,52 @@ describe('DaemonPanel', () => {
     });
   });
 
-  it('renders reconnecting state correctly', async () => {
+  it('renders reconnecting state in status card', async () => {
     setupMocks({
-      reconnect: { state: 'reconnecting', expectedAgentCount: 5 },
+      status: { ...daemonStatus, state: 'reconnecting', connected: false },
     });
     renderPanel();
     await waitFor(() => {
-      expect(screen.getByText('Reconnecting')).toBeInTheDocument();
+      expect(screen.getAllByText('Reconnecting').length).toBeGreaterThanOrEqual(1);
     });
   });
 
-  it('renders TCP transport type label', async () => {
-    setupMocks({
-      status: { ...daemonStatus, transport: { type: 'tcp' } },
-    });
+  it('calls /agent-server/stop on confirm', async () => {
+    setupMocks();
     renderPanel();
     await waitFor(() => {
-      expect(screen.getByText('TCP')).toBeInTheDocument();
+      expect(screen.getByText('Stop Server')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText('Stop Server'));
+    await waitFor(() => {
+      expect(screen.getByText('Confirm Stop')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText('Confirm Stop'));
+    await waitFor(() => {
+      expect(mockApiFetch).toHaveBeenCalledWith('/agent-server/stop', expect.objectContaining({ method: 'POST' }));
     });
   });
 
-  it('renders Named Pipe transport type label', async () => {
-    setupMocks({
-      status: { ...daemonStatus, transport: { type: 'pipe' } },
-    });
+  it('calls /agent-server/terminate/:id on agent terminate confirm', async () => {
+    setupMocks();
     renderPanel();
     await waitFor(() => {
-      expect(screen.getByText('Named Pipe')).toBeInTheDocument();
+      expect(screen.getByText('cc29bb0d')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText('cc29bb0d'));
+    await waitFor(() => {
+      expect(screen.getByText('Terminate')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText('Terminate'));
+    await waitFor(() => {
+      expect(screen.getByText('Confirm')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText('Confirm'));
+    await waitFor(() => {
+      expect(mockApiFetch).toHaveBeenCalledWith(
+        '/agent-server/terminate/cc29bb0d-1234-5678-abcd-000000000001',
+        expect.objectContaining({ method: 'POST' }),
+      );
     });
   });
 });

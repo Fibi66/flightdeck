@@ -5,19 +5,13 @@ import {
   Power,
   RefreshCw,
   AlertTriangle,
-  Shield,
-  Clock,
   Cpu,
   Users,
   ChevronRight,
   ChevronDown,
-  Play,
   Square,
   Wifi,
   WifiOff,
-  Monitor,
-  ToggleLeft,
-  ToggleRight,
   X,
 } from 'lucide-react';
 import { apiFetch } from '../../hooks/useApi';
@@ -25,23 +19,17 @@ import { useToastStore } from '../Toast';
 
 // ── Types ─────────────────────────────────────────────────
 
-type DaemonMode = 'production' | 'development' | 'remote' | 'unavailable';
 type ConnectionState = 'connected' | 'disconnected' | 'reconnecting' | 'failed' | 'unavailable';
 type DaemonAgentStatus = 'starting' | 'running' | 'idle' | 'stopping' | 'exited' | 'crashed';
 
 interface DaemonStatus {
   running: boolean;
-  mode: DaemonMode;
+  connected: boolean;
+  state: ConnectionState;
   agentCount: number | null;
-  uptimeMs: number | null;
-  uptimeFormatted: string | null;
-  spawningPaused: boolean;
-  transport: {
-    type: string;
-  };
-  connection?: {
-    connected: boolean;
-  };
+  latencyMs: number | null;
+  pendingRequests: number;
+  trackedAgents: number;
 }
 
 interface DaemonAgent {
@@ -49,34 +37,24 @@ interface DaemonAgent {
   role: string | null;
   model: string | null;
   status: DaemonAgentStatus;
-  taskSummary: string | null;
+  task: string | null;
   spawnedAt: string | null;
-}
-
-interface ReconnectState {
-  state: ConnectionState;
-  expectedAgentCount: number;
-}
-
-interface MassFailureState {
-  available: boolean;
-  isPaused: boolean;
 }
 
 // ── Status helpers ────────────────────────────────────────
 
-function statusColor(running: boolean, mode: DaemonMode): string {
+function statusColor(running: boolean, state: ConnectionState): string {
   if (!running) return 'bg-red-500';
-  if (mode === 'unavailable') return 'bg-red-500';
-  if (mode === 'remote') return 'bg-blue-400';
-  return 'bg-green-500';
+  if (state === 'connected') return 'bg-green-500';
+  if (state === 'reconnecting') return 'bg-yellow-500';
+  return 'bg-red-500';
 }
 
-function statusLabel(running: boolean, mode: DaemonMode): string {
+function statusLabel(running: boolean, state: ConnectionState): string {
   if (!running) return 'Stopped';
-  if (mode === 'unavailable') return 'Unavailable';
-  if (mode === 'remote') return 'Remote';
-  return 'Running';
+  if (state === 'connected') return 'Running';
+  if (state === 'reconnecting') return 'Reconnecting';
+  return 'Disconnected';
 }
 
 function agentStatusBadge(status: DaemonAgentStatus): { bg: string; text: string } {
@@ -101,27 +79,19 @@ function connectionStateBadge(state: ConnectionState): { bg: string; label: stri
   }
 }
 
-function transportLabel(type: string): string {
-  switch (type) {
-    case 'unix': return 'Unix Domain Socket';
-    case 'pipe': return 'Named Pipe';
-    case 'tcp': return 'TCP';
-    default: return type;
-  }
-}
-
 // ── Sub-components ────────────────────────────────────────
 
 function StatusCard({ status }: { status: DaemonStatus }) {
-  const color = statusColor(status.running, status.mode);
-  const label = statusLabel(status.running, status.mode);
+  const color = statusColor(status.running, status.state);
+  const label = statusLabel(status.running, status.state);
+  const connBadge = connectionStateBadge(status.state);
 
   return (
     <div className="bg-surface-raised rounded-lg border border-th-border p-4">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <Server className="w-5 h-5 text-th-text-alt" />
-          <h3 className="font-semibold text-th-text">Agent Host Daemon</h3>
+          <h3 className="font-semibold text-th-text">Agent Server</h3>
         </div>
         <div className="flex items-center gap-2">
           <span className={`w-2.5 h-2.5 rounded-full ${color} animate-pulse`} />
@@ -131,99 +101,23 @@ function StatusCard({ status }: { status: DaemonStatus }) {
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
         <div>
-          <span className="text-th-text-alt">Mode</span>
-          <p className="font-medium text-th-text capitalize">{status.mode}</p>
+          <span className="text-th-text-alt">Connection</span>
+          <div className="flex items-center gap-1.5 mt-0.5">
+            {status.connected
+              ? <Wifi className="w-3.5 h-3.5 text-green-400" />
+              : <WifiOff className="w-3.5 h-3.5 text-red-400" />}
+            <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${connBadge.bg}`}>{connBadge.label}</span>
+          </div>
         </div>
         <div>
           <span className="text-th-text-alt">Agents</span>
           <p className="font-medium text-th-text">{status.agentCount ?? '—'}</p>
         </div>
         <div>
-          <span className="text-th-text-alt">Uptime</span>
-          <p className="font-medium text-th-text">{status.uptimeFormatted ?? '—'}</p>
+          <span className="text-th-text-alt">Latency</span>
+          <p className="font-medium text-th-text">{status.latencyMs != null ? `${status.latencyMs}ms` : '—'}</p>
         </div>
       </div>
-
-      {status.spawningPaused && (
-        <div className="mt-3 flex items-center gap-2 px-3 py-2 rounded bg-yellow-500/10 border border-yellow-500/30 text-yellow-400 text-sm">
-          <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-          <span>Agent spawning is paused (mass failure detected)</span>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function TransportCard({ transport }: { transport: DaemonStatus['transport'] }) {
-  return (
-    <div className="bg-surface-raised rounded-lg border border-th-border p-4">
-      <div className="flex items-center gap-2 mb-3">
-        <Monitor className="w-5 h-5 text-th-text-alt" />
-        <h3 className="font-semibold text-th-text">Transport</h3>
-      </div>
-      <div className="space-y-2 text-sm">
-        <div className="flex justify-between">
-          <span className="text-th-text-alt">Type</span>
-          <span className="text-th-text">{transportLabel(transport.type)}</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ReconnectCard({ reconnect }: { reconnect: ReconnectState }) {
-  const badge = connectionStateBadge(reconnect.state);
-  return (
-    <div className="bg-surface-raised rounded-lg border border-th-border p-4">
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
-          {reconnect.state === 'connected' ? (
-            <Wifi className="w-5 h-5 text-green-400" />
-          ) : (
-            <WifiOff className="w-5 h-5 text-red-400" />
-          )}
-          <h3 className="font-semibold text-th-text">Connection</h3>
-        </div>
-        <span className={`px-2 py-0.5 rounded text-xs font-medium ${badge.bg}`}>{badge.label}</span>
-      </div>
-      <div className="text-sm">
-        <div className="flex justify-between">
-          <span className="text-th-text-alt">Expected Agents</span>
-          <span className="text-th-text">{reconnect.expectedAgentCount}</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function MassFailureCard({ failure, onResume }: { failure: MassFailureState; onResume: () => void }) {
-  if (!failure.available) return null;
-
-  return (
-    <div className="bg-surface-raised rounded-lg border border-th-border p-4">
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <Shield className="w-5 h-5 text-th-text-alt" />
-          <h3 className="font-semibold text-th-text">Mass Failure Protection</h3>
-        </div>
-        {failure.isPaused ? (
-          <span className="px-2 py-0.5 rounded text-xs font-medium bg-red-500/20 text-red-400">Spawning Paused</span>
-        ) : (
-          <span className="px-2 py-0.5 rounded text-xs font-medium bg-green-500/20 text-green-400">Active</span>
-        )}
-      </div>
-      {failure.isPaused && (
-        <div className="mt-2">
-          <p className="text-sm text-yellow-400 mb-2">Agent spawning has been paused due to repeated failures.</p>
-          <button
-            onClick={onResume}
-            className="px-3 py-1.5 text-sm rounded bg-green-600 hover:bg-green-500 text-white transition-colors flex items-center gap-1"
-          >
-            <Play className="w-3.5 h-3.5" />
-            Resume Spawning
-          </button>
-        </div>
-      )}
     </div>
   );
 }
@@ -261,10 +155,10 @@ function AgentRow({ agent, onTerminate }: { agent: DaemonAgent; onTerminate: (id
               </div>
             )}
           </div>
-          {agent.taskSummary && (
+          {agent.task && (
             <div>
               <span className="text-th-text-alt">Task: </span>
-              <span className="text-th-text">{agent.taskSummary}</span>
+              <span className="text-th-text">{agent.task}</span>
             </div>
           )}
 
@@ -306,8 +200,6 @@ export function DaemonPanel() {
   const addToast = useToastStore(s => s.add);
   const [status, setStatus] = useState<DaemonStatus | null>(null);
   const [agents, setAgents] = useState<DaemonAgent[]>([]);
-  const [reconnect, setReconnect] = useState<ReconnectState | null>(null);
-  const [massFailure, setMassFailure] = useState<MassFailureState | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [confirmStop, setConfirmStop] = useState(false);
@@ -315,18 +207,14 @@ export function DaemonPanel() {
   const fetchAll = useCallback(async () => {
     try {
       setError(null);
-      const [statusData, agentsData, reconnectData, failureData] = await Promise.all([
-        apiFetch<DaemonStatus>('/daemon/status'),
-        apiFetch<DaemonAgent[]>('/daemon/agents'),
-        apiFetch<ReconnectState>('/daemon/reconnect'),
-        apiFetch<MassFailureState>('/daemon/mass-failure'),
+      const [statusData, agentsData] = await Promise.all([
+        apiFetch<DaemonStatus>('/agent-server/status'),
+        apiFetch<DaemonAgent[]>('/agent-server/agents'),
       ]);
       setStatus(statusData);
       setAgents(Array.isArray(agentsData) ? agentsData : []);
-      setReconnect(reconnectData);
-      setMassFailure(failureData);
     } catch (err: any) {
-      setError(err.message ?? 'Failed to fetch daemon status');
+      setError(err.message ?? 'Failed to fetch agent server status');
     } finally {
       setLoading(false);
     }
@@ -340,38 +228,18 @@ export function DaemonPanel() {
 
   const handleStop = async () => {
     try {
-      await apiFetch('/daemon/stop', { method: 'POST', body: JSON.stringify({ persist: true }) });
-      addToast('success', 'Daemon stop requested');
+      await apiFetch('/agent-server/stop', { method: 'POST' });
+      addToast('success', 'Agent server stop requested');
       setConfirmStop(false);
       setTimeout(fetchAll, 1000);
     } catch (err: any) {
-      addToast('error', err.message ?? 'Failed to stop daemon');
-    }
-  };
-
-  const handleModeSwitch = async (newMode: 'production' | 'development') => {
-    try {
-      await apiFetch('/daemon/mode', { method: 'POST', body: JSON.stringify({ mode: newMode }) });
-      addToast('success', `Mode switched to ${newMode}`);
-      setTimeout(fetchAll, 500);
-    } catch (err: any) {
-      addToast('error', err.message ?? 'Failed to switch mode');
-    }
-  };
-
-  const handleResumeSpawning = async () => {
-    try {
-      await apiFetch('/daemon/resume-spawning', { method: 'POST' });
-      addToast('success', 'Agent spawning resumed');
-      setTimeout(fetchAll, 500);
-    } catch (err: any) {
-      addToast('error', err.message ?? 'Failed to resume spawning');
+      addToast('error', err.message ?? 'Failed to stop agent server');
     }
   };
 
   const handleTerminateAgent = async (agentId: string) => {
     try {
-      await apiFetch(`/daemon/agents/${agentId}/terminate`, { method: 'POST' });
+      await apiFetch(`/agent-server/terminate/${agentId}`, { method: 'POST' });
       addToast('success', `Agent ${agentId.slice(0, 8)} terminated`);
       setTimeout(fetchAll, 500);
     } catch (err: any) {
@@ -383,7 +251,7 @@ export function DaemonPanel() {
     return (
       <div className="flex items-center justify-center h-64 text-th-text-alt">
         <RefreshCw className="w-5 h-5 animate-spin mr-2" />
-        Loading daemon status…
+        Loading agent server status…
       </div>
     );
   }
@@ -403,7 +271,7 @@ export function DaemonPanel() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Server className="w-6 h-6 text-th-accent" />
-          <h1 className="text-xl font-bold text-th-text">Daemon Management</h1>
+          <h1 className="text-xl font-bold text-th-text">Agent Server</h1>
         </div>
         <button
           onClick={fetchAll}
@@ -414,20 +282,8 @@ export function DaemonPanel() {
         </button>
       </div>
 
-      {/* Status + Transport */}
-      {status && (
-        <>
-          <StatusCard status={status} />
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <TransportCard transport={status.transport} />
-            {reconnect && <ReconnectCard reconnect={reconnect} />}
-          </div>
-        </>
-      )}
-
-      {/* Mass Failure Protection */}
-      {massFailure && <MassFailureCard failure={massFailure} onResume={handleResumeSpawning} />}
+      {/* Status */}
+      {status && <StatusCard status={status} />}
 
       {/* Lifecycle Controls */}
       {status?.running && (
@@ -437,23 +293,6 @@ export function DaemonPanel() {
             <h3 className="font-semibold text-th-text">Controls</h3>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            {/* Mode toggle */}
-            {status.mode !== 'remote' && status.mode !== 'unavailable' && (
-              <div className="flex items-center gap-2 text-sm">
-                <span className="text-th-text-alt">Mode:</span>
-                <button
-                  onClick={() => handleModeSwitch(status.mode === 'production' ? 'development' : 'production')}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-th-bg-alt hover:bg-th-border text-th-text transition-colors"
-                >
-                  {status.mode === 'production' ? (
-                    <><ToggleRight className="w-4 h-4 text-green-400" /> Production</>
-                  ) : (
-                    <><ToggleLeft className="w-4 h-4 text-blue-400" /> Development</>
-                  )}
-                </button>
-              </div>
-            )}
-
             {/* Stop button */}
             {!confirmStop ? (
               <button
@@ -461,12 +300,12 @@ export function DaemonPanel() {
                 className="px-3 py-1.5 text-sm rounded bg-red-600/20 hover:bg-red-600/40 text-red-400 transition-colors flex items-center gap-1"
               >
                 <Power className="w-3.5 h-3.5" />
-                Stop Daemon
+                Stop Server
               </button>
             ) : (
               <div className="flex items-center gap-2 px-3 py-2 rounded bg-red-500/10 border border-red-500/30">
                 <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0" />
-                <span className="text-sm text-red-400">Stop daemon? Agents will be preserved.</span>
+                <span className="text-sm text-red-400">Stop agent server? All agents will be terminated.</span>
                 <button
                   onClick={handleStop}
                   className="px-2 py-1 text-xs rounded bg-red-600 hover:bg-red-500 text-white"
@@ -490,13 +329,13 @@ export function DaemonPanel() {
         <div className="flex items-center gap-2 mb-3">
           <Users className="w-5 h-5 text-th-text-alt" />
           <h3 className="font-semibold text-th-text">
-            Daemon Agents {agents.length > 0 && <span className="text-th-text-alt font-normal">({agents.length})</span>}
+            Agents {agents.length > 0 && <span className="text-th-text-alt font-normal">({agents.length})</span>}
           </h3>
         </div>
         {agents.length === 0 ? (
           <div className="text-center py-8 text-th-text-alt text-sm bg-surface-raised rounded-lg border border-th-border">
             <Cpu className="w-8 h-8 mx-auto mb-2 opacity-50" />
-            No agents currently managed by the daemon
+            No agents currently managed by the agent server
           </div>
         ) : (
           <div className="space-y-2">
