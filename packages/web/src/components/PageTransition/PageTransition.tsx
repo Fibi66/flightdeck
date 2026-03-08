@@ -42,7 +42,9 @@ export function PageTransition({
     el.style.transform = 'translateY(4px)';
     el.style.transition = `opacity ${duration}ms ease-out, transform ${duration}ms ease-out`;
 
-    // Force reflow so the initial state is applied
+    // Force synchronous reflow so the browser applies the initial opacity/transform
+    // before transitioning to the final values. Without this, the browser batches
+    // both style assignments and skips the animation entirely.
     el.getBoundingClientRect();
 
     // Animate to visible

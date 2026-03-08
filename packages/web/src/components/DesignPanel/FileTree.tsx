@@ -50,6 +50,10 @@ function fileIcon(ext?: string) {
   }
 }
 
+// Indentation constants for tree nesting
+const INDENT_PX = 12;
+const BASE_PAD_PX = 8;
+
 export function FileTree({ projectId, selectedPath, onSelectFile }: FileTreeProps) {
   const [dirs, setDirs] = useState<Record<string, DirNode>>({});
   const [loading, setLoading] = useState<string | null>(null);
@@ -103,7 +107,7 @@ export function FileTree({ projectId, selectedPath, onSelectFile }: FileTreeProp
             className={`w-full text-left flex items-center gap-1.5 py-1 px-2 text-xs hover:bg-th-bg-alt/80 transition-colors rounded ${
               isSelected ? 'bg-accent/10 text-accent' : 'text-th-text-alt'
             }`}
-            style={{ paddingLeft: `${depth * 12 + 8}px` }}
+            style={{ paddingLeft: `${depth * INDENT_PX + BASE_PAD_PX}px` }}
             title={entry.path}
           >
             {isDir && (
