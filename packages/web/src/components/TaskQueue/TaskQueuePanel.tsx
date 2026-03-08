@@ -2,12 +2,13 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAppStore } from '../../stores/appStore';
 import { useLeadStore } from '../../stores/leadStore';
 import { apiFetch } from '../../hooks/useApi';
-import { LayoutList, Network, Users, CheckCircle2, XCircle, Loader2, Play, Archive, Clock, BarChart2 } from 'lucide-react';
+import { LayoutList, Network, Users, CheckCircle2, XCircle, Loader2, Play, Archive, Clock, BarChart2, Columns3 } from 'lucide-react';
 import { EmptyState } from '../Shared';
 import { TaskDagPanelContent } from '../LeadDashboard/TaskDagPanel';
 import { DagGraph } from './DagGraph';
 import { DagGantt } from './DagGantt';
 import { DagResourceView } from './DagResourceView';
+import { KanbanBoard } from './KanbanBoard';
 import type { GanttTask } from './DagGantt';
 import type { DagStatus, LeadProgress, AgentInfo, Project } from '../../types';
 
@@ -123,8 +124,8 @@ function DagPanel({
   setDagView,
 }: {
   dagStatus: DagStatus | null;
-  dagView: 'graph' | 'list' | 'gantt' | 'resource' | null;
-  setDagView: (v: 'graph' | 'list' | 'gantt' | 'resource' | null) => void;
+  dagView: 'graph' | 'list' | 'gantt' | 'resource' | 'kanban' | null;
+  setDagView: (v: 'graph' | 'list' | 'gantt' | 'resource' | 'kanban' | null) => void;
 }) {
   const hasDeps = dagStatus?.tasks.some((t) => t.dependsOn.length > 0) ?? false;
   const effectiveView = dagView ?? (hasDeps ? 'graph' : 'list');
@@ -147,6 +148,7 @@ function DagPanel({
     effectiveView === 'graph' ? <Network size={14} className="text-blue-400" /> :
     effectiveView === 'gantt' ? <BarChart2 size={14} className="text-purple-400" /> :
     effectiveView === 'resource' ? <Users size={14} className="text-cyan-400" /> :
+    effectiveView === 'kanban' ? <Columns3 size={14} className="text-emerald-400" /> :
     <LayoutList size={14} className="text-blue-400" />;
 
   return (
@@ -168,6 +170,15 @@ function DagPanel({
             title="List view"
           >
             <LayoutList size={13} />
+          </button>
+          <button
+            onClick={() => setDagView('kanban')}
+            className={`p-1 rounded transition-colors ${
+              effectiveView === 'kanban' ? 'bg-th-bg-muted text-th-text' : 'text-th-text-muted hover:text-th-text-alt'
+            }`}
+            title="Kanban board"
+          >
+            <Columns3 size={13} />
           </button>
           <button
             onClick={() => setDagView('graph')}
@@ -198,7 +209,11 @@ function DagPanel({
           </button>
         </div>
       </div>
-      {effectiveView === 'graph' ? (
+      {effectiveView === 'kanban' ? (
+        <div style={{ minHeight: 400 }}>
+          <KanbanBoard dagStatus={dagStatus} />
+        </div>
+      ) : effectiveView === 'graph' ? (
         <div className="flex-1" style={{ minHeight: 400 }}>
           <DagGraph dagStatus={dagStatus} />
         </div>
@@ -238,7 +253,7 @@ export function TaskQueuePanel({ api }: Props) {
   const leadProjects = useLeadStore((s) => s.projects);
   const [selectedTab, setSelectedTab] = useState<string | null>(null);
   const [progress, setProgress] = useState<LeadProgress | null>(null);
-  const [dagView, setDagView] = useState<'graph' | 'list' | 'gantt' | 'resource' | null>('graph');
+  const [dagView, setDagView] = useState<'graph' | 'list' | 'gantt' | 'resource' | 'kanban' | null>('graph');
   const [persistedProjects, setPersistedProjects] = useState<Project[]>([]);
   const [resuming, setResuming] = useState<string | null>(null);
   const [historicalDag, setHistoricalDag] = useState<DagStatus | null>(null);
