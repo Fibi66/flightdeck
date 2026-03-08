@@ -83,6 +83,9 @@ export interface MessagingAdapter {
   /** Stop the adapter gracefully. */
   stop(): Promise<void>;
 
+  /** Whether the adapter is currently running and accepting messages. */
+  isRunning(): boolean;
+
   /** Send a message to a specific chat. */
   sendMessage(message: OutboundMessage): Promise<void>;
 

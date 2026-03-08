@@ -28,7 +28,7 @@ export function integrationRoutes(ctx: AppContext): Router {
       if (telegram) {
         adapters.push({
           platform: 'telegram',
-          running: (telegram as any).isRunning?.() ?? true,
+          running: telegram.isRunning(),
         });
       }
 
@@ -68,6 +68,12 @@ export function integrationRoutes(ctx: AppContext): Router {
         return res.status(400).json({ error: 'chatId, platform, and projectId are required' });
       }
 
+      // Validate adapter exists for the requested platform
+      const adapter = agent.getAdapter(platform);
+      if (!adapter) {
+        return res.status(404).json({ error: `No adapter found for platform: ${platform}` });
+      }
+
       const session = agent.bindSession(chatId, platform, projectId, boundBy ?? 'api');
       res.status(201).json(session);
     } catch (err) {
@@ -99,6 +105,13 @@ export function integrationRoutes(ctx: AppContext): Router {
       const { chatId, projectId, categories } = req.body ?? {};
       if (!chatId || !projectId) {
         return res.status(400).json({ error: 'chatId and projectId are required' });
+      }
+
+      // Verify an active session exists for this chat+project before subscribing
+      const sessions = agent.getAllSessions();
+      const hasSession = sessions.some(s => s.chatId === chatId && s.projectId === projectId);
+      if (!hasSession) {
+        return res.status(403).json({ error: 'No active session for this chatId/projectId. Bind a session first.' });
       }
 
       agent.getBatcher().subscribe(chatId, projectId, categories ?? []);
@@ -152,6 +165,13 @@ export function integrationRoutes(ctx: AppContext): Router {
       const { platform, chatId, text } = req.body ?? {};
       if (!platform || !chatId || !text) {
         return res.status(400).json({ error: 'platform, chatId, and text are required' });
+      }
+
+      // Verify an active session exists for this chat before sending
+      const sessions = agent.getAllSessions();
+      const hasSession = sessions.some(s => s.chatId === chatId && s.platform === platform);
+      if (!hasSession) {
+        return res.status(403).json({ error: 'No active session for this chatId. Bind a session first.' });
       }
 
       const adapter = agent.getAdapter(platform);
