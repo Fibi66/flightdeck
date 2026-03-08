@@ -21,6 +21,14 @@ vi.mock('../../../stores/leadStore', () => ({
   useLeadStore: (selector: (s: typeof mockLeadState) => any) => selector(mockLeadState),
 }));
 
+const mockSettingsState = {
+  oversightLevel: 'standard' as string,
+};
+vi.mock('../../../stores/settingsStore', () => ({
+  useSettingsStore: (selector: (s: typeof mockSettingsState) => any) => selector(mockSettingsState),
+  STALE_THRESHOLDS: { detailed: 600000, standard: 900000, minimal: 1800000 },
+}));
+
 const mockApiFetch = vi.fn();
 vi.mock('../../../hooks/useApi', () => ({
   apiFetch: (...args: any[]) => mockApiFetch(...args),
@@ -103,6 +111,7 @@ beforeEach(async () => {
   mockAppState.connected = true;
   mockLeadState.projects = {};
   mockLeadState.selectedLeadId = null;
+  mockSettingsState.oversightLevel = 'standard';
 
   vi.resetModules();
   const mod = await import('../useAttentionItems');
@@ -323,14 +332,14 @@ describe('useAttentionItems', () => {
       // Fire attention:changed event (simulating WS push)
       window.dispatchEvent(new CustomEvent('attention:changed'));
 
+      // Wait for 2s debounce + fetch
       await waitFor(() => {
         expect(result.current.escalation).toBe('red');
-      });
-      // Should have refetched after the event
+      }, { timeout: 3000 });
       expect(mockApiFetch).toHaveBeenCalled();
     });
 
-    it('debounces rapid attention:changed events into a single refetch', async () => {
+    it('debounces rapid attention:changed events into a single refetch (AC-17.5)', async () => {
       const apiResponse = makeApiResponse();
       mockApiFetch.mockResolvedValue(apiResponse);
       mockAppState.agents = [makeAgent('a1', 'running')];
@@ -343,16 +352,16 @@ describe('useAttentionItems', () => {
 
       mockApiFetch.mockClear();
 
-      // Fire 5 rapid events (simulating burst of dag:updated)
-      for (let i = 0; i < 5; i++) {
+      // Fire 10 rapid events (simulating burst of dag:updated)
+      for (let i = 0; i < 10; i++) {
         window.dispatchEvent(new CustomEvent('attention:changed'));
       }
 
-      // Wait for debounce (300ms) + a bit extra
-      await new Promise(r => setTimeout(r, 500));
+      // Wait for 2s debounce window + settle
+      await new Promise(r => setTimeout(r, 2500));
 
-      // Should debounce to ~1 refetch, not 5
-      expect(mockApiFetch.mock.calls.length).toBeLessThanOrEqual(2);
+      // Should debounce to exactly 1 refetch, not 10
+      expect(mockApiFetch).toHaveBeenCalledTimes(1);
     });
 
     it('does not refetch on attention:changed when disconnected', async () => {
@@ -362,12 +371,10 @@ describe('useAttentionItems', () => {
 
       renderHook(() => useAttentionItems());
 
-      // No fetch when disconnected
       expect(mockApiFetch).not.toHaveBeenCalled();
 
-      // Fire event — should not trigger fetch
       window.dispatchEvent(new CustomEvent('attention:changed'));
-      await new Promise(r => setTimeout(r, 500));
+      await new Promise(r => setTimeout(r, 2200));
 
       expect(mockApiFetch).not.toHaveBeenCalled();
     });
@@ -385,11 +392,24 @@ describe('useAttentionItems', () => {
       unmount();
       mockApiFetch.mockClear();
 
-      // Fire event after unmount — should NOT trigger fetch
       window.dispatchEvent(new CustomEvent('attention:changed'));
-      await new Promise(r => setTimeout(r, 500));
+      await new Promise(r => setTimeout(r, 2200));
 
       expect(mockApiFetch).not.toHaveBeenCalled();
+    });
+
+    it('passes staleThresholdMs from Trust Dial settings to API', async () => {
+      mockSettingsState.oversightLevel = 'detailed'; // 10 min threshold
+      mockApiFetch.mockResolvedValue(makeApiResponse());
+      mockAppState.agents = [makeAgent('a1', 'running')];
+
+      renderHook(() => useAttentionItems());
+
+      await waitFor(() => {
+        expect(mockApiFetch).toHaveBeenCalledWith(
+          expect.stringContaining('staleThresholdMs=600000')
+        );
+      });
     });
   });
 });

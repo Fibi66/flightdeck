@@ -222,4 +222,27 @@ describe('wireReconciliationOnReconnect', () => {
 
     expect(client.list).toHaveBeenCalledTimes(2);
   });
+
+  it('returns an unsubscribe function that removes the listener', async () => {
+    const serverAgents = [makeAgentInfo({ agentId: 'a1' })];
+    client = createMockAgentServerClient(serverAgents);
+    manager = createMockAgentManager([
+      { id: 'a1', role: { id: 'dev' }, model: 'gpt-4', status: 'running' },
+    ]);
+
+    const unsubscribe = wireReconciliationOnReconnect(client, manager);
+
+    // Initial connect (skipped)
+    client.emit('connected');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(client.list).not.toHaveBeenCalled();
+
+    // Unsubscribe
+    unsubscribe();
+
+    // Reconnect after unsubscribe — handler should NOT run
+    client.emit('connected');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(client.list).not.toHaveBeenCalled();
+  });
 });
