@@ -30,9 +30,14 @@ import {
 import { apiFetch } from '../hooks/useApi';
 import { useToastStore } from '../components/Toast';
 import { AgentLifecycle } from '../components/AgentLifecycle';
+import { StatusBadge, agentStatusProps, connectionStatusProps } from '../components/ui/StatusBadge';
+import { EmptyState } from '../components/ui/EmptyState';
+import { Tabs } from '../components/ui/Tabs';
+import type { TabItem } from '../components/ui/Tabs';
 
 // ── Types ─────────────────────────────────────────────────
 
+type TeamTab = 'roster' | 'health' | 'export';
 type AgentStatus = 'idle' | 'busy' | 'terminated' | 'retired';
 type LiveStatus = 'creating' | 'running' | 'idle' | 'completed' | 'failed' | 'terminated' | null;
 type ProfileTab = 'overview' | 'history' | 'knowledge' | 'skills' | 'settings';
@@ -139,16 +144,6 @@ interface ImportReport {
 
 // ── Helpers ───────────────────────────────────────────────
 
-function agentBadge(status: AgentStatus, liveStatus: LiveStatus): { bg: string; label: string } {
-  if (liveStatus === 'running') return { bg: 'bg-green-500/20 text-green-400', label: 'Running' };
-  if (liveStatus === 'creating') return { bg: 'bg-yellow-500/20 text-yellow-400', label: 'Starting' };
-  if (status === 'busy') return { bg: 'bg-blue-500/20 text-blue-400', label: 'Busy' };
-  if (status === 'retired') return { bg: 'bg-gray-500/20 text-gray-400', label: 'Retired' };
-  if (status === 'terminated') return { bg: 'bg-red-500/20 text-red-400', label: 'Terminated' };
-  if (status === 'idle') return { bg: 'bg-cyan-500/20 text-cyan-400', label: 'Idle' };
-  return { bg: 'bg-gray-500/20 text-gray-400', label: status };
-}
-
 function formatUptime(ms: number): string {
   if (ms < 60_000) return `${Math.round(ms / 1000)}s`;
   if (ms < 3_600_000) return `${Math.round(ms / 60_000)}m`;
@@ -156,11 +151,9 @@ function formatUptime(ms: number): string {
   return `${(ms / 86_400_000).toFixed(1)}d`;
 }
 
-function serverStateBadge(running: boolean, state: string): { color: string; label: string } {
-  if (!running) return { color: 'bg-red-400', label: 'Stopped' };
-  if (state === 'connected') return { color: 'bg-green-400', label: 'Online' };
-  if (state === 'reconnecting') return { color: 'bg-yellow-400', label: 'Reconnecting' };
-  return { color: 'bg-red-400', label: 'Disconnected' };
+function serverStateBadge(running: boolean, state: string): { variant: 'success' | 'warning' | 'error'; label: string } {
+  if (!running) return { variant: 'error', label: 'Stopped' };
+  return connectionStatusProps(state) as { variant: 'success' | 'warning' | 'error'; label: string };
 }
 
 // ── Sub-components ────────────────────────────────────────
@@ -191,10 +184,7 @@ function ServerCard({ status, onStop }: { status: ServerStatus | null; onStop: (
     <div className="bg-th-bg-alt border border-th-border rounded-lg p-4" data-testid="card-server">
       <div className="flex items-center gap-2 text-th-text mb-1">
         <Server className="w-4 h-4" />
-        <div className="flex items-center gap-1.5">
-          <span className={`w-2 h-2 rounded-full ${badge.color}`} />
-          <span className="text-sm font-medium">{badge.label}</span>
-        </div>
+        <StatusBadge variant={badge.variant} label={badge.label} dot pulse={badge.variant === 'success'} />
       </div>
       <div className="flex items-center gap-3 text-xs text-th-text-muted">
         {status.connected
@@ -223,7 +213,7 @@ function AgentCard({ agent, selected, onSelect, onManage }: {
   onSelect: (id: string) => void;
   onManage: (id: string) => void;
 }) {
-  const badge = agentBadge(agent.status, agent.liveStatus);
+  const badge = agentStatusProps(agent.status, agent.liveStatus);
 
   return (
     <div
@@ -255,7 +245,7 @@ function AgentCard({ agent, selected, onSelect, onManage }: {
               )}
             </div>
           </div>
-          <span className={`px-2 py-0.5 rounded text-xs font-medium flex-shrink-0 ${badge.bg}`}>{badge.label}</span>
+          <StatusBadge variant={badge.variant} label={badge.label} className="flex-shrink-0" />
           <ChevronRight className="w-4 h-4 text-th-text-alt flex-shrink-0" />
         </button>
         <button
@@ -305,13 +295,13 @@ function ProfilePanel({ agentId, teamId, onClose }: {
     );
   }
 
-  const badge = agentBadge(profile.status, profile.liveStatus);
-  const tabs: Array<{ id: ProfileTab; label: string; icon: typeof User }> = [
-    { id: 'overview', label: 'Overview', icon: User },
-    { id: 'history', label: 'History', icon: Clock },
-    { id: 'knowledge', label: 'Knowledge', icon: BookOpen },
-    { id: 'skills', label: 'Skills', icon: Wrench },
-    { id: 'settings', label: 'Settings', icon: Settings },
+  const badge = agentStatusProps(profile.status, profile.liveStatus);
+  const tabs: TabItem[] = [
+    { id: 'overview', label: 'Overview', icon: <User className="w-3.5 h-3.5" /> },
+    { id: 'history', label: 'History', icon: <Clock className="w-3.5 h-3.5" /> },
+    { id: 'knowledge', label: 'Knowledge', icon: <BookOpen className="w-3.5 h-3.5" /> },
+    { id: 'skills', label: 'Skills', icon: <Wrench className="w-3.5 h-3.5" /> },
+    { id: 'settings', label: 'Settings', icon: <Settings className="w-3.5 h-3.5" /> },
   ];
 
   return (
@@ -326,7 +316,7 @@ function ProfilePanel({ agentId, teamId, onClose }: {
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="font-semibold text-th-text capitalize">{profile.role}</h2>
-                <span className={`px-2 py-0.5 rounded text-xs font-medium ${badge.bg}`}>{badge.label}</span>
+                <StatusBadge variant={badge.variant} label={badge.label} />
               </div>
               <span className="text-xs font-mono text-th-text-alt">{profile.agentId.slice(0, 12)}</span>
             </div>
@@ -338,22 +328,12 @@ function ProfilePanel({ agentId, teamId, onClose }: {
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-th-border px-4">
-        {tabs.map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`flex items-center gap-1.5 px-3 py-2 text-sm border-b-2 transition-colors ${
-              activeTab === tab.id
-                ? 'border-th-accent text-th-accent'
-                : 'border-transparent text-th-text-alt hover:text-th-text'
-            }`}
-          >
-            <tab.icon className="w-3.5 h-3.5" />
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      <Tabs
+        tabs={tabs}
+        activeTab={activeTab}
+        onTabChange={(id) => setActiveTab(id as ProfileTab)}
+        className="px-4"
+      />
 
       {/* Tab content */}
       <div className="p-4">
@@ -818,6 +798,7 @@ export function TeamPage() {
   const [confirmStop, setConfirmStop] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [activeTab, setActiveTab] = useState<TeamTab>('roster');
 
   // ── Data fetching ────────────────────────────────────────
 
@@ -987,26 +968,11 @@ export function TeamPage() {
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setShowExport(true)}
-              className="px-3 py-1.5 text-sm rounded bg-th-accent/20 hover:bg-th-accent/30 text-th-accent border border-th-accent/30 transition-colors flex items-center gap-1.5"
-              data-testid="export-team-btn"
-            >
-              <Download className="w-4 h-4" />
-              Export Team
-            </button>
-            <button
-              onClick={() => setShowImport(true)}
-              className="px-3 py-1.5 text-sm rounded bg-th-bg-alt hover:bg-th-border text-th-text-alt border border-th-border transition-colors flex items-center gap-1.5"
-              data-testid="import-team-btn"
-            >
-              <Upload className="w-4 h-4" />
-              Import Team
-            </button>
-            <button
               onClick={() => { setLoading(true); fetchData(); }}
               className="px-3 py-1.5 text-sm rounded bg-th-bg-alt hover:bg-th-border text-th-text-alt transition-colors flex items-center gap-1"
             >
               <RefreshCw className="w-3.5 h-3.5" />
+              Refresh
             </button>
           </div>
         </div>
@@ -1036,146 +1002,229 @@ export function TeamPage() {
         </div>
       </div>
 
-      {/* Mass failure alert */}
-      {health?.massFailurePaused && (
-        <div
-          className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 flex items-center gap-2"
-          role="alert"
-          data-testid="mass-failure-alert"
-        >
-          <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0" />
-          <span className="text-sm text-red-400">
-            Mass failure detected — agent spawning is paused
-          </span>
-        </div>
-      )}
-
-      {/* Overview cards */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <OverviewCard
-          label="Total"
-          count={health?.totalAgents ?? agents.length}
-          icon={<Users className="w-4 h-4" />}
-          color="text-th-text"
-          testId="card-total"
-        />
-        <OverviewCard
-          label="Active"
-          count={statusCounts.busy ?? 0}
-          icon={<Activity className="w-4 h-4" />}
-          color="text-green-400"
-          testId="card-active"
-        />
-        <OverviewCard
-          label="Idle"
-          count={statusCounts.idle ?? 0}
-          icon={<PauseCircle className="w-4 h-4" />}
-          color="text-blue-400"
-          testId="card-idle"
-        />
-        <OverviewCard
-          label="Retired"
-          count={statusCounts.retired ?? 0}
-          icon={<UserMinus className="w-4 h-4" />}
-          color="text-gray-400"
-          testId="card-retired"
-        />
-        <ServerCard
-          status={serverStatus}
-          onStop={() => setConfirmStop(true)}
-        />
+      {/* Tab navigation */}
+      <div className="flex gap-1 border-b border-th-border" data-testid="team-tabs">
+        {([
+          { id: 'roster' as const, label: 'Roster', icon: Users },
+          { id: 'health' as const, label: 'Health', icon: Activity },
+          { id: 'export' as const, label: 'Export / Import', icon: Download },
+        ]).map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === tab.id
+                ? 'border-th-accent text-th-accent'
+                : 'border-transparent text-th-text-alt hover:text-th-text'
+            }`}
+            data-testid={`tab-${tab.id}`}
+          >
+            <tab.icon className="w-4 h-4" />
+            {tab.label}
+          </button>
+        ))}
       </div>
 
-      {/* Stop server confirmation */}
-      {confirmStop && (
-        <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/30">
-          <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0" />
-          <span className="text-sm text-red-400">Stop agent server? All agents will be terminated.</span>
-          <button
-            onClick={handleStopServer}
-            className="ml-auto px-3 py-1 text-xs rounded bg-red-600 hover:bg-red-500 text-white"
-            data-testid="confirm-stop-btn"
-          >
-            Confirm Stop
-          </button>
-          <button
-            onClick={() => setConfirmStop(false)}
-            className="px-3 py-1 text-xs rounded bg-th-bg-alt hover:bg-th-border text-th-text-alt"
-          >
-            Cancel
-          </button>
-        </div>
-      )}
-
-      {/* Filters */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="relative flex-1 min-w-[200px] max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-th-text-alt" />
-          <input
-            type="text"
-            placeholder="Search agents..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 text-sm rounded bg-th-bg-alt border border-th-border text-th-text placeholder:text-th-text-alt"
-          />
-        </div>
-
-        <div className="flex gap-1">
-          {(['all', 'busy', 'idle', 'retired', 'terminated'] as const).map(s => (
-            <button
-              key={s}
-              onClick={() => setStatusFilter(s)}
-              className={`px-3 py-1.5 text-xs rounded capitalize transition-colors ${
-                statusFilter === s
-                  ? 'bg-th-accent/20 text-th-accent border border-th-accent/30'
-                  : 'bg-th-bg-alt text-th-text-alt border border-th-border hover:bg-th-border'
-              }`}
-            >
-              {s}
-            </button>
-          ))}
-        </div>
-
-        <button
-          onClick={() => toggleSort(sortField === 'role' ? 'status' : sortField === 'status' ? 'updatedAt' : 'role')}
-          className="px-3 py-1.5 text-xs rounded bg-th-bg-alt border border-th-border text-th-text-alt hover:bg-th-border flex items-center gap-1"
-        >
-          <ArrowUpDown className="w-3 h-3" />
-          {sortField}
-        </button>
-      </div>
-
-      {/* Agent list + profile */}
-      <div className="flex gap-6">
-        <div className={`space-y-2 ${selectedAgent ? 'w-1/2' : 'w-full'}`}>
-          {filtered.length === 0 ? (
-            <div className="text-center py-8 text-th-text-alt text-sm bg-surface-raised rounded-lg border border-th-border">
-              <Cpu className="w-8 h-8 mx-auto mb-2 opacity-50" />
-              {search ? 'No agents match your search' : 'No agents in this team'}
-            </div>
-          ) : (
-            filtered.map(agent => (
-              <AgentCard
-                key={agent.agentId}
-                agent={agent}
-                selected={agent.agentId === selectedAgent}
-                onSelect={setSelectedAgent}
-                onManage={setManagingAgent}
+      {/* ── Roster tab ──────────────────────────────────────── */}
+      {activeTab === 'roster' && (
+        <>
+          {/* Filters */}
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="relative flex-1 min-w-[200px] max-w-md">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-th-text-alt" />
+              <input
+                type="text"
+                placeholder="Search agents..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="w-full pl-9 pr-3 py-2 text-sm rounded bg-th-bg-alt border border-th-border text-th-text placeholder:text-th-text-alt"
               />
-            ))
-          )}
-        </div>
+            </div>
 
-        {selectedAgent && (
-          <div className="w-1/2">
-            <ProfilePanel
-              agentId={selectedAgent}
-              teamId={selectedTeam}
-              onClose={() => setSelectedAgent(null)}
+            <div className="flex gap-1">
+              {(['all', 'busy', 'idle', 'retired', 'terminated'] as const).map(s => (
+                <button
+                  key={s}
+                  onClick={() => setStatusFilter(s)}
+                  className={`px-3 py-1.5 text-xs rounded capitalize transition-colors ${
+                    statusFilter === s
+                      ? 'bg-th-accent/20 text-th-accent border border-th-accent/30'
+                      : 'bg-th-bg-alt text-th-text-alt border border-th-border hover:bg-th-border'
+                  }`}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+
+            <button
+              onClick={() => toggleSort(sortField === 'role' ? 'status' : sortField === 'status' ? 'updatedAt' : 'role')}
+              className="px-3 py-1.5 text-xs rounded bg-th-bg-alt border border-th-border text-th-text-alt hover:bg-th-border flex items-center gap-1"
+            >
+              <ArrowUpDown className="w-3 h-3" />
+              {sortField}
+            </button>
+          </div>
+
+          {/* Agent list + profile */}
+          <div className="flex gap-6">
+            <div className={`space-y-2 ${selectedAgent ? 'w-1/2' : 'w-full'}`}>
+              {filtered.length === 0 ? (
+                <EmptyState
+                  icon={<Cpu className="w-10 h-10 opacity-50" />}
+                  title={search ? 'No agents match your search' : 'No agents in this team'}
+                  description={search ? 'Try a different search term.' : 'Agents will appear here when they join the team.'}
+                  compact
+                />
+              ) : (
+                filtered.map(agent => (
+                  <AgentCard
+                    key={agent.agentId}
+                    agent={agent}
+                    selected={agent.agentId === selectedAgent}
+                    onSelect={setSelectedAgent}
+                    onManage={setManagingAgent}
+                  />
+                ))
+              )}
+            </div>
+
+            {selectedAgent && (
+              <div className="w-1/2">
+                <ProfilePanel
+                  agentId={selectedAgent}
+                  teamId={selectedTeam}
+                  onClose={() => setSelectedAgent(null)}
+                />
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* ── Health tab ──────────────────────────────────────── */}
+      {activeTab === 'health' && (
+        <>
+          {/* Mass failure alert */}
+          {health?.massFailurePaused && (
+            <div
+              className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 flex items-center gap-2"
+              role="alert"
+              data-testid="mass-failure-alert"
+            >
+              <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0" />
+              <span className="text-sm text-red-400">
+                Mass failure detected — agent spawning is paused
+              </span>
+            </div>
+          )}
+
+          {/* Overview cards */}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <OverviewCard
+              label="Total"
+              count={health?.totalAgents ?? agents.length}
+              icon={<Users className="w-4 h-4" />}
+              color="text-th-text"
+              testId="card-total"
+            />
+            <OverviewCard
+              label="Active"
+              count={statusCounts.busy ?? 0}
+              icon={<Activity className="w-4 h-4" />}
+              color="text-green-400"
+              testId="card-active"
+            />
+            <OverviewCard
+              label="Idle"
+              count={statusCounts.idle ?? 0}
+              icon={<PauseCircle className="w-4 h-4" />}
+              color="text-blue-400"
+              testId="card-idle"
+            />
+            <OverviewCard
+              label="Retired"
+              count={statusCounts.retired ?? 0}
+              icon={<UserMinus className="w-4 h-4" />}
+              color="text-gray-400"
+              testId="card-retired"
+            />
+            <ServerCard
+              status={serverStatus}
+              onStop={() => setConfirmStop(true)}
             />
           </div>
-        )}
-      </div>
+
+          {/* Stop server confirmation */}
+          {confirmStop && (
+            <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/30">
+              <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0" />
+              <span className="text-sm text-red-400">Stop agent server? All agents will be terminated.</span>
+              <button
+                onClick={handleStopServer}
+                className="ml-auto px-3 py-1 text-xs rounded bg-red-600 hover:bg-red-500 text-white"
+                data-testid="confirm-stop-btn"
+              >
+                Confirm Stop
+              </button>
+              <button
+                onClick={() => setConfirmStop(false)}
+                className="px-3 py-1 text-xs rounded bg-th-bg-alt hover:bg-th-border text-th-text-alt"
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ── Export/Import tab ───────────────────────────────── */}
+      {activeTab === 'export' && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Export section */}
+            <div className="bg-surface-raised rounded-lg border border-th-border p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <Download className="w-5 h-5 text-th-accent" />
+                <h2 className="font-semibold text-th-text">Export Team</h2>
+              </div>
+              <p className="text-sm text-th-text-alt mb-4">
+                Package your team&apos;s agents, knowledge, and training data into a portable
+                bundle. Creates a <code className="text-th-accent">.flightdeck-team/</code> directory
+                you can copy between machines, or download a JSON file.
+              </p>
+              <button
+                onClick={() => setShowExport(true)}
+                className="px-4 py-2 text-sm rounded bg-th-accent/20 hover:bg-th-accent/30 text-th-accent border border-th-accent/30 transition-colors flex items-center gap-1.5"
+                data-testid="export-team-btn"
+              >
+                <Download className="w-4 h-4" />
+                Export Team
+              </button>
+            </div>
+
+            {/* Import section */}
+            <div className="bg-surface-raised rounded-lg border border-th-border p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <Upload className="w-5 h-5 text-th-accent" />
+                <h2 className="font-semibold text-th-text">Import Team</h2>
+              </div>
+              <p className="text-sm text-th-text-alt mb-4">
+                Import a team bundle from another Flightdeck instance. Validates the bundle,
+                previews changes, and lets you choose how to handle conflicts.
+              </p>
+              <button
+                onClick={() => setShowImport(true)}
+                className="px-4 py-2 text-sm rounded bg-th-bg-alt hover:bg-th-border text-th-text-alt border border-th-border transition-colors flex items-center gap-1.5"
+                data-testid="import-team-btn"
+              >
+                <Upload className="w-4 h-4" />
+                Import Team
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Lifecycle modal */}
       {managingAgent && (

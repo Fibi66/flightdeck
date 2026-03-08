@@ -1,34 +1,32 @@
 /**
- * ProvidersSection — provider configuration cards for the Settings page.
+ * ProvidersSection — provider availability and configuration for Settings.
  *
- * Shows status (configured/not-configured), masked API key preview,
- * connection test button, and setup instructions for each provider.
- * API keys are NEVER fetched or displayed in full — only masked previews.
+ * Shows which CLI providers are installed, authenticated, and enabled.
+ * All providers manage their own API keys/auth — we only detect status.
  */
 import { useState, useEffect, useCallback } from 'react';
-import { Cpu, CheckCircle, XCircle, Circle, Loader2, Zap, ExternalLink, ChevronDown, ChevronRight } from 'lucide-react';
+import { Cpu, Loader2, Zap, ExternalLink, ChevronDown, ChevronRight } from 'lucide-react';
 import { apiFetch } from '../../hooks/useApi';
+import { StatusBadge, providerStatusProps } from '../ui/StatusBadge';
+import { EmptyState } from '../ui/EmptyState';
 
 // ── Types ───────────────────────────────────────────────────────────
 
-interface ProviderInfo {
+interface ProviderStatus {
   id: string;
   name: string;
-  status: 'configured' | 'not-configured' | 'error';
-  maskedKey: string | null;
-  requiredEnvVars: string[];
-  binary: string;
-  defaultModel: string | null;
-  supportsResume: boolean;
+  installed: boolean;
+  authenticated: boolean | null;
+  enabled: boolean;
+  binaryPath: string | null;
 }
 
 interface TestResult {
   success: boolean;
   message: string;
-  latency?: number;
 }
 
-// ── Provider Icons ──────────────────────────────────────────────────
+// ── Provider display metadata ───────────────────────────────────────
 
 const PROVIDER_ICONS: Record<string, string> = {
   copilot: '🐙',
@@ -39,43 +37,33 @@ const PROVIDER_ICONS: Record<string, string> = {
   codex: '🤖',
 };
 
+const PROVIDER_AUTH_LABELS: Record<string, string> = {
+  copilot: 'Authenticated via GitHub',
+  claude: 'Authenticated via Claude platform',
+  gemini: 'Authenticated via Google',
+  opencode: 'Manages own keys',
+  cursor: 'Authenticated via Cursor',
+  codex: 'Authenticated via OpenAI',
+};
+
 const PROVIDER_DOCS: Record<string, string> = {
   copilot: 'https://docs.github.com/en/copilot',
-  claude: 'https://docs.anthropic.com/en/docs/developer-tools/claude-code',
+  claude: 'https://platform.claude.com/docs/en/agent-sdk/overview',
   gemini: 'https://ai.google.dev/gemini-api/docs/api-key',
-  opencode: 'https://github.com/nicepkg/opencode',
+  opencode: 'https://opencode.ai/docs/providers/',
   cursor: 'https://docs.cursor.com',
   codex: 'https://platform.openai.com/docs/api-reference',
 };
 
-// ── Status Badge ────────────────────────────────────────────────────
-
-function StatusBadge({ status }: { status: ProviderInfo['status'] }) {
-  switch (status) {
-    case 'configured':
-      return (
-        <span className="inline-flex items-center gap-1 text-[10px] font-medium text-green-400 bg-green-400/10 px-2 py-0.5 rounded-full">
-          <CheckCircle size={10} /> Configured
-        </span>
-      );
-    case 'not-configured':
-      return (
-        <span className="inline-flex items-center gap-1 text-[10px] font-medium text-th-text-muted bg-th-bg-alt px-2 py-0.5 rounded-full">
-          <Circle size={10} /> Not configured
-        </span>
-      );
-    case 'error':
-      return (
-        <span className="inline-flex items-center gap-1 text-[10px] font-medium text-red-400 bg-red-400/10 px-2 py-0.5 rounded-full">
-          <XCircle size={10} /> Error
-        </span>
-      );
-  }
-}
-
 // ── Provider Card ───────────────────────────────────────────────────
 
-function ProviderCard({ provider }: { provider: ProviderInfo }) {
+function ProviderCard({
+  provider,
+  onToggle,
+}: {
+  provider: ProviderStatus;
+  onToggle: (id: string, enabled: boolean) => void;
+}) {
   const [expanded, setExpanded] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
@@ -98,6 +86,7 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
 
   const icon = PROVIDER_ICONS[provider.id] ?? '🔌';
   const docsUrl = PROVIDER_DOCS[provider.id];
+  const authLabel = PROVIDER_AUTH_LABELS[provider.id] ?? 'Provider-managed auth';
 
   return (
     <div
@@ -118,18 +107,30 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium text-th-text-alt">{provider.name}</span>
-            <StatusBadge status={provider.status} />
+            <StatusBadge {...providerStatusProps(provider)} />
           </div>
           <div className="text-xs text-th-text-muted">
-            {provider.maskedKey ? (
-              <code className="font-mono text-[10px]">{provider.maskedKey}</code>
-            ) : provider.requiredEnvVars.length > 0 ? (
-              <span>Set <code className="font-mono text-[10px]">{provider.requiredEnvVars[0]}</code> to configure</span>
-            ) : (
-              <span>Uses OAuth — no API key needed</span>
-            )}
+            {provider.installed ? authLabel : 'CLI not found on PATH'}
           </div>
         </div>
+        {/* Enable/disable toggle */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggle(provider.id, !provider.enabled);
+          }}
+          aria-label={provider.enabled ? `Disable ${provider.name}` : `Enable ${provider.name}`}
+          className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${
+            provider.enabled ? 'bg-accent' : 'bg-th-bg-hover'
+          }`}
+          data-testid={`toggle-${provider.id}`}
+        >
+          <span
+            className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
+              provider.enabled ? 'translate-x-4' : 'translate-x-0'
+            }`}
+          />
+        </button>
         {expanded ? (
           <ChevronDown className="w-4 h-4 text-th-text-muted shrink-0" />
         ) : (
@@ -140,74 +141,65 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
       {/* Expanded Details */}
       {expanded && (
         <div className="border-t border-th-border px-4 py-3 bg-th-bg-alt/30 space-y-3">
-          {/* Config Details */}
           <div className="grid grid-cols-2 gap-3 text-xs">
             <div>
               <span className="text-th-text-muted">Binary:</span>{' '}
-              <code className="font-mono text-th-text-alt">{provider.binary}</code>
+              <code className="font-mono text-th-text-alt">
+                {provider.binaryPath ?? provider.id}
+              </code>
             </div>
-            {provider.defaultModel && (
-              <div>
-                <span className="text-th-text-muted">Default model:</span>{' '}
-                <code className="font-mono text-th-text-alt">{provider.defaultModel}</code>
-              </div>
-            )}
             <div>
-              <span className="text-th-text-muted">Session resume:</span>{' '}
-              <span className={provider.supportsResume ? 'text-green-400' : 'text-th-text-muted'}>
-                {provider.supportsResume ? 'Yes' : 'No'}
+              <span className="text-th-text-muted">Status:</span>{' '}
+              <span className={provider.installed ? 'text-green-400' : 'text-th-text-muted'}>
+                {provider.installed ? 'Installed' : 'Not found'}
               </span>
             </div>
           </div>
 
-          {/* Env var setup instructions */}
-          {provider.status === 'not-configured' && provider.requiredEnvVars.length > 0 && (
+          {/* Setup instructions if not installed */}
+          {!provider.installed && docsUrl && (
             <div className="bg-th-bg-alt border border-th-border rounded-md p-3 text-xs">
-              <p className="text-th-text-muted mb-1.5">To configure this provider, set the environment variable:</p>
-              <code className="block bg-th-bg border border-th-border rounded px-2 py-1.5 font-mono text-th-text-alt">
-                export {provider.requiredEnvVars[0]}="your-api-key-here"
-              </code>
-              {docsUrl && (
-                <a
-                  href={docsUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-accent hover:text-accent-muted mt-2 transition-colors"
-                >
-                  <ExternalLink size={10} /> Provider docs
-                </a>
-              )}
+              <p className="text-th-text-muted mb-1.5">
+                Install the CLI to use this provider:
+              </p>
+              <a
+                href={docsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-accent hover:text-accent-muted transition-colors"
+              >
+                <ExternalLink size={10} /> Installation docs
+              </a>
             </div>
           )}
 
           {/* Test Connection */}
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleTest}
-              disabled={testing}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-accent/10 text-accent hover:bg-accent/20 rounded-md transition-colors disabled:opacity-50"
-              data-testid={`test-connection-${provider.id}`}
-            >
-              {testing ? (
-                <Loader2 size={12} className="animate-spin" />
-              ) : (
-                <Zap size={12} />
-              )}
-              {testing ? 'Testing…' : 'Test Connection'}
-            </button>
-
-            {testResult && (
-              <span
-                className={`text-xs ${testResult.success ? 'text-green-400' : 'text-red-400'}`}
-                data-testid={`test-result-${provider.id}`}
+          {provider.installed && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleTest}
+                disabled={testing}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-accent/10 text-accent hover:bg-accent/20 rounded-md transition-colors disabled:opacity-50"
+                data-testid={`test-connection-${provider.id}`}
               >
-                {testResult.success ? '✅' : '❌'} {testResult.message}
-                {testResult.latency != null && (
-                  <span className="text-th-text-muted ml-1">({testResult.latency}ms)</span>
+                {testing ? (
+                  <Loader2 size={12} className="animate-spin" />
+                ) : (
+                  <Zap size={12} />
                 )}
-              </span>
-            )}
-          </div>
+                {testing ? 'Testing…' : 'Test Connection'}
+              </button>
+
+              {testResult && (
+                <span
+                  className={`text-xs ${testResult.success ? 'text-green-400' : 'text-red-400'}`}
+                  data-testid={`test-result-${provider.id}`}
+                >
+                  {testResult.success ? '✅' : '❌'} {testResult.message}
+                </span>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -217,18 +209,36 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
 // ── ProvidersSection ────────────────────────────────────────────────
 
 export function ProvidersSection() {
-  const [providers, setProviders] = useState<ProviderInfo[]>([]);
+  const [providers, setProviders] = useState<ProviderStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    apiFetch<ProviderInfo[]>('/settings/providers')
+    apiFetch<ProviderStatus[]>('/settings/providers')
       .then(setProviders)
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
 
-  const configuredCount = providers.filter((p) => p.status === 'configured').length;
+  const handleToggle = useCallback(async (id: string, enabled: boolean) => {
+    // Optimistic update
+    setProviders((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, enabled } : p)),
+    );
+    try {
+      await apiFetch(`/settings/providers/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ enabled }),
+      });
+    } catch {
+      // Revert on failure
+      setProviders((prev) =>
+        prev.map((p) => (p.id === id ? { ...p, enabled: !enabled } : p)),
+      );
+    }
+  }, []);
+
+  const installedCount = providers.filter((p) => p.installed).length;
 
   return (
     <section className="bg-surface-raised border border-th-border rounded-lg p-4 mb-6">
@@ -238,7 +248,7 @@ export function ProvidersSection() {
         </h3>
         {!loading && (
           <span className="text-[10px] text-th-text-muted">
-            {configuredCount}/{providers.length} configured
+            {installedCount}/{providers.length} installed
           </span>
         )}
       </div>
@@ -256,10 +266,23 @@ export function ProvidersSection() {
         </div>
       )}
 
-      {!loading && !error && (
+      {!loading && !error && providers.length === 0 && (
+        <EmptyState
+          icon={<Cpu className="w-10 h-10 opacity-50" />}
+          title="No providers configured"
+          description="Install a CLI provider (Claude, Copilot, Gemini, etc.) to get started."
+          compact
+        />
+      )}
+
+      {!loading && !error && providers.length > 0 && (
         <div className="space-y-2" data-testid="providers-list">
           {providers.map((provider) => (
-            <ProviderCard key={provider.id} provider={provider} />
+            <ProviderCard
+              key={provider.id}
+              provider={provider}
+              onToggle={handleToggle}
+            />
           ))}
         </div>
       )}
