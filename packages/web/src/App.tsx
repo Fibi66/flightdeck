@@ -36,7 +36,6 @@ import { apiFetch } from './hooks/useApi';
 const AgentDashboard = lazy(() => import('./components/AgentDashboard/AgentDashboard').then(m => ({ default: m.AgentDashboard })));
 const TaskQueuePanel = lazy(() => import('./components/TaskQueue/TaskQueuePanel').then(m => ({ default: m.TaskQueuePanel })));
 const SettingsPanel = lazy(() => import('./components/Settings/SettingsPanel').then(m => ({ default: m.SettingsPanel })));
-const DataBrowser = lazy(() => import('./components/DataBrowser/DataBrowser').then(m => ({ default: m.DataBrowser })));
 const OrgChart = lazy(() => import('./components/OrgChart/OrgChart').then(m => ({ default: m.OrgChart })));
 const OverviewPage = lazy(() => import('./components/OverviewPage/OverviewPage').then(m => ({ default: m.OverviewPage })));
 const GroupChat = lazy(() => import('./components/GroupChat/GroupChat').then(m => ({ default: m.GroupChat })));
@@ -274,7 +273,7 @@ export function App() {
             <Route path="/org" element={<OrgChart api={api} ws={ws} />} />
             <Route path="/tasks" element={<TaskQueuePanel api={api} />} />
             <Route path="/settings" element={<SettingsPanel api={api} />} />
-            <Route path="/data" element={<DataBrowser />} />
+            <Route path="/data" element={<Navigate to="/knowledge?tab=data" replace />} />
             <Route path="/timeline" element={<TimelinePage api={api} ws={ws} />} />
             <Route path="/mission-control" element={<MissionControlPage />} />
             <Route path="/canvas" element={<CanvasPage />} />

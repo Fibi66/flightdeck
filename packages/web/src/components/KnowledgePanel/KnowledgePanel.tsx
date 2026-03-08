@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Brain,
   Search,
@@ -24,8 +25,11 @@ import {
 import { apiFetch } from '../../hooks/useApi';
 import { useToastStore } from '../Toast';
 
+const DataBrowser = lazy(() => import('../DataBrowser/DataBrowser').then(m => ({ default: m.DataBrowser })));
+
 // ── Types ─────────────────────────────────────────────────
 
+type PageTab = 'browse' | 'training' | 'data';
 type KnowledgeCategory = 'core' | 'episodic' | 'procedural' | 'semantic';
 
 interface KnowledgeEntry {
@@ -390,7 +394,7 @@ export function KnowledgePanel({ projectId: propProjectId }: Props) {
   const [stats, setStats] = useState<CategoryStat[]>([]);
   const [trainingSummary, setTrainingSummary] = useState<TrainingSummary | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<KnowledgeCategory | 'all' | 'search' | 'training'>('all');
+  const [activeTab, setActiveTab] = useState<KnowledgeCategory | 'all' | 'search'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<FusedSearchResult[]>([]);
   const [searching, setSearching] = useState(false);
@@ -400,6 +404,11 @@ export function KnowledgePanel({ projectId: propProjectId }: Props) {
   const [selectedProjectId, setSelectedProjectId] = useState(propProjectId ?? '');
   const [projects, setProjects] = useState<Array<{ id: string; name: string }>>([]);
   const addToast = useToastStore((s) => s.add);
+  const [searchParams] = useSearchParams();
+  const initialTab = (['browse', 'training', 'data'] as PageTab[]).includes(searchParams.get('tab') as PageTab)
+    ? (searchParams.get('tab') as PageTab)
+    : 'browse';
+  const [pageTab, setPageTab] = useState<PageTab>(initialTab);
 
   // Load projects for picker if no projectId prop
   useEffect(() => {
@@ -486,7 +495,7 @@ export function KnowledgePanel({ projectId: propProjectId }: Props) {
   const filtered =
     activeTab === 'all'
       ? entries
-      : activeTab === 'search' || activeTab === 'training'
+      : activeTab === 'search'
         ? []
         : entries.filter((e) => e.category === activeTab);
 
@@ -532,6 +541,56 @@ export function KnowledgePanel({ projectId: propProjectId }: Props) {
           </button>
         </div>
       </div>
+
+      {/* Page tabs: Browse / Training / Raw Data */}
+      <div className="flex gap-1 mb-6 border-b border-th-border" data-testid="knowledge-page-tabs">
+        {([
+          { id: 'browse' as const, label: 'Browse', icon: BookOpen },
+          { id: 'training' as const, label: 'Training', icon: Lightbulb },
+          { id: 'data' as const, label: 'Raw Data', icon: Database },
+        ]).map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setPageTab(tab.id)}
+            className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+              pageTab === tab.id
+                ? 'border-accent text-accent'
+                : 'border-transparent text-th-text-muted hover:text-th-text'
+            }`}
+            data-testid={`page-tab-${tab.id}`}
+          >
+            <tab.icon className="w-4 h-4" />
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Training page tab ───────────────────────────────── */}
+      {pageTab === 'training' && (
+        trainingSummary ? (
+          <TrainingOverview summary={trainingSummary} />
+        ) : (
+          <div className="bg-surface-raised border border-th-border rounded-lg p-12 text-center">
+            <Lightbulb className="w-12 h-12 text-th-text-muted/30 mx-auto mb-3" />
+            <p className="text-sm text-th-text-muted">No training data yet.</p>
+          </div>
+        )
+      )}
+
+      {/* ── Raw Data page tab ───────────────────────────────── */}
+      {pageTab === 'data' && (
+        <Suspense fallback={
+          <div className="flex items-center justify-center h-64">
+            <div className="w-6 h-6 border-2 border-th-text-muted/30 border-t-accent rounded-full animate-spin" />
+          </div>
+        }>
+          <DataBrowser />
+        </Suspense>
+      )}
+
+      {/* ── Browse page tab ─────────────────────────────────── */}
+      {pageTab === 'browse' && (
+      <>
 
       {/* New entry form */}
       {showNewForm && effectiveProjectId && (
@@ -643,15 +702,6 @@ export function KnowledgePanel({ projectId: propProjectId }: Props) {
             Results <span className="opacity-70">({searchResults.length})</span>
           </button>
         )}
-        <button
-          onClick={() => setActiveTab('training')}
-          className={`flex items-center gap-1 px-3 py-1.5 text-xs rounded-md transition-colors ${
-            activeTab === 'training' ? 'bg-accent text-black font-medium' : 'text-th-text-muted hover:text-th-text hover:bg-th-bg-muted'
-          }`}
-        >
-          <Lightbulb className="w-3 h-3" />
-          Training
-        </button>
       </div>
 
       {/* Content */}
@@ -659,15 +709,6 @@ export function KnowledgePanel({ projectId: propProjectId }: Props) {
         <div className="flex items-center justify-center h-64">
           <div className="w-6 h-6 border-2 border-th-text-muted/30 border-t-accent rounded-full animate-spin" />
         </div>
-      ) : activeTab === 'training' ? (
-        trainingSummary ? (
-          <TrainingOverview summary={trainingSummary} />
-        ) : (
-          <div className="bg-surface-raised border border-th-border rounded-lg p-12 text-center">
-            <Lightbulb className="w-12 h-12 text-th-text-muted/30 mx-auto mb-3" />
-            <p className="text-sm text-th-text-muted">No training data yet.</p>
-          </div>
-        )
       ) : activeTab === 'search' ? (
         searchResults.length === 0 ? (
           <div className="bg-surface-raised border border-th-border rounded-lg p-12 text-center">
@@ -720,6 +761,9 @@ export function KnowledgePanel({ projectId: propProjectId }: Props) {
             />
           ))}
         </div>
+      )}
+
+      </>
       )}
     </div>
   );

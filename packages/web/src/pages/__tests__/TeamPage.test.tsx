@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, waitFor, fireEvent, act, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { TeamPage } from '../TeamPage';
 
@@ -187,9 +187,19 @@ describe('TeamPage', () => {
     });
   });
 
+  function switchTab(tabName: string) {
+    const tabId = tabName.toLowerCase().replace(/\s.*/, '');
+    fireEvent.click(screen.getByTestId(`tab-${tabId}`));
+  }
+
   it('renders overview cards with status counts', async () => {
     setupMocks();
     renderPage();
+    await waitFor(() => {
+      expect(screen.getByText('architect')).toBeInTheDocument();
+    });
+    // Switch to Health tab
+    switchTab('Health');
     await waitFor(() => {
       expect(screen.getByTestId('card-total')).toBeInTheDocument();
     });
@@ -201,6 +211,11 @@ describe('TeamPage', () => {
   it('renders server status card', async () => {
     setupMocks();
     renderPage();
+    await waitFor(() => {
+      expect(screen.getByText('architect')).toBeInTheDocument();
+    });
+    // Switch to Health tab
+    switchTab('Health');
     await waitFor(() => {
       expect(screen.getByTestId('card-server')).toBeInTheDocument();
     });
@@ -241,6 +256,11 @@ describe('TeamPage', () => {
   it('shows mass failure alert when triggered', async () => {
     setupMocks({ health: { ...healthData, massFailurePaused: true } });
     renderPage();
+    await waitFor(() => {
+      expect(screen.getByText('architect')).toBeInTheDocument();
+    });
+    // Switch to Health tab
+    switchTab('Health');
     await waitFor(() => {
       expect(screen.getByTestId('mass-failure-alert')).toBeInTheDocument();
     });
@@ -387,6 +407,11 @@ describe('TeamPage', () => {
     setupMocks();
     renderPage();
     await waitFor(() => {
+      expect(screen.getByText('architect')).toBeInTheDocument();
+    });
+    // Switch to Health tab
+    switchTab('Health');
+    await waitFor(() => {
       expect(screen.getByTestId('stop-server-btn')).toBeInTheDocument();
     });
 
@@ -398,6 +423,11 @@ describe('TeamPage', () => {
   it('stops server on confirm', async () => {
     setupMocks();
     renderPage();
+    await waitFor(() => {
+      expect(screen.getByText('architect')).toBeInTheDocument();
+    });
+    // Switch to Health tab
+    switchTab('Health');
     await waitFor(() => {
       expect(screen.getByTestId('stop-server-btn')).toBeInTheDocument();
     });
@@ -452,6 +482,11 @@ describe('TeamPage', () => {
     setupMocks({ server: { ...serverStatus, running: false, state: 'disconnected', connected: false } });
     renderPage();
     await waitFor(() => {
+      expect(screen.getByText('architect')).toBeInTheDocument();
+    });
+    // Switch to Health tab
+    switchTab('Health');
+    await waitFor(() => {
       expect(screen.getByText('Stopped')).toBeInTheDocument();
     });
     expect(screen.queryByTestId('stop-server-btn')).not.toBeInTheDocument();
@@ -471,9 +506,14 @@ describe('TeamPage', () => {
 
   // ── Export/Import buttons ─────────────────────────────
 
-  it('shows export and import buttons in header', async () => {
+  it('shows export and import buttons in export tab', async () => {
     setupMocks();
     renderPage();
+    await waitFor(() => {
+      expect(screen.getByText('architect')).toBeInTheDocument();
+    });
+    // Switch to Export tab
+    switchTab('Export');
     await waitFor(() => {
       expect(screen.getByTestId('export-team-btn')).toBeInTheDocument();
     });
@@ -483,6 +523,11 @@ describe('TeamPage', () => {
   it('opens export dialog', async () => {
     setupMocks();
     renderPage();
+    await waitFor(() => {
+      expect(screen.getByText('architect')).toBeInTheDocument();
+    });
+    // Switch to Export tab
+    switchTab('Export');
     await waitFor(() => {
       expect(screen.getByTestId('export-team-btn')).toBeInTheDocument();
     });
@@ -496,6 +541,11 @@ describe('TeamPage', () => {
   it('triggers export download', async () => {
     setupMocks();
     renderPage();
+    await waitFor(() => {
+      expect(screen.getByText('architect')).toBeInTheDocument();
+    });
+    // Switch to Export tab
+    switchTab('Export');
     await waitFor(() => {
       expect(screen.getByTestId('export-team-btn')).toBeInTheDocument();
     });
@@ -514,6 +564,11 @@ describe('TeamPage', () => {
     setupMocks();
     renderPage();
     await waitFor(() => {
+      expect(screen.getByText('architect')).toBeInTheDocument();
+    });
+    // Switch to Export tab
+    switchTab('Export');
+    await waitFor(() => {
       expect(screen.getByTestId('import-team-btn')).toBeInTheDocument();
     });
 
@@ -526,6 +581,11 @@ describe('TeamPage', () => {
   it('shows conflict strategy selectors in import dialog', async () => {
     setupMocks();
     renderPage();
+    await waitFor(() => {
+      expect(screen.getByText('architect')).toBeInTheDocument();
+    });
+    // Switch to Export tab
+    switchTab('Export');
     await waitFor(() => {
       expect(screen.getByTestId('import-team-btn')).toBeInTheDocument();
     });

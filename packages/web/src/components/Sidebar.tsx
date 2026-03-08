@@ -1,27 +1,35 @@
 import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { Users, Settings, Crown, ListChecks, LayoutDashboard, GanttChart, Activity, MessageSquare, Network, Database, MoreHorizontal, ChevronDown, ChevronRight, Workflow, BarChart3, FolderOpen, Brain, UserCheck, Server } from 'lucide-react';
+import { Users, Settings, Crown, ListChecks, LayoutDashboard, GanttChart, Activity, MessageSquare, Network, MoreHorizontal, ChevronDown, Workflow, BarChart3, FolderOpen, Brain } from 'lucide-react';
 import { useAppStore } from '../stores/appStore';
 
-const primaryLinks = [
-  { to: '/', icon: Crown, label: 'Lead' },
-  { to: '/overview', icon: LayoutDashboard, label: 'Overview' },
-  { to: '/agents', icon: Users, label: 'Agents' },
-  { to: '/team', icon: UserCheck, label: 'Team' },
-  { to: '/tasks', icon: ListChecks, label: 'Tasks' },
-  { to: '/timeline', icon: GanttChart, label: 'Timeline' },
+// ── Grouped sidebar sections ─────────────────────────────
+
+const homeLink = { to: '/', icon: Crown, label: 'Lead' };
+
+const sessionLinks = [
   { to: '/mission-control', icon: Activity, label: 'Mission' },
-  { to: '/canvas', icon: Workflow, label: 'Canvas' },
+  { to: '/team', icon: Users, label: 'Agents' },
+  { to: '/tasks', icon: ListChecks, label: 'Tasks' },
+];
+
+const teamLinks = [
+  { to: '/projects', icon: FolderOpen, label: 'Projects' },
+  { to: '/knowledge', icon: Brain, label: 'Knowledge' },
+];
+
+const systemLinks = [
+  { to: '/analytics', icon: BarChart3, label: 'Analytics' },
+  { to: '/settings', icon: Settings, label: 'Settings' },
 ];
 
 const moreLinks = [
-  { to: '/projects', icon: FolderOpen, label: 'Projects' },
-  { to: '/knowledge', icon: Brain, label: 'Knowledge' },
-  { to: '/agent-server', icon: Server, label: 'Agent Server' },
-  { to: '/analytics', icon: BarChart3, label: 'Analytics' },
+  { to: '/overview', icon: LayoutDashboard, label: 'Overview' },
+  { to: '/agents', icon: Users, label: 'Dashboard' },
+  { to: '/timeline', icon: GanttChart, label: 'Timeline' },
+  { to: '/canvas', icon: Workflow, label: 'Canvas' },
   { to: '/groups', icon: MessageSquare, label: 'Groups' },
   { to: '/org', icon: Network, label: 'Org Chart' },
-  { to: '/data', icon: Database, label: 'Database' },
 ];
 
 const SIDEBAR_MORE_KEY = 'sidebar-more-expanded';
@@ -56,6 +64,14 @@ function NavItem({ to, icon: Icon, label, badge, end }: {
   );
 }
 
+function SectionLabel({ label }: { label: string }) {
+  return (
+    <div className="w-full px-2 pt-2 pb-0.5">
+      <span className="text-[8px] uppercase tracking-wider font-semibold text-th-text-muted/60 text-center block">{label}</span>
+    </div>
+  );
+}
+
 export function Sidebar() {
   const pendingCount = useAppStore((s) => s.pendingDecisions.length);
 
@@ -71,19 +87,31 @@ export function Sidebar() {
 
   return (
     <nav data-tour="sidebar" className="w-[66px] border-r border-th-border flex flex-col items-center py-3 gap-0.5 shrink-0">
-      {/* Primary nav */}
-      {primaryLinks.map(({ to, icon, label }) => (
+      {/* Home */}
+      <NavItem to={homeLink.to} icon={homeLink.icon} label={homeLink.label} end />
+
+      {/* Session */}
+      <SectionLabel label="Session" />
+      {sessionLinks.map(({ to, icon, label }) => (
         <NavItem
           key={to}
           to={to}
           icon={icon}
           label={label}
-          end={to === '/' || to === '/agents'}
-          badge={
-            to === '/tasks' ? (pendingCount > 0 ? pendingCount : null) :
-            null
-          }
+          badge={to === '/tasks' ? (pendingCount > 0 ? pendingCount : null) : null}
         />
+      ))}
+
+      {/* Team */}
+      <SectionLabel label="Team" />
+      {teamLinks.map(({ to, icon, label }) => (
+        <NavItem key={to} to={to} icon={icon} label={label} />
+      ))}
+
+      {/* System */}
+      <SectionLabel label="System" />
+      {systemLinks.map(({ to, icon, label }) => (
+        <NavItem key={to} to={to} icon={icon} label={label} />
       ))}
 
       {/* ··· More section */}
@@ -98,14 +126,11 @@ export function Sidebar() {
       </button>
 
       {moreOpen && moreLinks.map(({ to, icon, label }) => (
-        <NavItem key={to} to={to} icon={icon} label={label} />
+        <NavItem key={to} to={to} icon={icon} label={label} end={to === '/agents'} />
       ))}
 
       {/* Spacer */}
       <div className="flex-1" />
-
-      {/* Settings at bottom */}
-      <NavItem to="/settings" icon={Settings} label="Settings" />
     </nav>
   );
 }

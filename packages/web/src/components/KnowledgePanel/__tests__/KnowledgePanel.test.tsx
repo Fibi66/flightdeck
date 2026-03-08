@@ -3,6 +3,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 
 // Mock apiFetch
 const mockApiFetch = vi.fn();
@@ -88,13 +89,13 @@ describe('KnowledgePanel', () => {
 
   it('renders heading and loading state', () => {
     mockApiFetch.mockReturnValue(new Promise(() => {}));
-    render(<KnowledgePanel projectId="proj-1" />);
+    render(<MemoryRouter><KnowledgePanel projectId="proj-1" /></MemoryRouter>);
     expect(screen.getByText('Knowledge')).toBeTruthy();
   });
 
   it('renders entries after loading', async () => {
     setupMocks();
-    render(<KnowledgePanel projectId="proj-1" />);
+    render(<MemoryRouter><KnowledgePanel projectId="proj-1" /></MemoryRouter>);
     await waitFor(() => {
       expect(screen.getByText('agent-identity')).toBeTruthy();
       expect(screen.getByText('git-workflow')).toBeTruthy();
@@ -104,7 +105,7 @@ describe('KnowledgePanel', () => {
 
   it('shows category stat cards', async () => {
     setupMocks();
-    render(<KnowledgePanel projectId="proj-1" />);
+    render(<MemoryRouter><KnowledgePanel projectId="proj-1" /></MemoryRouter>);
     await waitFor(() => {
       // Category names appear in both stat cards and tabs
       expect(screen.getAllByText('Core').length).toBeGreaterThanOrEqual(1);
@@ -116,7 +117,7 @@ describe('KnowledgePanel', () => {
 
   it('filters by category when tab is clicked', async () => {
     setupMocks();
-    render(<KnowledgePanel projectId="proj-1" />);
+    render(<MemoryRouter><KnowledgePanel projectId="proj-1" /></MemoryRouter>);
     await waitFor(() => {
       expect(screen.getByText('agent-identity')).toBeTruthy();
     });
@@ -135,7 +136,7 @@ describe('KnowledgePanel', () => {
 
   it('expands entry to show details on click', async () => {
     setupMocks();
-    render(<KnowledgePanel projectId="proj-1" />);
+    render(<MemoryRouter><KnowledgePanel projectId="proj-1" /></MemoryRouter>);
     await waitFor(() => {
       expect(screen.getByText('agent-identity')).toBeTruthy();
     });
@@ -152,7 +153,7 @@ describe('KnowledgePanel', () => {
 
   it('shows training overview tab', async () => {
     setupMocks();
-    render(<KnowledgePanel projectId="proj-1" />);
+    render(<MemoryRouter><KnowledgePanel projectId="proj-1" /></MemoryRouter>);
     await waitFor(() => {
       expect(screen.getByText('Training')).toBeTruthy();
     });
@@ -168,7 +169,7 @@ describe('KnowledgePanel', () => {
 
   it('performs search and shows results', async () => {
     setupMocks();
-    render(<KnowledgePanel projectId="proj-1" />);
+    render(<MemoryRouter><KnowledgePanel projectId="proj-1" /></MemoryRouter>);
     await waitFor(() => {
       expect(screen.getByText('agent-identity')).toBeTruthy();
     });
@@ -186,7 +187,7 @@ describe('KnowledgePanel', () => {
 
   it('shows new entry form when Add Entry is clicked', async () => {
     setupMocks();
-    render(<KnowledgePanel projectId="proj-1" />);
+    render(<MemoryRouter><KnowledgePanel projectId="proj-1" /></MemoryRouter>);
     await waitFor(() => {
       expect(screen.getByText('Add Entry')).toBeTruthy();
     });
@@ -198,7 +199,7 @@ describe('KnowledgePanel', () => {
 
   it('creates a new entry via the form', async () => {
     setupMocks();
-    render(<KnowledgePanel projectId="proj-1" />);
+    render(<MemoryRouter><KnowledgePanel projectId="proj-1" /></MemoryRouter>);
     await waitFor(() => {
       expect(screen.getByText('Add Entry')).toBeTruthy();
     });
@@ -224,7 +225,7 @@ describe('KnowledgePanel', () => {
 
   it('shows delete confirmation for non-core entries', async () => {
     setupMocks();
-    render(<KnowledgePanel projectId="proj-1" />);
+    render(<MemoryRouter><KnowledgePanel projectId="proj-1" /></MemoryRouter>);
     await waitFor(() => {
       expect(screen.getByText('git-workflow')).toBeTruthy();
     });
@@ -244,7 +245,7 @@ describe('KnowledgePanel', () => {
 
   it('does not show delete button for core entries', async () => {
     setupMocks();
-    render(<KnowledgePanel projectId="proj-1" />);
+    render(<MemoryRouter><KnowledgePanel projectId="proj-1" /></MemoryRouter>);
     await waitFor(() => {
       expect(screen.getByText('agent-identity')).toBeTruthy();
     });
@@ -262,7 +263,7 @@ describe('KnowledgePanel', () => {
 
   it('loads projects when no projectId is provided', async () => {
     setupMocks();
-    render(<KnowledgePanel />);
+    render(<MemoryRouter><KnowledgePanel /></MemoryRouter>);
     await waitFor(() => {
       expect(mockApiFetch).toHaveBeenCalledWith('/projects');
     });
@@ -276,9 +277,47 @@ describe('KnowledgePanel', () => {
       if (path.includes('/knowledge/training')) return Promise.resolve({ totalCorrections: 0, totalFeedback: 0, positiveFeedback: 0, negativeFeedback: 0, topCorrectionTags: [], topFeedbackTags: [], agentStats: [] });
       return Promise.resolve([]);
     });
-    render(<KnowledgePanel projectId="proj-1" />);
+    render(<MemoryRouter><KnowledgePanel projectId="proj-1" /></MemoryRouter>);
     await waitFor(() => {
       expect(screen.getByText(/No knowledge entries yet/)).toBeTruthy();
     });
+  });
+
+  // ── Page tab navigation ──────────────────────────────
+
+  it('renders page tabs: Browse, Training, Raw Data', async () => {
+    setupMocks();
+    render(<MemoryRouter><KnowledgePanel projectId="proj-1" /></MemoryRouter>);
+    await waitFor(() => {
+      expect(screen.getByTestId('knowledge-page-tabs')).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('page-tab-browse')).toBeInTheDocument();
+    expect(screen.getByTestId('page-tab-training')).toBeInTheDocument();
+    expect(screen.getByTestId('page-tab-data')).toBeInTheDocument();
+  });
+
+  it('switches to Training tab', async () => {
+    setupMocks();
+    render(<MemoryRouter><KnowledgePanel projectId="proj-1" /></MemoryRouter>);
+    await waitFor(() => {
+      expect(screen.getByTestId('page-tab-training')).toBeInTheDocument();
+    });
+    // Category filter tabs are visible on Browse tab
+    expect(screen.getByText('All')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('page-tab-training'));
+    // After switching, category filter tabs should be gone (Browse hidden)
+    expect(screen.queryByText('All')).not.toBeInTheDocument();
+  });
+
+  it('switches to Raw Data tab', async () => {
+    setupMocks();
+    render(<MemoryRouter><KnowledgePanel projectId="proj-1" /></MemoryRouter>);
+    await waitFor(() => {
+      expect(screen.getByTestId('page-tab-data')).toBeInTheDocument();
+    });
+    expect(screen.getByText('All')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('page-tab-data'));
+    // Browse content gone, category filter tabs hidden
+    expect(screen.queryByText('All')).not.toBeInTheDocument();
   });
 });
