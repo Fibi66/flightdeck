@@ -207,7 +207,7 @@ export class ForkTransport implements AgentServerTransport {
           err: String(err),
         });
         // Kill the stale process to prevent zombie accumulation
-        this.killStaleProcess(existingPid);
+        await this.killStaleProcess(existingPid);
         this.cleanupPidFile();
       }
     }
@@ -860,20 +860,28 @@ export class ForkTransport implements AgentServerTransport {
     }
   }
 
-  /** Kill a stale agent server process that we couldn't reconnect to. */
-  private killStaleProcess(pid: number): void {
+  /** Kill a stale agent server process and wait for it to exit. */
+  private async killStaleProcess(pid: number): Promise<void> {
     try {
       logger.info({ module: 'fork-transport', msg: 'Killing stale agent server', pid });
       process.kill(pid, 'SIGTERM');
-      // Give it a moment to shut down gracefully
-      setTimeout(() => {
-        if (this.isProcessAlive(pid)) {
-          logger.warn({ module: 'fork-transport', msg: 'Stale process did not exit, sending SIGKILL', pid });
-          try { process.kill(pid, 'SIGKILL'); } catch { /* already dead */ }
-        }
-      }, 2000);
     } catch {
-      // Process already dead — nothing to do
+      return; // Process already dead
+    }
+
+    // Wait up to 3s for graceful exit, then SIGKILL
+    for (let i = 0; i < 30; i++) {
+      await new Promise(r => setTimeout(r, 100));
+      if (!this.isProcessAlive(pid)) return;
+    }
+
+    logger.warn({ module: 'fork-transport', msg: 'Stale process did not exit, sending SIGKILL', pid });
+    try { process.kill(pid, 'SIGKILL'); } catch { /* already dead */ }
+
+    // Brief wait for SIGKILL to take effect
+    for (let i = 0; i < 5; i++) {
+      await new Promise(r => setTimeout(r, 100));
+      if (!this.isProcessAlive(pid)) return;
     }
   }
 
