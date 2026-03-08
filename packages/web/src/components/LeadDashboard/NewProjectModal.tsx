@@ -27,9 +27,9 @@ export function NewProjectModal({ onClose }: NewProjectModalProps) {
 
   // Fetch available roles on mount
   useEffect(() => {
-    fetch('/api/roles').then((r) => r.json()).then((roles: RoleInfo[]) => {
+    apiFetch('/roles').then((roles: RoleInfo[]) => {
       setAvailableRoles(roles.filter((r) => r.id !== 'lead'));
-    }).catch(() => {});
+    }).catch(() => { /* role fetch failure is non-critical */ });
   }, []);
 
   const handleCreate = useCallback(async () => {
@@ -42,12 +42,10 @@ export function NewProjectModal({ onClose }: NewProjectModalProps) {
         const teamHint = `\n\n[Initial Team] The user has pre-selected these roles for the initial team: ${Array.from(selectedRoles).join(', ')}. Please create these agents as your first action.`;
         fullTask = (task || '') + teamHint;
       }
-      const resp = await fetch('/api/lead/start', {
+      const data = await apiFetch<{ id?: string; projectId?: string }>('/lead/start', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: newProjectName.trim(), task: fullTask, model: newProjectModel || undefined, cwd: newProjectCwd.trim() || undefined, sessionId: resumeSessionId.trim() || undefined }),
       });
-      const data = await resp.json();
       if (data.id) {
         useLeadStore.getState().addProject(data.id);
         useLeadStore.getState().selectLead(data.id);
