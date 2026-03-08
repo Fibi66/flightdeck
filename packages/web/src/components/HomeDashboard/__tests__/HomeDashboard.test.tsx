@@ -195,15 +195,25 @@ describe('HomeDashboard', () => {
       renderWithRouter(<HomeDashboard />);
       await waitFor(() => {
         expect(screen.getByTestId('home-empty')).toBeTruthy();
-        expect(screen.getByText('Welcome to Flightdeck')).toBeTruthy();
+        expect(screen.getByText('Welcome to Flightdeck!')).toBeTruthy();
       });
     });
 
-    it('shows View Projects action button', async () => {
+    it('shows Create Project action button', async () => {
       mockApiFetch.mockResolvedValue([]);
       renderWithRouter(<HomeDashboard />);
       await waitFor(() => {
-        expect(screen.getByText('View Projects')).toBeTruthy();
+        expect(screen.getByText('Create Project')).toBeTruthy();
+      });
+    });
+
+    it('shows onboarding guide cards', async () => {
+      mockApiFetch.mockResolvedValue([]);
+      renderWithRouter(<HomeDashboard />);
+      await waitFor(() => {
+        expect(screen.getByText('Projects')).toBeTruthy();
+        expect(screen.getByText('Crews')).toBeTruthy();
+        expect(screen.getByText('Tasks')).toBeTruthy();
       });
     });
   });

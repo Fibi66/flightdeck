@@ -484,11 +484,26 @@ export function HomeDashboard() {
     return (
       <div className="flex-1 overflow-auto p-6 focus:outline-none" tabIndex={0} data-testid="home-empty">
         <EmptyState
-          icon={<LayoutDashboard className="w-12 h-12" />}
-          title="Welcome to Flightdeck"
-          description="Create your first project to start delegating work to AI agents. Each project gets its own team, knowledge base, and task board."
-          action={{ label: 'View Projects', onClick: handleNavigateToProjects }}
-        />
+          icon={<Zap className="w-12 h-12" />}
+          title="Welcome to Flightdeck!"
+          description="Start your first AI crew. Each project gets its own team, knowledge base, and task board."
+          action={{ label: 'Create Project', onClick: handleNavigateToProjects }}
+        >
+          <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-lg text-left text-xs text-[rgb(var(--th-text-muted))]">
+            <div className="flex items-start gap-2 rounded-md border border-th-border p-2.5">
+              <FolderOpen size={14} className="mt-0.5 shrink-0 text-[rgb(var(--th-accent))]" />
+              <span><strong className="text-[rgb(var(--th-text))]">Projects</strong> — organize work by goal or repo</span>
+            </div>
+            <div className="flex items-start gap-2 rounded-md border border-th-border p-2.5">
+              <Users size={14} className="mt-0.5 shrink-0 text-[rgb(var(--th-accent))]" />
+              <span><strong className="text-[rgb(var(--th-text))]">Crews</strong> — assign roles like architect, developer, reviewer</span>
+            </div>
+            <div className="flex items-start gap-2 rounded-md border border-th-border p-2.5">
+              <ListChecks size={14} className="mt-0.5 shrink-0 text-[rgb(var(--th-accent))]" />
+              <span><strong className="text-[rgb(var(--th-text))]">Tasks</strong> — agents break work into a DAG and execute</span>
+            </div>
+          </div>
+        </EmptyState>
       </div>
     );
   }
