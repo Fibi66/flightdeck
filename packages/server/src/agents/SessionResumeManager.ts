@@ -62,6 +62,11 @@ function toRosterStatus(agentStatus: string): RosterStatus | null {
 
 export class SessionResumeManager {
   private disposed = false;
+  private _resumeInProgress = false;
+  private _resumeQueue: Array<{
+    resolve: (result: ResumeAllResult) => void;
+    reject: (err: Error) => void;
+  }> = [];
 
   constructor(
     private agentManager: AgentManager,
@@ -149,8 +154,38 @@ export class SessionResumeManager {
 
   // ── Resume operations ─────────────────────────────────────────────
 
-  /** Resume all persisted agents that have valid session IDs. */
+  /** Resume all persisted agents that have valid session IDs. Serialized — concurrent calls wait. */
   async resumeAll(): Promise<ResumeAllResult> {
+    if (this._resumeInProgress) {
+      logger.info({ module: 'resume', msg: 'resumeAll already in progress — queueing' });
+      return new Promise<ResumeAllResult>((resolve, reject) => {
+        this._resumeQueue.push({ resolve, reject });
+      });
+    }
+
+    this._resumeInProgress = true;
+    try {
+      const result = await this._doResumeAll();
+      return result;
+    } finally {
+      this._resumeInProgress = false;
+      this._drainQueue();
+    }
+  }
+
+  /** Drain queued resumeAll() callers by running one more pass. */
+  private _drainQueue(): void {
+    if (this._resumeQueue.length === 0) return;
+    const waiters = this._resumeQueue.splice(0);
+    // Run a fresh pass for queued callers
+    this.resumeAll().then(
+      (result) => waiters.forEach((w) => w.resolve(result)),
+      (err) => waiters.forEach((w) => w.reject(err)),
+    );
+  }
+
+  /** Internal implementation of resumeAll — no mutex guard. */
+  private async _doResumeAll(): Promise<ResumeAllResult> {
     const candidates = this.agentRosterRepo.getAllAgents()
       .filter((a) => a.status !== 'terminated');
 

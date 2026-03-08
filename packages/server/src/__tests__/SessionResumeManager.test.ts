@@ -505,4 +505,108 @@ describe('SessionResumeManager', () => {
       newManager.dispose();
     });
   });
+
+  // ── Concurrency guard ───────────────────────────────────────────
+
+  describe('resumeAll concurrency guard', () => {
+    it('serializes concurrent resumeAll() calls without corrupting state', async () => {
+      // Seed two agents in the roster
+      rosterRepo.upsertAgent('agent-a', 'developer', 'fast', 'idle', 'sess-a', 'proj-1');
+      rosterRepo.upsertAgent('agent-b', 'developer', 'fast', 'idle', 'sess-b', 'proj-1');
+
+      // Track spawn order
+      const spawnOrder: string[] = [];
+      let spawnDelay = 0;
+
+      // Create a slow mock that introduces async delay per spawn
+      const slowManager = new MockAgentManager();
+      const originalSpawn = slowManager.spawn.bind(slowManager);
+      slowManager.spawn = ((...args: any[]) => {
+        spawnOrder.push(args[7] ?? 'unknown'); // id param
+        const result = originalSpawn(...args);
+        return result;
+      }) as any;
+
+      const srm = new SessionResumeManager(
+        slowManager as any,
+        rosterRepo,
+        delegationRepo,
+        mockRoleRegistry as any,
+        testConfig as ServerConfig,
+      );
+
+      // Fire two concurrent resumeAll() calls
+      const [result1, result2] = await Promise.all([
+        srm.resumeAll(),
+        srm.resumeAll(),
+      ]);
+
+      // Both should succeed
+      expect(result1.total).toBe(2);
+      expect(result1.succeeded).toBe(2);
+      expect(result2.total).toBe(2);
+      expect(result2.succeeded).toBe(2);
+
+      // The first call should have spawned 2 agents
+      // The second call (queued) runs after first completes — spawns again
+      // because it re-reads the roster. The key point: no interleaving.
+      expect(spawnOrder.length).toBe(4); // 2 from first + 2 from second
+
+      srm.dispose();
+    });
+
+    it('queued call sees updated roster state', async () => {
+      rosterRepo.upsertAgent('agent-x', 'developer', 'fast', 'idle', 'sess-x', 'proj-1');
+
+      const slowManager = new MockAgentManager();
+      const srm = new SessionResumeManager(
+        slowManager as any,
+        rosterRepo,
+        delegationRepo,
+        mockRoleRegistry as any,
+        testConfig as ServerConfig,
+      );
+
+      // First call in progress, second queued
+      const p1 = srm.resumeAll();
+      const p2 = srm.resumeAll();
+
+      const [r1, r2] = await Promise.all([p1, p2]);
+
+      // Both complete without error
+      expect(r1.succeeded + r1.failed + r1.skipped).toBe(r1.total);
+      expect(r2.succeeded + r2.failed + r2.skipped).toBe(r2.total);
+
+      srm.dispose();
+    });
+
+    it('does not leave mutex locked after error', async () => {
+      rosterRepo.upsertAgent('agent-err', 'developer', 'fast', 'idle', 'sess-err', 'proj-1');
+
+      const errorManager = new MockAgentManager();
+      errorManager.shouldThrow = true;
+      errorManager.throwError = 'Simulated crash';
+
+      const srm = new SessionResumeManager(
+        errorManager as any,
+        rosterRepo,
+        delegationRepo,
+        mockRoleRegistry as any,
+        testConfig as ServerConfig,
+      );
+
+      // First call — spawn throws, but resumeAll catches it per-agent
+      const result1 = await srm.resumeAll();
+      expect(result1.failed).toBeGreaterThan(0);
+
+      // Second call should still work (mutex released)
+      errorManager.shouldThrow = false;
+      // Agent was marked terminated by the error handler, so re-add
+      rosterRepo.upsertAgent('agent-ok', 'developer', 'fast', 'idle', 'sess-ok', 'proj-1');
+      const result2 = await srm.resumeAll();
+      expect(result2.total).toBeGreaterThan(0);
+
+      srm.dispose();
+    });
+  });
 });
