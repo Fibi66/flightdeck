@@ -34,6 +34,9 @@ import { eq } from 'drizzle-orm';
 import { runWithAgentContext } from '../middleware/requestContext.js';
 import type { AgentServerClient } from './AgentServerClient.js';
 import { startRemoteBridge } from './ServerClientBridge.js';
+import type { SessionKnowledgeExtractor } from '../knowledge/SessionKnowledgeExtractor.js';
+import type { SessionData, SessionMessage } from '../knowledge/types.js';
+import type { KnowledgeInjector, InjectionContext } from '../knowledge/KnowledgeInjector.js';
 
 // Re-export Delegation so existing consumers (api.ts, etc.) continue to work
 export type { Delegation } from './CommandDispatcher.js';
@@ -110,6 +113,8 @@ export class AgentManager extends TypedEmitter<AgentManagerEvents> {
   private agentRosterRepository?: AgentRosterRepository;
   private activeDelegationRepository?: ActiveDelegationRepository;
   private agentServerClient?: AgentServerClient;
+  private knowledgeInjector?: KnowledgeInjector;
+  private sessionKnowledgeExtractor?: SessionKnowledgeExtractor;
   private _systemPaused = false;
   private _shuttingDown = false;
 
@@ -123,7 +128,7 @@ export class AgentManager extends TypedEmitter<AgentManagerEvents> {
     agentMemory: AgentMemory,
     chatGroupRegistry: ChatGroupRegistry,
     taskDAG: TaskDAG,
-    { maxRestarts = 3, autoRestart = true, db, deferredIssueRegistry, timerRegistry, capabilityInjector, taskTemplateRegistry, taskDecomposer, worktreeManager, costTracker, governancePipeline, messageQueueStore, agentRosterRepository, activeDelegationRepository, agentServerClient }: { maxRestarts?: number; autoRestart?: boolean; db?: Database; deferredIssueRegistry?: DeferredIssueRegistry; timerRegistry?: TimerRegistry; capabilityInjector?: CapabilityInjector; taskTemplateRegistry?: TaskTemplateRegistry; taskDecomposer?: TaskDecomposer; worktreeManager?: WorktreeManager; costTracker?: CostTracker; governancePipeline?: import('../governance/GovernancePipeline.js').GovernancePipeline; messageQueueStore?: MessageQueueStore; agentRosterRepository?: AgentRosterRepository; activeDelegationRepository?: ActiveDelegationRepository; agentServerClient?: AgentServerClient } = {},
+    { maxRestarts = 3, autoRestart = true, db, deferredIssueRegistry, timerRegistry, capabilityInjector, taskTemplateRegistry, taskDecomposer, worktreeManager, costTracker, governancePipeline, messageQueueStore, agentRosterRepository, activeDelegationRepository, agentServerClient, knowledgeInjector }: { maxRestarts?: number; autoRestart?: boolean; db?: Database; deferredIssueRegistry?: DeferredIssueRegistry; timerRegistry?: TimerRegistry; capabilityInjector?: CapabilityInjector; taskTemplateRegistry?: TaskTemplateRegistry; taskDecomposer?: TaskDecomposer; worktreeManager?: WorktreeManager; costTracker?: CostTracker; governancePipeline?: import('../governance/GovernancePipeline.js').GovernancePipeline; messageQueueStore?: MessageQueueStore; agentRosterRepository?: AgentRosterRepository; activeDelegationRepository?: ActiveDelegationRepository; agentServerClient?: AgentServerClient; knowledgeInjector?: KnowledgeInjector } = {},
   ) {
     super();
     this.config = config;
@@ -144,6 +149,7 @@ export class AgentManager extends TypedEmitter<AgentManagerEvents> {
     this.agentRosterRepository = agentRosterRepository;
     this.activeDelegationRepository = activeDelegationRepository;
     this.agentServerClient = agentServerClient;
+    this.knowledgeInjector = knowledgeInjector;
     this.db = db;
     if (db) this.conversationStore = new ConversationStore(db);
     this.maxConcurrent = config.maxConcurrentAgents;
@@ -243,6 +249,10 @@ export class AgentManager extends TypedEmitter<AgentManagerEvents> {
     this.projectRegistry = registry;
   }
 
+  setSessionKnowledgeExtractor(extractor: SessionKnowledgeExtractor): void {
+    this.sessionKnowledgeExtractor = extractor;
+  }
+
   /**
    * Resolve the effective model for a role based on project model config.
    *
@@ -327,6 +337,29 @@ export class AgentManager extends TypedEmitter<AgentManagerEvents> {
     if (role.id === 'lead') {
       const roleList = this.roleRegistry.generateRoleList();
       effectiveRole = { ...role, systemPrompt: role.systemPrompt.replace('{{ROLE_LIST}}', roleList) };
+    }
+
+    // Inject relevant project knowledge into the agent's system prompt
+    if (this.knowledgeInjector && effectiveProjectId) {
+      const injectionCtx: InjectionContext = {
+        task: task || undefined,
+        role: role.id,
+      };
+      const injection = this.knowledgeInjector.injectKnowledge(effectiveProjectId, injectionCtx);
+      if (injection.text) {
+        effectiveRole = {
+          ...effectiveRole,
+          systemPrompt: `${effectiveRole.systemPrompt}\n\n${injection.text}`,
+        };
+        logger.info({
+          module: 'knowledge',
+          msg: 'Injected project knowledge into agent prompt',
+          projectId: effectiveProjectId,
+          role: role.id,
+          entriesIncluded: injection.entriesIncluded,
+          totalTokens: injection.totalTokens,
+        });
+      }
     }
 
     const agent = new Agent(effectiveRole, this.config, task, parentId, peers, autopilot, id);
@@ -553,6 +586,11 @@ export class AgentManager extends TypedEmitter<AgentManagerEvents> {
         const status = (code !== null && code !== 0) ? 'crashed' : 'completed';
         this.projectRegistry.endSession(agent.id, status);
         logger.info({ module: 'project', msg: 'Session ended', status });
+      }
+
+      // Extract knowledge from completed sessions (all agents, not just leads)
+      if (this.sessionKnowledgeExtractor && agent.projectId) {
+        this.extractSessionKnowledge(agent);
       }
 
       // Clean up dedup tracking after a delay
@@ -1070,6 +1108,54 @@ export class AgentManager extends TypedEmitter<AgentManagerEvents> {
   flushAllMessages(): void {
     for (const agentId of this.messageBuffers.keys()) {
       this.flushAgentMessage(agentId);
+    }
+  }
+
+  /**
+   * Extract knowledge from a completed agent session and store it.
+   * Gathers conversation history and builds SessionData for the extractor.
+   */
+  private extractSessionKnowledge(agent: Agent): void {
+    if (!this.sessionKnowledgeExtractor || !agent.projectId) return;
+
+    try {
+      const messages = this.getMessageHistory(agent.id, 200);
+      const sessionMessages: SessionMessage[] = messages.map((m) => ({
+        sender: m.sender,
+        content: m.content,
+        timestamp: m.timestamp,
+      }));
+
+      // Skip extraction for sessions with very few messages (likely aborted)
+      if (sessionMessages.length < 3) {
+        logger.debug({ module: 'knowledge', msg: 'Skipping extraction — too few messages', agentId: agent.id, messageCount: sessionMessages.length });
+        return;
+      }
+
+      const sessionData: SessionData = {
+        sessionId: agent.sessionId || agent.id,
+        projectId: agent.projectId,
+        task: agent.task,
+        role: agent.role.id,
+        agentId: agent.id,
+        messages: sessionMessages,
+      };
+
+      const result = this.sessionKnowledgeExtractor.extractFromSession(sessionData);
+      if (result.entriesStored > 0) {
+        this.activityLedger.log(
+          agent.id, agent.role.id, 'knowledge_extracted',
+          `Extracted ${result.entriesStored} knowledge entries (${result.decisions.length} decisions, ${result.patterns.length} patterns, ${result.errors.length} errors)`,
+          { entriesStored: result.entriesStored }, agent.projectId,
+        );
+      }
+    } catch (err) {
+      logger.warn({
+        module: 'knowledge',
+        msg: 'Session knowledge extraction failed',
+        agentId: agent.id,
+        err: (err as Error).message,
+      });
     }
   }
 
