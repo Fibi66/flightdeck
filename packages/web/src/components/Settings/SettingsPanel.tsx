@@ -11,6 +11,7 @@ import { RecoverySettingsPanel, RecoveryMetricsCard } from '../Recovery';
 import { NotificationPreferencesPanel, NotificationActivityLog } from '../Notifications';
 import { ConflictSettingsPanel } from '../Conflicts';
 import { DataManagement } from './DataManagement';
+import { TelegramSettings } from './TelegramSettings';
 
 interface Props {
   api: any;
@@ -188,6 +189,11 @@ export function SettingsPanel({ api }: Props) {
 
       {/* Providers */}
       <ProvidersSection />
+
+      {/* Telegram Integration */}
+      <section className="bg-surface-raised border border-th-border rounded-lg p-4 mb-6">
+        <TelegramSettings />
+      </section>
 
       {/* Dashboard Layout */}
       <DashboardCustomizer />
