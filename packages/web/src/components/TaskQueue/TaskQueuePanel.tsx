@@ -135,7 +135,13 @@ function DagPanel({
   const [globalDagStatus, setGlobalDagStatus] = useState<DagStatus | null>(null);
   const [globalHasMore, setGlobalHasMore] = useState(false);
   const [globalOffset, setGlobalOffset] = useState(0);
-  const [showArchived, setShowArchived] = useState(false);
+  const [showArchived, setShowArchived] = useState(() => {
+    try { return localStorage.getItem('kanban-show-archived') === 'true'; } catch { return false; }
+  });
+  const handleShowArchivedChange = useCallback((v: boolean) => {
+    setShowArchived(v);
+    try { localStorage.setItem('kanban-show-archived', String(v)); } catch { /* ignore */ }
+  }, []);
   const GLOBAL_PAGE_SIZE = 200;
   const [projectNameMap, setProjectNameMap] = useState<Map<string, string>>(new Map());
   const hasDeps = dagStatus?.tasks.some((t) => t.dependsOn.length > 0) ?? false;
@@ -323,7 +329,7 @@ function DagPanel({
             hasMore={kanbanScope === 'global' ? globalHasMore : false}
             onLoadMore={kanbanScope === 'global' ? loadMoreGlobalTasks : undefined}
             showArchived={showArchived}
-            onShowArchivedChange={setShowArchived}
+            onShowArchivedChange={handleShowArchivedChange}
           />
         </div>
       ) : effectiveView === 'graph' ? (
