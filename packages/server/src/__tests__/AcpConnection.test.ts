@@ -84,6 +84,7 @@ describe('AcpConnection', () => {
 
       const conn = new AcpConnection({ autopilot: true });
       const startPromise = conn.start({ cliCommand: 'copilot', cwd: '/tmp' });
+      await new Promise((r) => setTimeout(r, 50));
 
       expect(mockSpawn).toHaveBeenCalledWith(
         'copilot',
@@ -102,6 +103,7 @@ describe('AcpConnection', () => {
 
       const conn = new AcpConnection({ autopilot: true });
       const startPromise = conn.start({ cliCommand: 'copilot', cwd: '/tmp' });
+      await new Promise((r) => setTimeout(r, 50));
 
       if (process.platform !== 'win32') {
         expect(mockExecFileSync).toHaveBeenCalledWith(
@@ -127,6 +129,7 @@ describe('AcpConnection', () => {
       conn.on('exit', (code: number) => exitEvents.push(code));
 
       const startPromise = conn.start({ cliCommand: 'copilot', cwd: '/tmp' });
+      await new Promise((r) => setTimeout(r, 50));
 
       const spawnError = Object.assign(new Error('spawn copilot ENOENT'), { code: 'ENOENT' });
       fakeProc.emit('error', spawnError);
@@ -151,6 +154,7 @@ describe('AcpConnection', () => {
 
       const conn = new AcpConnection({ autopilot: true });
       const startPromise = conn.start({ cliCommand: 'copilot', cwd: '/tmp' });
+      await new Promise((r) => setTimeout(r, 50));
 
       const spawnError = Object.assign(new Error('spawn EACCES'), { code: 'EACCES' });
       expect(() => fakeProc.emit('error', spawnError)).not.toThrow();
@@ -165,6 +169,7 @@ describe('AcpConnection', () => {
 
       const conn = new AcpConnection({ autopilot: true });
       const startPromise = conn.start({ cliCommand: 'copilot', cwd: '/tmp' });
+      await new Promise((r) => setTimeout(r, 50));
 
       fakeProc.emit('error', new Error('spawn failed'));
 
@@ -182,6 +187,7 @@ describe('AcpConnection', () => {
       conn.on('exit', (code: number | null) => exitEvents.push(code));
 
       const startPromise = conn.start({ cliCommand: 'copilot', cwd: '/tmp' });
+      await new Promise((r) => setTimeout(r, 50));
 
       const spawnError = Object.assign(new Error('spawn ENOENT'), { code: 'ENOENT' });
       fakeProc.emit('error', spawnError);
@@ -203,6 +209,7 @@ describe('AcpConnection', () => {
       conn.on('exit', (code: number) => exitEvents.push(code));
 
       const startPromise = conn.start({ cliCommand: 'copilot', cwd: '/tmp' });
+      await new Promise((r) => setTimeout(r, 50));
 
       // Simulate signal kill: code=null, signal='SIGTERM'
       fakeProc.emit('exit', null, 'SIGTERM');
@@ -229,6 +236,7 @@ describe('AcpConnection', () => {
       conn.on('exit', (code: number) => exitEvents.push(code));
 
       const startPromise = conn.start({ cliCommand: 'copilot', cwd: '/tmp' });
+      await new Promise((r) => setTimeout(r, 50));
 
       fakeProc.emit('exit', 0, null);
 

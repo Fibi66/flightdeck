@@ -171,18 +171,45 @@ export class SkillsLoader {
    * Format skills for injection into agent prompts.
    * Returns a formatted text block listing all skills with their descriptions
    * and full content, suitable for the KnowledgeInjector.
+   *
+   * @param tokenBudget Max approximate tokens (chars/4). Default 800. Skills
+   *   that exceed the remaining budget are truncated or excluded.
    */
-  formatForInjection(): string {
+  formatForInjection(tokenBudget = 800): string {
     if (!this.loaded) {
       this.loadAll();
     }
     if (this.skills.length === 0) return '';
 
-    const sections = this.skills.map(skill =>
-      `### ${skill.name}\n${skill.description}\n\n${skill.content}`,
-    );
+    const header = '## Project Skills\n\n';
+    const separator = '\n\n---\n\n';
+    let remaining = tokenBudget * 4; // Convert tokens to approximate chars
+    remaining -= header.length;
+    if (remaining <= 0) return '';
 
-    return `## Project Skills\n\n${sections.join('\n\n---\n\n')}`;
+    const sections: string[] = [];
+
+    for (const skill of this.skills) {
+      const full = `### ${skill.name}\n${skill.description}\n\n${skill.content}`;
+
+      if (full.length <= remaining) {
+        // Full skill fits within budget
+        sections.push(full);
+        remaining -= full.length + separator.length;
+      } else {
+        // Try truncated version: name + description only
+        const truncated = `### ${skill.name}\n${skill.description}\n\n[truncated — full content exceeds token budget]`;
+        if (truncated.length <= remaining) {
+          sections.push(truncated);
+          remaining -= truncated.length + separator.length;
+        }
+        // Else: skip entirely — even truncated version doesn't fit
+        break; // Budget exhausted, no point checking remaining skills
+      }
+    }
+
+    if (sections.length === 0) return '';
+    return `${header}${sections.join(separator)}`;
   }
 
   /** Number of successfully loaded skills. */
