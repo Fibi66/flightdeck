@@ -207,6 +207,7 @@ function AddTaskForm({ projectId, onCreated, onClose }: AddTaskFormProps) {
       <input
         autoFocus
         required
+        aria-label="Task title"
         placeholder="Title *"
         value={title}
         onChange={e => setTitle(e.target.value)}
@@ -214,12 +215,14 @@ function AddTaskForm({ projectId, onCreated, onClose }: AddTaskFormProps) {
       />
       <input
         required
+        aria-label="Task role"
         placeholder="Role *"
         value={role}
         onChange={e => setRole(e.target.value)}
         className="w-full text-xs bg-th-bg-muted border border-th-border rounded px-2 py-1.5 text-th-text placeholder:text-th-text-muted focus:outline-none focus:border-blue-500/50"
       />
       <textarea
+        aria-label="Task description"
         placeholder="Description (optional)"
         value={description}
         onChange={e => setDescription(e.target.value)}
@@ -388,7 +391,7 @@ function TaskCard({ task, allTasks, isDragOverlay, projectId, onTaskUpdated, sho
         {task.assignedAgentId && (
           <span className="flex items-center gap-0.5" data-testid="agent-badge">
             <User size={9} />
-            {truncate(task.assignedAgentId, 8)}
+            {truncate(task.assignedAgentId, 4)}
           </span>
         )}
         {statusTime && (
@@ -399,9 +402,9 @@ function TaskCard({ task, allTasks, isDragOverlay, projectId, onTaskUpdated, sho
       </div>
 
       {/* Failure reason (shown inline for failed tasks) */}
-      {task.dagStatus === 'failed' && (task as any).failureReason && (
+      {task.dagStatus === 'failed' && task.failureReason && (
         <div className="mt-1.5 text-[10px] text-red-400 bg-red-500/10 px-1.5 py-1 rounded" data-testid="failure-reason">
-          {truncate((task as any).failureReason, 80)}
+          {truncate(task.failureReason, 80)}
         </div>
       )}
 
@@ -565,7 +568,7 @@ function KanbanColumn({ column, tasks, allTasks, collapsed, onToggleCollapse, is
       {/* Task cards */}
       {!collapsed && (
         <SortableContext items={taskIds} strategy={verticalListSortingStrategy}>
-          <div className="p-2 space-y-2 overflow-y-auto flex-1" style={{ maxHeight: 480 }}>
+          <div className="p-2 space-y-2 overflow-y-auto flex-1 max-h-[calc(100vh-220px)]">
             {tasks.length === 0 ? (
               <div className="text-[10px] text-th-text-muted text-center py-4 italic">
                 No tasks
@@ -651,6 +654,7 @@ function FilterBar({ filters, onChange, availableRoles, availablePriorities, ava
           value={filters.search}
           onChange={(e) => onChange({ ...filters, search: e.target.value })}
           placeholder="Search tasks…"
+          aria-label="Search tasks"
           className="bg-transparent text-[11px] text-th-text outline-none w-full placeholder:text-th-text-muted"
           data-testid="filter-search"
         />
@@ -936,10 +940,11 @@ function KanbanBoard({ dagStatus, projectId, onTaskUpdated, scope = 'project', p
       if (oldIndex === -1 || newIndex === -1) return;
 
       const reordered = arrayMove(columnTasks, oldIndex, newIndex);
-      // Calculate new priority: higher index in the reordered array = lower priority.
-      // The top card gets the highest priority number.
-      const totalItems = reordered.length;
-      const newPriority = totalItems - reordered.findIndex(t => t.id === String(active.id));
+      // Fractional priority: midpoint between neighbors to avoid drift
+      const draggedIdx = reordered.findIndex(t => t.id === String(active.id));
+      const above = draggedIdx > 0 ? reordered[draggedIdx - 1].priority : reordered[draggedIdx].priority + 1;
+      const below = draggedIdx < reordered.length - 1 ? reordered[draggedIdx + 1].priority : 0;
+      const newPriority = Math.round(((above + below) / 2) * 100) / 100;
 
       apiFetch(`/projects/${projectId}/tasks/${draggedTask.id}/priority`, {
         method: 'PATCH',

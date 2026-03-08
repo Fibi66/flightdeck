@@ -497,8 +497,8 @@ describe('KanbanBoard', () => {
 
       fireEvent.click(screen.getByTestId('add-task-button'));
 
-      const titleInput = screen.getByPlaceholderText('Title *');
-      const roleInput = screen.getByPlaceholderText('Role *');
+      const titleInput = screen.getByRole('textbox', { name: 'Task title' });
+      const roleInput = screen.getByRole('textbox', { name: 'Task role' });
       fireEvent.change(titleInput, { target: { value: 'New Feature' } });
       fireEvent.change(roleInput, { target: { value: 'developer' } });
       fireEvent.submit(screen.getByTestId('add-task-form'));
@@ -520,9 +520,9 @@ describe('KanbanBoard', () => {
       render(<KanbanBoard dagStatus={makeDagStatus(tasks)} projectId="proj-1" />);
 
       fireEvent.click(screen.getByTestId('add-task-button'));
-      fireEvent.change(screen.getByPlaceholderText('Title *'), { target: { value: 'Fix Bug' } });
-      fireEvent.change(screen.getByPlaceholderText('Role *'), { target: { value: 'developer' } });
-      fireEvent.change(screen.getByPlaceholderText('Description (optional)'), { target: { value: 'Memory leak in parser' } });
+      fireEvent.change(screen.getByRole('textbox', { name: 'Task title' }), { target: { value: 'Fix Bug' } });
+      fireEvent.change(screen.getByRole('textbox', { name: 'Task role' }), { target: { value: 'developer' } });
+      fireEvent.change(screen.getByRole('textbox', { name: 'Task description' }), { target: { value: 'Memory leak in parser' } });
       fireEvent.submit(screen.getByTestId('add-task-form'));
 
       await waitFor(() => {
@@ -545,7 +545,7 @@ describe('KanbanBoard', () => {
       expect(submitBtn).toBeDisabled();
 
       // Fill only title — still disabled
-      fireEvent.change(screen.getByPlaceholderText('Title *'), { target: { value: 'Task' } });
+      fireEvent.change(screen.getByRole('textbox', { name: 'Task title' }), { target: { value: 'Task' } });
       expect(submitBtn).toBeDisabled();
     });
 
@@ -555,8 +555,8 @@ describe('KanbanBoard', () => {
       render(<KanbanBoard dagStatus={makeDagStatus(tasks)} projectId="proj-1" />);
 
       fireEvent.click(screen.getByTestId('add-task-button'));
-      fireEvent.change(screen.getByPlaceholderText('Title *'), { target: { value: 'Task' } });
-      fireEvent.change(screen.getByPlaceholderText('Role *'), { target: { value: 'dev' } });
+      fireEvent.change(screen.getByRole('textbox', { name: 'Task title' }), { target: { value: 'Task' } });
+      fireEvent.change(screen.getByRole('textbox', { name: 'Task role' }), { target: { value: 'dev' } });
       fireEvent.submit(screen.getByTestId('add-task-form'));
 
       await waitFor(() => {
@@ -731,6 +731,20 @@ describe('KanbanBoard', () => {
 
       expect(screen.getByText('High Prio')).toBeTruthy();
       expect(screen.queryByText('Low Prio')).toBeNull();
+    });
+  });
+
+  // ── Add Task in Empty State ───────────────────────────────────
+
+  describe('Add Task form accessibility', () => {
+    it('form inputs have accessible labels for screen readers', () => {
+      const tasks = [makeTask({ dagStatus: 'running', id: 'r1' })];
+      render(<KanbanBoard dagStatus={makeDagStatus(tasks)} projectId="proj-1" />);
+      fireEvent.click(screen.getByTestId('add-task-button'));
+
+      expect(screen.getByRole('textbox', { name: 'Task title' })).toBeTruthy();
+      expect(screen.getByRole('textbox', { name: 'Task role' })).toBeTruthy();
+      expect(screen.getByRole('textbox', { name: 'Task description' })).toBeTruthy();
     });
   });
 
