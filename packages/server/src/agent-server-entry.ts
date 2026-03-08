@@ -13,8 +13,12 @@
  *  5. Start listener → accept orchestrator connections
  *  6. Signal 'ready' to parent via IPC
  *
- * The agent server survives orchestrator restarts (detached: true).
- * On shutdown (SIGTERM), it gracefully stops all agents and closes DB.
+ * Survival strategy:
+ *  - tsx watch hot-reload: parent dies → IPC disconnects → grace period
+ *    starts (10s) → new parent reconnects within ~2s → timer cancelled
+ *  - Manual Ctrl+C: parent dies → IPC disconnects → grace period starts
+ *    → no reconnection → agent server shuts down after 10s
+ *  - Explicit SIGTERM: immediate graceful shutdown
  *
  * Design: docs/design/agent-server-architecture.md
  */
@@ -32,6 +36,13 @@ import { logger } from './utils/logger.js';
 
 const stateDir = process.env.FLIGHTDECK_STATE_DIR ?? process.cwd();
 const dbPath = process.env.FLIGHTDECK_DB_PATH ?? 'flightdeck.db';
+
+/** Grace period (ms) after parent disconnect before self-terminating.
+ *  tsx hot-reload reconnects in ~1-2s; manual Ctrl+C never reconnects. */
+const ORPHAN_GRACE_PERIOD_MS = 10_000;
+
+/** Interval (ms) for checking if we've been reparented to PID 1 (orphaned). */
+const PARENT_CHECK_INTERVAL_MS = 5_000;
 
 // ── Persistence bridge ──────────────────────────────────────────────
 // AgentServer's interface uses simple (agentId, role, model) params,
@@ -68,7 +79,8 @@ function createPersistenceBridge(
 // ── Bootstrap ───────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
-  logger.info({ module: 'agent-server-entry', msg: 'Starting agent server process', pid: process.pid });
+  const originalParentPid = process.ppid;
+  logger.info({ module: 'agent-server-entry', msg: 'Starting agent server process', pid: process.pid, ppid: originalParentPid });
 
   // 1. Create ForkListener — IPC from parent + TCP for reconnection
   const listener = new ForkListener({
@@ -131,14 +143,18 @@ async function main(): Promise<void> {
 
   let shuttingDown = false;
 
-  async function shutdown(signal: string): Promise<void> {
+  async function shutdown(reason: string): Promise<void> {
     if (shuttingDown) return;
     shuttingDown = true;
 
-    logger.info({ module: 'agent-server-entry', msg: `${signal} received, shutting down`, pid: process.pid });
+    // Cancel any pending timers
+    if (orphanGraceTimer) clearTimeout(orphanGraceTimer);
+    if (parentCheckTimer) clearInterval(parentCheckTimer);
+
+    logger.info({ module: 'agent-server-entry', msg: `Shutting down: ${reason}`, pid: process.pid });
 
     try {
-      await server.stop({ reason: signal, timeoutMs: 10_000 });
+      await server.stop({ reason, timeoutMs: 10_000 });
     } catch (err) {
       logger.warn({ module: 'agent-server-entry', msg: 'Error during server stop', err: String(err) });
     }
@@ -161,13 +177,83 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
+  // ── Signal handling ─────────────────────────────────────────────
+
+  // SIGTERM: explicit shutdown request — always honor
   process.on('SIGTERM', () => shutdown('SIGTERM'));
+
+  // SIGINT: propagated from parent Ctrl+C — immediate shutdown
   process.on('SIGINT', () => shutdown('SIGINT'));
 
-  // If parent disconnects IPC, keep running (detached mode)
-  process.on('disconnect', () => {
-    logger.info({ module: 'agent-server-entry', msg: 'Parent IPC disconnected — continuing as orphan' });
+  // ── Orphan detection: grace period on parent disconnect ─────────
+  // When the parent IPC channel closes, start a grace period.
+  // If a new orchestrator reconnects via TCP within the window
+  // (tsx hot-reload), cancel the timer and stay alive.
+  // If nobody reconnects (manual Ctrl+C), shut down.
+
+  let orphanGraceTimer: ReturnType<typeof setTimeout> | null = null;
+  let parentCheckTimer: ReturnType<typeof setInterval> | null = null;
+
+  /** Cancel the orphan grace timer (called when a new connection arrives). */
+  function cancelOrphanGrace(): void {
+    if (orphanGraceTimer) {
+      clearTimeout(orphanGraceTimer);
+      orphanGraceTimer = null;
+      logger.info({ module: 'agent-server-entry', msg: 'Orphan grace period cancelled — new connection' });
+    }
+  }
+
+  // Listen for new TCP connections that cancel the grace period.
+  // The AgentServer emits connections via the listener — hook in.
+  listener.onConnection(() => {
+    cancelOrphanGrace();
   });
+
+  process.on('disconnect', () => {
+    logger.info({
+      module: 'agent-server-entry',
+      msg: `Parent IPC disconnected — starting ${ORPHAN_GRACE_PERIOD_MS / 1000}s grace period`,
+    });
+
+    orphanGraceTimer = setTimeout(() => {
+      logger.info({ module: 'agent-server-entry', msg: 'Grace period expired — no reconnection, shutting down' });
+      shutdown('orphan-grace-expired');
+    }, ORPHAN_GRACE_PERIOD_MS);
+  });
+
+  // ── Parent PID monitoring ─────────────────────────────────────
+  // Detect if we've been reparented to PID 1 (init) — our original
+  // parent died without the IPC disconnect event firing (crash, SIGKILL).
+  // This is a safety net for the grace period above.
+
+  parentCheckTimer = setInterval(() => {
+    if (process.ppid !== originalParentPid && process.ppid === 1) {
+      logger.info({
+        module: 'agent-server-entry',
+        msg: 'Detected reparent to PID 1 — parent crashed',
+        originalPpid: originalParentPid,
+      });
+
+      // Start grace period if not already running
+      if (!orphanGraceTimer && !shuttingDown) {
+        orphanGraceTimer = setTimeout(() => {
+          logger.info({ module: 'agent-server-entry', msg: 'Grace period expired after parent crash — shutting down' });
+          shutdown('parent-crash-grace-expired');
+        }, ORPHAN_GRACE_PERIOD_MS);
+      }
+
+      // Stop checking — we've detected the orphan state
+      if (parentCheckTimer) {
+        clearInterval(parentCheckTimer);
+        parentCheckTimer = null;
+      }
+    }
+  }, PARENT_CHECK_INTERVAL_MS);
+
+  // Don't let the parent check timer keep the process alive
+  if (parentCheckTimer && typeof parentCheckTimer === 'object' && 'unref' in parentCheckTimer) {
+    (parentCheckTimer as NodeJS.Timeout).unref();
+  }
 }
 
 main().catch((err) => {

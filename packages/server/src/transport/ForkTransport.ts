@@ -206,6 +206,8 @@ export class ForkTransport implements AgentServerTransport {
           pid: existingPid,
           err: String(err),
         });
+        // Kill the stale process to prevent zombie accumulation
+        this.killStaleProcess(existingPid);
         this.cleanupPidFile();
       }
     }
@@ -855,6 +857,23 @@ export class ForkTransport implements AgentServerTransport {
       return true;
     } catch {
       return false;
+    }
+  }
+
+  /** Kill a stale agent server process that we couldn't reconnect to. */
+  private killStaleProcess(pid: number): void {
+    try {
+      logger.info({ module: 'fork-transport', msg: 'Killing stale agent server', pid });
+      process.kill(pid, 'SIGTERM');
+      // Give it a moment to shut down gracefully
+      setTimeout(() => {
+        if (this.isProcessAlive(pid)) {
+          logger.warn({ module: 'fork-transport', msg: 'Stale process did not exit, sending SIGKILL', pid });
+          try { process.kill(pid, 'SIGKILL'); } catch { /* already dead */ }
+        }
+      }, 2000);
+    } catch {
+      // Process already dead — nothing to do
     }
   }
 
