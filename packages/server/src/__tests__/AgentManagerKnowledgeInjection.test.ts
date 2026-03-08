@@ -209,3 +209,98 @@ describe('AgentManager knowledge injection', () => {
     expect(baseRole.systemPrompt).toBe(originalPrompt);
   });
 });
+
+// ── Skills Injection Tests ──────────────────────────────────────────
+
+interface MockSkillsLoader {
+  formatForInjection(): string;
+  count: number;
+}
+
+/**
+ * Mirror of the skills injection block in AgentManager.spawn().
+ * Appends skills content to effectiveRole.systemPrompt when loader is present.
+ */
+function applySkillsInjection(
+  role: MockRole,
+  skillsLoader: MockSkillsLoader | undefined,
+): MockRole {
+  let effectiveRole = { ...role };
+
+  if (skillsLoader) {
+    const skillsBlock = skillsLoader.formatForInjection();
+    if (skillsBlock) {
+      effectiveRole = {
+        ...effectiveRole,
+        systemPrompt: `${effectiveRole.systemPrompt}\n\n${skillsBlock}`,
+      };
+    }
+  }
+
+  return effectiveRole;
+}
+
+describe('AgentManager skills injection', () => {
+  const baseRole: MockRole = {
+    id: 'developer',
+    name: 'Developer',
+    systemPrompt: 'You are a skilled developer.',
+  };
+
+  it('injects skills into system prompt when loader has skills', () => {
+    const loader: MockSkillsLoader = {
+      formatForInjection: vi.fn().mockReturnValue('## Project Skills\n\n### testing-conventions\nAlways use vitest.\n\nRun tests with `npm test`.'),
+      count: 1,
+    };
+
+    const result = applySkillsInjection(baseRole, loader);
+
+    expect(result.systemPrompt).toContain('You are a skilled developer.');
+    expect(result.systemPrompt).toContain('## Project Skills');
+    expect(result.systemPrompt).toContain('testing-conventions');
+    expect(loader.formatForInjection).toHaveBeenCalled();
+  });
+
+  it('skips injection when no skills loader is configured', () => {
+    const result = applySkillsInjection(baseRole, undefined);
+    expect(result.systemPrompt).toBe('You are a skilled developer.');
+  });
+
+  it('skips injection when loader returns empty string', () => {
+    const loader: MockSkillsLoader = {
+      formatForInjection: vi.fn().mockReturnValue(''),
+      count: 0,
+    };
+
+    const result = applySkillsInjection(baseRole, loader);
+    expect(result.systemPrompt).toBe('You are a skilled developer.');
+  });
+
+  it('appends skills after existing prompt content (including knowledge)', () => {
+    const promptWithKnowledge = 'You are a skilled developer.\n\n<project-context>knowledge</project-context>';
+    const roleWithKnowledge: MockRole = { ...baseRole, systemPrompt: promptWithKnowledge };
+
+    const loader: MockSkillsLoader = {
+      formatForInjection: vi.fn().mockReturnValue('## Project Skills\n\n### my-skill\nSkill content'),
+      count: 1,
+    };
+
+    const result = applySkillsInjection(roleWithKnowledge, loader);
+
+    const parts = result.systemPrompt.split('\n\n');
+    expect(parts[0]).toBe('You are a skilled developer.');
+    expect(parts[1]).toContain('<project-context>');
+    expect(parts[2]).toContain('## Project Skills');
+  });
+
+  it('preserves original role object (no mutation)', () => {
+    const loader: MockSkillsLoader = {
+      formatForInjection: vi.fn().mockReturnValue('## Project Skills\n\nContent'),
+      count: 1,
+    };
+
+    const originalPrompt = baseRole.systemPrompt;
+    applySkillsInjection(baseRole, loader);
+    expect(baseRole.systemPrompt).toBe(originalPrompt);
+  });
+});
