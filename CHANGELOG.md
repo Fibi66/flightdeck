@@ -130,6 +130,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`PATCH /tasks/:id/priority`** — Priority reordering.
 - **`POST /tasks`** — Create tasks from the Kanban board.
 
+#### Project Design Tab
+
+- **File browser + Markdown preview** — Browse project files and preview Markdown documents directly in the project view.
+
+#### Navigation & UX
+
+- **Navigation store** — Zustand-based navigation state management tracking active project, tab, history, and badge counts.
+- **Recent projects** — Quick-access list of recent projects in the sidebar.
+- **New Project button** — Create projects directly from the sidebar.
+- **Breadcrumb navigation** — Contextual breadcrumb trail showing current location within the project hierarchy.
+- **Tab state persistence** — Active tab selection saved per project in localStorage; restored on return.
+- **Keyboard shortcuts** — Alt+1–5 to switch between project tabs.
+- **Page transition animations** — Smooth transitions between pages; respects `prefers-reduced-motion`.
+- **Mobile tab layout** — Touch-scrollable tab bar for narrow viewports.
+- **Home empty state** — Onboarding guide shown when no projects exist.
+
+#### Task Management
+
+- **In-review status** — New `in_review` task status with valid state transitions (running→in_review→done).
+- **Task override tracking** — `overridden_by` column in DAG tasks links superseding tasks to their predecessors.
+- **Soft-delete on RESET_DAG** — Tasks archived with `archivedAt` timestamp instead of deleted. Show/hide archived toggle in KanbanBoard. Restore via `PATCH /tasks/:leadId/:taskId/unarchive`.
+
+#### Knowledge & Skills
+
+- **CollectiveMemory write path** — `remember()` and `recall()` wired into agent lifecycle for persistent cross-session memory.
+- **Skills hot-reload** — `fs.watch` on `.github/skills/` directory; new or updated skills injected without server restart.
+- **PlaybookLibrary** — Apply playbook templates directly to project creation API.
+
+#### Infrastructure
+
+- **Telegram rate limiting** — Challenge verification endpoint rate-limited to 5 requests per minute per chatId.
+- **Locale-aware dates** — `Intl.RelativeTimeFormat` for localized relative timestamps throughout the UI.
+- **Token usage chart** — Restored token economics visualization on the project overview.
+
 ### Changed
 
 - **Daemon removal** — Removed ~7,400 lines of unnecessary daemon code after agent server migration. Daemon concept replaced by two-process agent server architecture.
@@ -139,6 +173,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **IntegrationAgent → IntegrationRouter** — Renamed to reflect its routing responsibility (not an agent).
 - **`formatRelativeTime` extraction** — Moved from inline implementations to a shared utility used across all timestamp displays.
 - **PulseStrip cleanup** — Removed pending decisions badge (moved to AttentionBar).
+- **LeadDashboard decomposition** — Extracted 5 modules from 1,965-line monolith (→795 LOC): `ChatRenderers`, `InputComposer`, `SidebarTabs`, `DecisionPanel`, `ChatMessages`.
+- **Locale-aware relative dates** — Replaced manual relative time strings with `Intl.RelativeTimeFormat` for proper localization.
+- **0 TypeScript errors** — Both `packages/server` and `packages/web` compile cleanly with `tsc --noEmit`.
 
 ### Fixed
 
@@ -172,15 +209,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **NotificationBatcher event listener leak** — Event listeners now removed on `stop()`.
 - **AcpConnection stale mocks** — Fixed test mocks that referenced removed API surface.
 - **SkillsLoader token budget** — `formatForInjection()` now truncates skills that exceed the token budget.
+- **Responsive panel overflow** — Fixed sidebar and panel overflow on narrow viewports with `min-h-0` constraints.
+- **Team route** — `/team` now renders standalone TeamRoster instead of redirecting to a project.
+- **Session tab height** — Chat and sidebar now use full viewport height in the session view.
+- **Async graceful shutdown** — Server shutdown awaits all handlers in sequence to prevent data loss.
 
 ### Stats
 
-- 74 commits in this session
+- 120+ commits in this session
 - 69 DAG tasks created, 60+ completed
 - 1,351 web tests passing, 372 adapter tests passing
 - 160 acceptance criteria defined (78 P0)
 - 6 critical security issues found and resolved
 - 13 agents active at peak concurrency
+- 0 TypeScript compilation errors (server + web)
 
 ## [0.4.0] - Unreleased
 

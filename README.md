@@ -107,9 +107,10 @@ npm run dev
 - **Telegram Integration** — Receive notifications via Telegram bot with batched delivery, challenge-response auth, and configurable settings
 
 ### 📈 Visualization & Monitoring
-- **Home Dashboard** — At-a-glance view of active projects, decisions made, decisions needing approval, action-required items, and progress milestones
+- **Home Dashboard** — At-a-glance view of active projects, decisions made, decisions needing approval, action-required items, and progress milestones. Onboarding guide when no projects exist
 - **AttentionBar** — Persistent system-wide status bar with 3 escalation states (green/yellow/red). WebSocket push for <3s latency. Adjusts sensitivity based on Trust Dial level
-- **Kanban Board** — Interactive task board with drag-and-drop (via @dnd-kit), context menus, scope switcher (global/per-project), add-task form, filters, and pagination. Decomposed into 6 focused components
+- **Kanban Board** — Interactive task board with drag-and-drop (via @dnd-kit), context menus, scope switcher (global/per-project), add-task form, filters, pagination, and soft-delete with archive/restore
+- **Project Design Tab** — File browser with Markdown preview for project documentation
 - **Overview Dashboard** — Cumulative flow diagram, milestone timeline (progress events only), agent heatmap, token usage curve, and progress indicators with unified project tabs
 - **Mission Control** — Single-screen project overview with 8 configurable drag-and-drop panels: health summary, agent fleet, token economics, alerts, activity feed, DAG minimap, comm heatmap, and performance scorecards
 - **Timeline** — Swim-lane Gantt chart with decoupled vertical/horizontal scroll, Ctrl+wheel zoom, keyboard navigation, drag-to-pan, horizontal overflow for 10+ agents, and sticky Session Replay scrubber (4× default speed)
@@ -118,6 +119,14 @@ npm run dev
 - **Chat** — Virtual scrolling with `react-virtuoso`, pinned user message banner, grouped sequential messages, per-project group chat history
 - **Catch-Up Banner** — "While you were away" slide-down summary of tasks completed, decisions pending, and failures
 - **Historical Data** — All pages load from REST API when no live agents are present — no empty states for existing projects
+
+### 🧭 Navigation
+- **Breadcrumbs** — Contextual navigation trail showing current location within the project hierarchy
+- **Recent Projects** — Quick-access list in sidebar with one-click navigation
+- **Keyboard Shortcuts** — Alt+1–5 to switch between project tabs
+- **Tab Persistence** — Active tab saved per project in localStorage; restored on return
+- **Page Transitions** — Smooth animations between pages; respects `prefers-reduced-motion`
+- **Mobile Layout** — Touch-scrollable tabs for narrow viewports
 
 ### ✅ Decision & Progress Tracking
 - **Decision Log** — Track architectural decisions with accept/reject actions and reason comments; grouped by project with project names (not IDs); optimistic UI updates
@@ -134,7 +143,8 @@ npm run dev
 
 ### 💾 Persistence & Recovery
 - **Session Resume** — Resume from a previous Copilot session ID with full context recovery. Native SDK resume for Claude and Copilot adapters
-- **Knowledge Pipeline** — Automatic knowledge injection on agent spawn (KnowledgeInjector), session knowledge extraction on agent exit, SkillsLoader for `.github/skills/`, and AgentReconciliation on reconnect
+- **Knowledge Pipeline** — Automatic knowledge injection on agent spawn (KnowledgeInjector), session knowledge extraction on agent exit, SkillsLoader for `.github/skills/` with hot-reload via `fs.watch`, and AgentReconciliation on reconnect
+- **CollectiveMemory** — Cross-session `remember()` / `recall()` for persistent agent knowledge
 - **Persistent Projects** — Projects survive across sessions; chat history and state auto-load on startup
 - **Context Re-injection** — Automatic crew context recovery after context window compaction
 - **Data Retention** — Data management in Settings with storage stats and cleanup by age (7d/30d/90d/all)
