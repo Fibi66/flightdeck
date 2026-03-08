@@ -5,7 +5,7 @@ import crypto from 'node:crypto';
 
 // ── Types ─────────────────────────────────────────────────────────
 
-export type ChannelType = 'desktop' | 'slack' | 'discord' | 'email' | 'webhook';
+export type ChannelType = 'desktop' | 'slack' | 'discord' | 'email' | 'webhook' | 'telegram';
 export type NotificationTier = 'interrupt' | 'summon';
 export type NotifiableEvent =
   | 'decision_pending'
@@ -48,7 +48,12 @@ export interface WebhookConfig {
   secret?: string;
 }
 
-export type ChannelConfig = DesktopConfig | SlackConfig | DiscordConfig | EmailConfig | WebhookConfig;
+export interface TelegramChannelConfig {
+  /** Chat ID to deliver notifications to (must have an active session). */
+  chatId: string;
+}
+
+export type ChannelConfig = DesktopConfig | SlackConfig | DiscordConfig | EmailConfig | WebhookConfig | TelegramChannelConfig;
 
 export interface NotificationChannel {
   id: string;
@@ -195,6 +200,13 @@ export class NotificationService extends EventEmitter {
         const cfg = channel.config as WebhookConfig;
         if (!cfg.url || !cfg.url.startsWith('http')) {
           return { success: false, error: 'Invalid webhook URL' };
+        }
+        return { success: true };
+      }
+      case 'telegram': {
+        const cfg = channel.config as TelegramChannelConfig;
+        if (!cfg.chatId) {
+          return { success: false, error: 'chatId is required for Telegram channel' };
         }
         return { success: true };
       }
