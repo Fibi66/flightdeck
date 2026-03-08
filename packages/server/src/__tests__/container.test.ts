@@ -101,6 +101,11 @@ describe('createContainer', () => {
     expect(container.sessionExporter).toBeDefined();
     expect(container.performanceTracker).toBeDefined();
 
+    // Agent Server architecture
+    expect(container.agentServerClient).toBeDefined();
+    expect(container.agentServerHealth).toBeDefined();
+    expect(container.massFailureDetector).toBeDefined();
+
     // costTracker available both publicly and internally
     expect(container.costTracker).toBeDefined();
 
@@ -158,6 +163,15 @@ describe('createContainer', () => {
     // Second shutdown should not throw
     await expect(container.shutdown()).resolves.toBeUndefined();
     container = null;
+  });
+
+  it('does not expose legacy daemon services', async () => {
+    container = await createContainer(createTestContainerConfig());
+
+    // Daemon services were replaced by agent server architecture
+    expect((container as any).daemonProcess).toBeUndefined();
+    expect((container as any).daemonClient).toBeUndefined();
+    expect((container as any).reconnectProtocol).toBeUndefined();
   });
 
   it('container extends AppContext (usable by routes)', async () => {
