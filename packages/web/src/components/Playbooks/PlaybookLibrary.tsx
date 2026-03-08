@@ -18,11 +18,8 @@ export function PlaybookLibrary() {
 
   const fetchUserPlaybooks = useCallback(async () => {
     try {
-      const resp = await apiFetch('/api/playbooks');
-      if (resp.ok) {
-        const body = await resp.json();
-        setUserPlaybooks(body.user ?? []);
-      }
+      const body = await apiFetch<{ user?: Playbook[] }>('/api/playbooks');
+      setUserPlaybooks(body.user ?? []);
     } catch {
       // API not ready — show built-in only
     } finally {
@@ -40,16 +37,10 @@ export function PlaybookLibrary() {
     try {
       const agentRoles = pb.agents.map((a) => a.role).join(', ');
       const description = `Created from playbook "${pb.name}". Agents: ${agentRoles}`;
-      const resp = await apiFetch('/projects', {
+      const project = await apiFetch<{ id: string }>('/projects', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: pb.name, description }),
       });
-      if (!resp.ok) {
-        const body = await resp.json().catch(() => ({ error: 'Unknown error' }));
-        throw new Error(body.error || `HTTP ${resp.status}`);
-      }
-      const project = await resp.json();
       add('success', `Project "${pb.name}" created`);
       navigate(`/projects/${project.id}`);
     } catch (err: any) {

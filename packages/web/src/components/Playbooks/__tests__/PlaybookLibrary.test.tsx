@@ -34,7 +34,7 @@ function renderLib() {
 describe('PlaybookLibrary', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockApiFetch.mockResolvedValue({ ok: true, json: async () => ({ user: [] }) });
+    mockApiFetch.mockResolvedValue({ user: [] });
   });
 
   it('renders built-in playbooks', async () => {
@@ -47,12 +47,11 @@ describe('PlaybookLibrary', () => {
   it('creates project on Apply and navigates', async () => {
     const projectResp = { id: 'proj-new', name: 'Code Review Crew' };
     mockApiFetch
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ user: [] }) }) // fetchUserPlaybooks
-      .mockResolvedValueOnce({ ok: true, json: async () => projectResp }); // POST /projects
+      .mockResolvedValueOnce({ user: [] }) // fetchUserPlaybooks
+      .mockResolvedValueOnce(projectResp); // POST /projects
 
     renderLib();
 
-    // Wait for playbooks to load, then click first Apply button
     await waitFor(() => {
       expect(screen.getByText(BUILT_IN_PLAYBOOKS[0].name)).toBeTruthy();
     });
@@ -61,20 +60,18 @@ describe('PlaybookLibrary', () => {
     fireEvent.click(applyBtn);
 
     await waitFor(() => {
-      // Should have called POST /projects
       expect(mockApiFetch).toHaveBeenCalledWith(
         '/projects',
         expect.objectContaining({ method: 'POST' }),
       );
-      // Should navigate to the new project
       expect(mockNavigate).toHaveBeenCalledWith(`/projects/${projectResp.id}`);
     });
   });
 
   it('shows error toast on API failure', async () => {
     mockApiFetch
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ user: [] }) })
-      .mockResolvedValueOnce({ ok: false, status: 400, json: async () => ({ error: 'name is required' }) });
+      .mockResolvedValueOnce({ user: [] })
+      .mockRejectedValueOnce(new Error('name is required'));
 
     renderLib();
 
@@ -85,7 +82,6 @@ describe('PlaybookLibrary', () => {
     const applyBtn = screen.getByTestId(`playbook-apply-${BUILT_IN_PLAYBOOKS[0].id}`);
     fireEvent.click(applyBtn);
 
-    // The error should be handled gracefully (no thrown error)
     await waitFor(() => {
       expect(mockApiFetch).toHaveBeenCalledTimes(2);
     });

@@ -276,6 +276,10 @@ export class IntegrationRouter {
     const attempts = this.verifyAttempts.get(chatId);
     if (!attempts) return false;
     const recent = attempts.filter((t) => now - t < VERIFY_WINDOW_MS);
+    if (recent.length === 0) {
+      this.verifyAttempts.delete(chatId);
+      return false;
+    }
     return recent.length >= VERIFY_MAX_ATTEMPTS;
   }
 
