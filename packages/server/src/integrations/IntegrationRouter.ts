@@ -197,15 +197,18 @@ export class IntegrationRouter {
 
   /** Handle inbound messages — route to project lead if session exists. */
   private handleInboundMessage(msg: InboundMessage): void {
-    // Sanitize ALL user-controlled fields — text AND displayName
-    // (displayName comes from Telegram profile, attacker-controlled)
-    const sanitizedText = sanitizeInput(msg.text);
-    const sanitizedDisplayName = sanitizeInput(msg.displayName ?? 'Unknown');
-    const sanitizedMsg = { ...msg, text: sanitizedText, displayName: sanitizedDisplayName };
+    // Sanitize ALL user-controlled fields (text, displayName, chatId, userId)
+    const sanitizedMsg: InboundMessage = {
+      ...msg,
+      text: sanitizeInput(msg.text),
+      displayName: sanitizeInput(msg.displayName ?? 'Unknown'),
+      chatId: sanitizeInput(msg.chatId),
+      userId: sanitizeInput(msg.userId),
+    };
 
     // Check bind command FIRST — it works even without an existing session
-    if (sanitizedText.startsWith('bind ')) {
-      const projectId = sanitizedText.slice(5).trim();
+    if (sanitizedMsg.text.startsWith('bind ')) {
+      const projectId = sanitizedMsg.text.slice(5).trim();
       if (!projectId) {
         const adapter = this.adapters.get(msg.platform);
         adapter?.sendMessage({
@@ -248,7 +251,15 @@ export class IntegrationRouter {
         .find(a => a.role.id === 'lead' && (a.status === 'running' || a.status === 'idle'));
 
       if (leadAgent) {
-        leadAgent.sendMessage(`[Telegram from ${sanitizedMsg.displayName}]: ${sanitizedMsg.text}`);
+        // Use structured JSON — never interpolate user input into prompt strings
+        leadAgent.sendMessage(JSON.stringify({
+          source: 'telegram',
+          chatId: sanitizedMsg.chatId,
+          userId: sanitizedMsg.userId,
+          displayName: sanitizedMsg.displayName,
+          text: sanitizedMsg.text,
+          receivedAt: sanitizedMsg.receivedAt,
+        }));
       } else {
         const adapter = this.adapters.get(msg.platform);
         adapter?.sendMessage({
@@ -374,12 +385,42 @@ export class IntegrationRouter {
 
 const MAX_INPUT_LENGTH = 4000;
 
-/** Sanitize user input: strip control chars, trim, limit length. */
+/**
+ * Prompt-injection patterns (adopted from knowledge pipeline's 4-layer sanitization).
+ * Matched case-insensitively against all user-controlled input.
+ */
+const INJECTION_PATTERNS: RegExp[] = [
+  /ignore\s+(all\s+)?previous\s+instructions/i,
+  /ignore\s+(all\s+)?prior\s+instructions/i,
+  /disregard\s+(all\s+)?previous/i,
+  /override\s+(system|previous)\s+(prompt|instructions)/i,
+  /you\s+are\s+now\s+a/i,
+  /new\s+instructions?\s*:/i,
+  /system\s*:\s*you/i,
+  /\bdo\s+not\s+follow\b.*\binstructions\b/i,
+  /\bforget\b.*\binstructions\b/i,
+  /\bact\s+as\b.*\binstead\b/i,
+];
+
+/**
+ * Sanitize user input: strip control chars, neutralize injection patterns,
+ * trim, and limit length. Adopts the knowledge pipeline's defense-in-depth
+ * approach (see knowledge/sanitize.ts).
+ */
 function sanitizeInput(text: string): string {
-  // Remove control characters (except newline/tab) and zero-width chars
-  const cleaned = text
+  // Layer 1: Remove control characters (except newline/tab) and zero-width chars
+  let cleaned = text
     .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
-    .replace(/[\u200B-\u200F\u2028-\u202F\uFEFF]/g, '')
-    .trim();
-  return cleaned.slice(0, MAX_INPUT_LENGTH);
+    .replace(/[\u200B-\u200F\u2028-\u202F\uFEFF]/g, '');
+
+  // Layer 2: Strip XML tags that could escape trust boundaries
+  cleaned = cleaned.replace(/<\s*\/?\s*project-context\s*>/gi, '[tag-removed]');
+
+  // Layer 3: Neutralize prompt-injection patterns
+  for (const pattern of INJECTION_PATTERNS) {
+    cleaned = cleaned.replace(pattern, '[redacted]');
+  }
+
+  // Layer 4: Trim and truncate
+  return cleaned.trim().slice(0, MAX_INPUT_LENGTH);
 }
