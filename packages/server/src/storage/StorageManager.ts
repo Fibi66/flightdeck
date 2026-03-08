@@ -6,6 +6,7 @@ import YAML from 'yaml';
 import type { ProjectMetadata, StorageMode, SyncManifest } from './types.js';
 import { PROJECT_SUBDIRS, SYNC_SCHEMA_VERSION } from './types.js';
 import { logger } from '../utils/logger.js';
+import { validatePathWithinDir } from '../utils/pathValidation.js';
 
 /** Default root for user-mode storage */
 const USER_STORAGE_ROOT = join(homedir(), '.flightdeck', 'projects');
@@ -128,13 +129,6 @@ function validatePathSegment(segment: string, label: string): void {
 
 /**
  * Assert that a resolved path is within the expected parent directory.
- * Prevents path traversal via poisoned relative paths in manifests or user input.
+ * @deprecated Use validatePathWithinDir from '../utils/pathValidation.js' directly.
  */
-export function assertWithinDir(parentDir: string, filePath: string): string {
-  const resolved = resolve(parentDir, filePath);
-  const normalizedParent = resolve(parentDir);
-  if (!resolved.startsWith(normalizedParent + '/') && resolved !== normalizedParent) {
-    throw new Error(`Path traversal detected: '${filePath}' escapes '${normalizedParent}'`);
-  }
-  return resolved;
-}
+export const assertWithinDir = validatePathWithinDir;

@@ -8,7 +8,8 @@
  * See docs/research/custom-agents-cross-cli.md for format details.
  */
 import { mkdir, writeFile, readdir, unlink, readFile } from 'fs/promises';
-import { join, resolve, sep } from 'path';
+import { join, resolve } from 'path';
+import { assertPathWithinDir } from '../utils/pathValidation.js';
 
 // ── Types ───────────────────────────────────────────────────────────
 
@@ -58,7 +59,7 @@ export class CopilotRoleFileWriter implements RoleFileWriter {
       validateRoleName(role.role);
       const filename = `flightdeck-${role.role}.agent.md`;
       const filePath = join(dir, filename);
-      assertPathWithinDir(filePath, dir);
+      assertPathWithinDir(dir, filePath);
       const toolsList = (role.tools?.length ? role.tools : ['read', 'edit', 'search', 'shell'])
         .map((t) => `  - ${t}`)
         .join('\n');
@@ -106,7 +107,7 @@ export class ClaudeRoleFileWriter implements RoleFileWriter {
       validateRoleName(role.role);
       const filename = `flightdeck-${role.role}.md`;
       const filePath = join(dir, filename);
-      assertPathWithinDir(filePath, dir);
+      assertPathWithinDir(dir, filePath);
 
       const content = [
         FLIGHTDECK_MARKER,
@@ -149,7 +150,7 @@ export class GeminiRoleFileWriter implements RoleFileWriter {
       validateRoleName(role.role);
       const filename = `flightdeck-${role.role}.md`;
       const filePath = join(dir, filename);
-      assertPathWithinDir(filePath, dir);
+      assertPathWithinDir(dir, filePath);
       const content = [
         FLIGHTDECK_MARKER,
         '',
@@ -189,7 +190,7 @@ export class CursorRoleFileWriter implements RoleFileWriter {
       validateRoleName(role.role);
       const filename = `flightdeck-${role.role}.mdc`;
       const filePath = join(dir, filename);
-      assertPathWithinDir(filePath, dir);
+      assertPathWithinDir(dir, filePath);
 
       const content = [
         FLIGHTDECK_MARKER,
@@ -391,19 +392,6 @@ function validateRoleName(role: string): void {
       `Invalid role name "${role}". Role names must match /^[a-z0-9][a-z0-9-]*$/ ` +
         `(lowercase alphanumeric and hyphens, starting with alphanumeric).`,
     );
-  }
-}
-
-/**
- * Verify a resolved file path stays within the expected base directory.
- * Defense-in-depth against path traversal even if validateRoleName is bypassed.
- * @throws Error if the resolved path escapes the base directory.
- */
-function assertPathWithinDir(filePath: string, baseDir: string): void {
-  const resolvedPath = resolve(filePath);
-  const resolvedBase = resolve(baseDir) + sep;
-  if (!resolvedPath.startsWith(resolvedBase)) {
-    throw new Error(`Path traversal detected: "${filePath}" escapes base directory "${baseDir}".`);
   }
 }
 
