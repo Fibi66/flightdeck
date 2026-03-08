@@ -377,4 +377,26 @@ describe('ModelResolver', () => {
       expect(isValidModel('llama-3', 'codex')).toBe(false);
     });
   });
+
+  describe('tier fallback warnings', () => {
+    it('warns when a tier alias has no mapping for the provider', async () => {
+      const { logger } = await import('../utils/logger.js');
+      vi.mocked(logger.warn).mockClear();
+
+      // Use a tier alias with a provider that's artificially unknown
+      // All known providers have mappings, so test the fallback path by calling
+      // resolveModel with a valid tier on an unknown provider cast
+      const result = resolveModel('fast', 'nonexistent-cli' as ProviderId);
+
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          module: 'model-resolver',
+          msg: expect.stringContaining("Tier 'fast'"),
+        }),
+      );
+      // Should still return something (falls through to step 4 or passthrough)
+      expect(result).toBeDefined();
+      expect(result!.original).toBe('fast');
+    });
+  });
 });

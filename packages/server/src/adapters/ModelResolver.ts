@@ -153,6 +153,11 @@ export function resolveModel(
     if (resolved) {
       return { model: resolved, translated: true, original, reason: `tier '${modelSpec}' → ${resolved}` };
     }
+    // Tier alias recognized but no mapping for this provider — warn and continue to fallback
+    logger.warn({
+      module: 'model-resolver',
+      msg: `Tier '${modelSpec}' has no model mapping for provider '${provider}', falling back`,
+    });
   }
 
   // Step 2: Check if model is natively supported on this CLI
