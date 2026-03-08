@@ -81,6 +81,36 @@ const DEFAULT_STATE_DIR = join(
   '.flightdeck',
 );
 
+/**
+ * Inherit parent's execArgv but strip --watch flags that interfere with
+ * forked children. Keeps loader/import args (e.g. tsx register) so the
+ * child can load .ts files in dev mode.
+ */
+export function filterExecArgv(args: readonly string[]): string[] {
+  const filtered: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]!;
+    // --watch (standalone flag)
+    if (arg === '--watch') {
+      continue;
+    }
+    // --watch-path <value> or --watch-path=<value> — skip flag and its value
+    if (arg === '--watch-path') {
+      i++; // skip the next arg (the path value)
+      continue;
+    }
+    if (arg.startsWith('--watch-path=')) {
+      continue;
+    }
+    // --watch-preserve-output and any other --watch-* flags
+    if (arg.startsWith('--watch-')) {
+      continue;
+    }
+    filtered.push(arg);
+  }
+  return filtered;
+}
+
 // ── ForkTransport ───────────────────────────────────────────────────
 
 export class ForkTransport implements AgentServerTransport {
@@ -118,7 +148,7 @@ export class ForkTransport implements AgentServerTransport {
     this.pidFilePath = join(this.stateDir, options.pidFileName ?? 'agent-server.pid');
     this.portFilePath = join(this.stateDir, options.portFileName ?? 'agent-server.port');
     this.tokenFilePath = join(this.stateDir, options.tokenFileName ?? 'agent-server.token');
-    this.execArgv = options.execArgv ?? [];
+    this.execArgv = options.execArgv ?? filterExecArgv(process.execArgv);
     this.childEnv = options.env ?? {};
     this.readyTimeoutMs = options.readyTimeoutMs ?? 10_000;
     this.reconnectTimeoutMs = options.reconnectTimeoutMs ?? 5_000;
@@ -317,7 +347,7 @@ export class ForkTransport implements AgentServerTransport {
       try {
         this.child = fork(this.serverScript, [], {
           detached: true,
-          stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
+          stdio: ['ignore', 'ignore', 'pipe', 'ipc'],
           execArgv: this.execArgv,
           env: { ...process.env, ...this.childEnv },
         });
@@ -327,6 +357,20 @@ export class ForkTransport implements AgentServerTransport {
         this.setState('disconnected');
         reject(new Error(`Failed to fork agent server: ${String(err)}`));
         return;
+      }
+
+      // Capture stderr for crash diagnostics
+      let stderrOutput = '';
+      if (this.child.stderr) {
+        this.child.stderr.on('data', (chunk: Buffer) => {
+          stderrOutput += chunk.toString();
+          if (stderrOutput.length > 4096) stderrOutput = stderrOutput.slice(-4096);
+        });
+        this.child.on('exit', (code) => {
+          if (code !== 0 && stderrOutput) {
+            logger.error({ module: 'fork-transport', msg: 'Agent server stderr on exit', code, stderr: stderrOutput.trim() });
+          }
+        });
       }
 
       this.child.on('message', (msg: unknown) => {
@@ -364,7 +408,8 @@ export class ForkTransport implements AgentServerTransport {
           clearTimeout(timeout);
           this.child = null;
           this.setState('disconnected');
-          reject(new Error(`Agent server exited during startup (code=${code}, signal=${signal})`));
+          const detail = stderrOutput ? `\nstderr: ${stderrOutput.trim()}` : '';
+          reject(new Error(`Agent server exited during startup (code=${code}, signal=${signal})${detail}`));
         }
       });
     });
@@ -391,7 +436,7 @@ export class ForkTransport implements AgentServerTransport {
         // disconnect, we re-fork with a reconnect flag that the server detects.
         this.child = fork(this.serverScript, ['--reconnect', String(pid)], {
           detached: true,
-          stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
+          stdio: ['ignore', 'ignore', 'pipe', 'ipc'],
           execArgv: this.execArgv,
           env: { ...process.env, ...this.childEnv },
         });
@@ -400,6 +445,20 @@ export class ForkTransport implements AgentServerTransport {
         clearTimeout(timeout);
         reject(new Error(`Failed to reconnect: ${String(err)}`));
         return;
+      }
+
+      // Capture stderr for crash diagnostics
+      if (this.child.stderr) {
+        let stderrChunks = '';
+        this.child.stderr.on('data', (chunk: Buffer) => {
+          stderrChunks += chunk.toString();
+          if (stderrChunks.length > 4096) stderrChunks = stderrChunks.slice(-4096);
+        });
+        this.child.on('exit', (code) => {
+          if (code !== 0 && stderrChunks) {
+            logger.error({ module: 'fork-transport', msg: 'Agent server stderr on reconnect exit', code, stderr: stderrChunks.trim() });
+          }
+        });
       }
 
       this.child.on('message', (msg: unknown) => {

@@ -9,7 +9,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { ForkTransport } from '../ForkTransport.js';
+import { ForkTransport, filterExecArgv } from '../ForkTransport.js';
 import type { AgentServerMessage, TransportState } from '../types.js';
 
 // ── Test Helpers ────────────────────────────────────────────────────
@@ -521,6 +521,58 @@ describe('ForkTransport', () => {
       transport.dispose();
       transport.dispose(); // no-op, no error
       expect(transport.state).toBe('disconnected');
+    });
+  });
+
+  // ── filterExecArgv ────────────────────────────────────────────────
+
+  describe('filterExecArgv', () => {
+    it('preserves loader/import args from tsx', () => {
+      const args = ['--import', '/path/to/tsx/esm/register.mjs'];
+      expect(filterExecArgv(args)).toEqual(['--import', '/path/to/tsx/esm/register.mjs']);
+    });
+
+    it('strips --watch standalone flag', () => {
+      const args = ['--import', '/path/to/tsx/esm/register.mjs', '--watch'];
+      expect(filterExecArgv(args)).toEqual(['--import', '/path/to/tsx/esm/register.mjs']);
+    });
+
+    it('strips --watch-preserve-output', () => {
+      const args = ['--import', '/path/to/loader.mjs', '--watch-preserve-output'];
+      expect(filterExecArgv(args)).toEqual(['--import', '/path/to/loader.mjs']);
+    });
+
+    it('strips --watch-path with separate value', () => {
+      const args = ['--import', '/path/to/loader.mjs', '--watch-path', './src'];
+      expect(filterExecArgv(args)).toEqual(['--import', '/path/to/loader.mjs']);
+    });
+
+    it('strips --watch-path=value form', () => {
+      const args = ['--import', '/path/to/loader.mjs', '--watch-path=./src'];
+      expect(filterExecArgv(args)).toEqual(['--import', '/path/to/loader.mjs']);
+    });
+
+    it('strips multiple watch flags while keeping other args', () => {
+      const args = [
+        '--import', '/path/to/tsx/esm/register.mjs',
+        '--watch',
+        '--watch-path', './src',
+        '--watch-preserve-output',
+        '--max-old-space-size=4096',
+      ];
+      expect(filterExecArgv(args)).toEqual([
+        '--import', '/path/to/tsx/esm/register.mjs',
+        '--max-old-space-size=4096',
+      ]);
+    });
+
+    it('returns empty array for empty input', () => {
+      expect(filterExecArgv([])).toEqual([]);
+    });
+
+    it('passes through args with no watch flags', () => {
+      const args = ['--max-old-space-size=4096', '--enable-source-maps'];
+      expect(filterExecArgv(args)).toEqual(['--max-old-space-size=4096', '--enable-source-maps']);
     });
   });
 });
