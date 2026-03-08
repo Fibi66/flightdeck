@@ -5,7 +5,6 @@ import { apiFetch } from '../../hooks/useApi';
 import { useProjects } from '../../hooks/useProjects';
 import { deriveAgentsFromKeyframes } from '../../hooks/useHistoricalAgents';
 import { POLL_INTERVAL_MS } from '../../constants/timing';
-import { ProjectTabs } from '../ProjectTabs';
 import { ProgressTimeline } from './ProgressTimeline';
 import { CumulativeFlow } from './TaskBurndown';
 import { CostCurve } from './CostCurve';
@@ -33,14 +32,12 @@ export function OverviewPage(_props: Props) {
 
   // ── Project list for selector ───────────────────────────────────
   const { projects } = useProjects();
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
 
   // Derive the effective ID used for data fetching.
-  // Priority: user-picked project (explicit) > live lead agent > sidebar > first project
+  // Priority: live lead agent > sidebar > first project
   // Uses lead.projectId (project registry UUID) when available so replay fetches
   // match the projectId stored in activity events.
   const effectiveId = useMemo(() => {
-    if (selectedProjectId) return selectedProjectId;
     if (selectedLeadId) {
       const lead = agents.find((a) => a.id === selectedLeadId);
       return lead?.projectId || selectedLeadId;
@@ -48,7 +45,7 @@ export function OverviewPage(_props: Props) {
     const lead = agents.find((a) => a.role?.id === 'lead' && !a.parentId);
     if (lead) return lead.projectId || lead.id;
     return projects.length > 0 ? projects[0].id : null;
-  }, [selectedLeadId, agents, selectedProjectId, projects]);
+  }, [selectedLeadId, agents, projects]);
 
   // ── Data state ─────────────────────────────────────────────────
   const [timelineData, setTimelineData] = useState<TimelineDataPoint[]>([]);
@@ -181,9 +178,6 @@ export function OverviewPage(_props: Props) {
     return lead?.createdAt ?? undefined;
   }, [keyframes, displayAgents, effectiveId]);
 
-  // ── Active project name for display ────────────────────────────
-  const activeProject = projects.find((p) => effectiveId === p.id || effectiveId === `project:${p.id}`);
-
   if (!effectiveId && projects.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center text-th-text-muted text-sm">
@@ -194,14 +188,7 @@ export function OverviewPage(_props: Props) {
 
   return (
     <div className="flex-1 overflow-y-auto space-y-4" data-testid="overview-page">
-      {/* Project tabs */}
-      <ProjectTabs
-        activeId={effectiveId}
-        onChange={setSelectedProjectId}
-        className="px-4 pt-2 border-b border-th-border-muted"
-      />
-
-      <div className="px-4 space-y-4">
+      <div className="px-4 pt-2 space-y-4">
       {/* Hero: Progress Timeline */}
       <ProgressTimeline data={timelineData} width={800} height={240} />
 

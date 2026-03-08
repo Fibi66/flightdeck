@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { apiFetch } from './useApi';
 import type { ReplayKeyframe } from './useSessionReplay';
 import type { Project } from '../types';
+import { getRoleIcon } from '../utils/getRoleIcon';
 
 /** Minimal agent shape derived from keyframe events */
 export interface DerivedAgent {
@@ -18,12 +19,6 @@ export interface DerivedAgent {
   outputPreview: string;
   autopilot: boolean;
 }
-
-const ROLE_ICONS: Record<string, string> = {
-  lead: '👑', developer: '💻', architect: '🏗️', designer: '🎨',
-  'code-reviewer': '🔍', 'qa-tester': '🧪', secretary: '📋',
-  'product-manager': '📊', 'tech-writer': '✍️',
-};
 
 /**
  * Derives an agent roster from keyframe events when no live WebSocket
@@ -108,7 +103,7 @@ function normalize(a: any): DerivedAgent {
     role: {
       id: roleId,
       name: a.role?.name ?? 'Agent',
-      icon: a.role?.icon ?? ROLE_ICONS[roleId] ?? '🤖',
+      icon: a.role?.icon ?? getRoleIcon(roleId),
     },
     inputTokens: a.inputTokens ?? 0,
     outputTokens: a.outputTokens ?? 0,
@@ -152,7 +147,7 @@ export function deriveAgentsFromKeyframes(kf: ReplayKeyframe[]): DerivedAgent[] 
       agents.push({
         id: `kf-${agents.length}`,
         status,
-        role: { id: roleId, name: roleName, icon: ROLE_ICONS[roleId] ?? '🤖' },
+        role: { id: roleId, name: roleName, icon: getRoleIcon(roleId) },
         inputTokens: 0,
         outputTokens: 0,
         createdAt: frame.timestamp,

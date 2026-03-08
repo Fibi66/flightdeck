@@ -1,4 +1,5 @@
 import { RESOLUTION_DISPLAY, SEVERITY_STYLES, type Debate } from './types';
+import { getRoleIcon } from '../../utils/getRoleIcon';
 
 interface DebateCardProps {
   debate: Debate;
@@ -6,12 +7,6 @@ interface DebateCardProps {
   onViewThread?: () => void;
   onShowTimeline?: () => void;
 }
-
-const ROLE_ICONS: Record<string, string> = {
-  lead: '👑', architect: '🏗', developer: '👨‍💻', 'code-reviewer': '🔍',
-  'qa-tester': '🧪', designer: '🎨', 'tech-writer': '📝', 'product-manager': '📋',
-  secretary: '📋',
-};
 
 export function DebateCard({ debate, variant = 'full', onViewThread, onShowTimeline }: DebateCardProps) {
   const isOngoing = !debate.resolution || debate.resolution.type === 'ongoing';
@@ -63,7 +58,7 @@ export function DebateCard({ debate, variant = 'full', onViewThread, onShowTimel
               key={p.agentId}
               className="text-[10px] px-1.5 py-0.5 rounded-full bg-th-bg-alt border border-th-border text-th-text-muted"
             >
-              {ROLE_ICONS[p.role] ?? '🤖'} {p.role}
+              {getRoleIcon(p.role)} {p.role}
             </span>
           ))}
         </div>
@@ -76,7 +71,7 @@ export function DebateCard({ debate, variant = 'full', onViewThread, onShowTimel
       <div className="px-4 py-2 space-y-1">
         {debate.participants.slice(0, 4).map((p) => (
           <div key={p.agentId} className="flex items-start gap-1.5 text-[11px]">
-            <span className="shrink-0">{ROLE_ICONS[p.role] ?? '🤖'}</span>
+            <span className="shrink-0">{getRoleIcon(p.role)}</span>
             <span className="text-th-text-muted truncate">{p.role}:</span>
             <span className="text-th-text-alt truncate flex-1">"{p.position}"</span>
           </div>

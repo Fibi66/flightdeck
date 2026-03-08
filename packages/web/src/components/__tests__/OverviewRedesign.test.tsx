@@ -133,17 +133,17 @@ describe('AgentHeatmap', () => {
   });
 });
 
-describe('OverviewPage project selector', () => {
-  it('renders project tabs when projects exist', async () => {
+describe('OverviewPage rendering', () => {
+  it('renders overview page without project tabs', async () => {
     const { OverviewPage } = await import('../OverviewPage/OverviewPage');
     render(
       <MemoryRouter>
         <OverviewPage />
       </MemoryRouter>,
     );
-    // Wait for project fetch to resolve — now renders as tabs
-    const tabs = await screen.findByTestId('project-tabs');
-    expect(tabs).toBeTruthy();
-    expect(screen.getByText('Test Project')).toBeTruthy();
+    // ProjectTabs were removed — page should render without them
+    const page = await screen.findByTestId('overview-page');
+    expect(page).toBeTruthy();
+    expect(screen.queryByTestId('project-tabs')).toBeNull();
   });
 });

@@ -52,8 +52,8 @@ describe('deriveAgentsFromKeyframes', () => {
       kf('spawn', 'Spawned Architect: design'),
       kf('spawn', 'Spawned Unknown Role: mystery'),
     ]);
-    expect(agents[0].role.icon).toBe('💻');
-    expect(agents[1].role.icon).toBe('🏗️');
+    expect(agents[0].role.icon).toBe('👨‍💻');
+    expect(agents[1].role.icon).toBe('🏗');
     expect(agents[2].role.icon).toBe('🤖'); // fallback
   });
 
