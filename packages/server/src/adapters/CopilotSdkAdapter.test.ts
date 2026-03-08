@@ -597,6 +597,20 @@ describe('CopilotSdkAdapter', () => {
       expect(text).toHaveBeenCalledWith('\n[Context compacted — older history summarized]\n');
     });
 
+    it('should emit error event on session.error', () => {
+      const errorHandler = vi.fn();
+      adapter.on('error', errorHandler);
+
+      mockSessionEventHandler!(makeEvent('session.error', {
+        message: 'Rate limit exceeded',
+      }));
+
+      expect(errorHandler).toHaveBeenCalledOnce();
+      const err = errorHandler.mock.calls[0][0];
+      expect(err).toBeInstanceOf(Error);
+      expect(err.message).toContain('Rate limit exceeded');
+    });
+
     it('should silently ignore unknown event types', () => {
       // Should not throw
       mockSessionEventHandler!(makeEvent('some.future.event', {}));
@@ -775,7 +789,7 @@ describe('CopilotSdkAdapter', () => {
       expect(mockSessionEventHandler).toBeNull();
     });
 
-    it('should clear pending permission on terminate', async () => {
+    it('should resolve pending permission as deny on terminate', async () => {
       await adapter.start(defaultStartOpts());
 
       // Trigger a permission request
@@ -786,8 +800,8 @@ describe('CopilotSdkAdapter', () => {
 
       adapter.terminate();
 
-      // Permission should still resolve eventually (via timeout cleanup)
-      // But no error should occur
+      // Permission promise should resolve with 'deny' (not hang forever)
+      expect(await resultPromise).toBe('deny');
     });
 
     it('should handle disconnect errors gracefully', async () => {

@@ -348,6 +348,7 @@ export class CopilotSdkAdapter extends EventEmitter implements AgentAdapter {
           msg: `Session error: ${message}`,
           sessionId: this.sdkSessionId,
         });
+        this.emit('error', new Error(`Copilot SDK session error: ${message ?? 'unknown'}`));
         break;
       }
 
@@ -493,7 +494,10 @@ export class CopilotSdkAdapter extends EventEmitter implements AgentAdapter {
       clearTimeout(this.permissionTimeout);
       this.permissionTimeout = null;
     }
-    this.pendingPermission = null;
+    if (this.pendingPermission) {
+      this.pendingPermission.resolve({ allow: false });
+      this.pendingPermission = null;
+    }
     this._isConnected = false;
     this._isPrompting = false;
     this._promptingStartedAt = null;
