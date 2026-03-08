@@ -82,7 +82,7 @@ export function Sidebar() {
       )}
 
       {/* 3. Agents — project agent roster */}
-      <NavItem to="/team" icon={Users} label="Agents" />
+      <NavItem to="/agents" icon={Users} label="Agents" />
 
       {/* Spacer */}
       <div className="flex-1" />

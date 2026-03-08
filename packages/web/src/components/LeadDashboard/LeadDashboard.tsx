@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Crown, Send, Users, CheckCircle, Clock, Loader2, Plus, Trash2, Wrench, MessageSquare, GitBranch, PanelRightClose, PanelRightOpen, ChevronDown, ChevronRight, ChevronUp, Lightbulb, Bot, FolderOpen, Check, X, BarChart3, AlertTriangle, RefreshCw, Network, Square, Filter, Download, Settings, Eye, EyeOff, Zap, AlertCircle } from 'lucide-react';
+import { Crown, Send, Users, CheckCircle, Clock, Loader2, Plus, Trash2, Wrench, MessageSquare, GitBranch, ChevronDown, ChevronRight, ChevronUp, FolderOpen, Check, X, BarChart3, AlertTriangle, Square, Filter, Download, Zap, AlertCircle } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import { useLeadStore } from '../../stores/leadStore';
 import { useTimerStore, selectActiveTimerCount } from '../../stores/timerStore';
@@ -9,26 +9,22 @@ import { useAppStore } from '../../stores/appStore';
 import { useHistoricalAgents } from '../../hooks/useHistoricalAgents';
 import { MentionText, MarkdownContent, InlineMarkdownWithMentions } from '../../utils/markdown';
 import { classifyMessage, tierPassesFilter, TIER_CONFIG, type TierFilter, type FeedItem } from '../../utils/messageTiers';
-import { TaskDagPanelContent } from './TaskDagPanel';
 import { ModelConfigPanel } from './ModelConfigPanel';
 import { formatTokens, AgentReportBlock } from './AgentReportBlock';
-import { BannerDecisionActions, DecisionPanelContent } from './DecisionPanel';
-import { CommsPanelContent } from './CommsPanel';
-import { GroupsPanelContent } from './GroupsPanel';
+import { BannerDecisionActions } from './DecisionPanel';
 import { CollapsibleReasoningBlock, RichContentBlock, AgentTextBlock } from './ChatRenderers';
 import { CwdBar } from './CwdBar';
 import { TokenEconomics } from '../TokenEconomics/TokenEconomics';
-import { CostBreakdown } from '../TokenEconomics/CostBreakdown';
-import { TimerDisplay } from '../TimerDisplay/TimerDisplay';
 import { FolderPicker } from '../FolderPicker/FolderPicker';
 import { agentStatusText } from '../../utils/statusColors';
 import { apiFetch } from '../../hooks/useApi';
 import { useToastStore } from '../Toast';
-import { PromptNav, hasUserMention } from '../PromptNav';
 import { useFileDrop } from '../../hooks/useFileDrop';
 import { useAttachments } from '../../hooks/useAttachments';
-import { AttachmentBar } from '../AttachmentBar';
 import { DropOverlay } from '../DropOverlay';
+import { InputComposer } from './InputComposer';
+import { ChatMessages, type CatchUpSummary } from './ChatMessages';
+import { SidebarTabs } from './SidebarTabs';
 
 interface RoleInfo { id: string; name: string; icon: string; description: string; model: string; }
 
@@ -111,7 +107,6 @@ export function LeadDashboard({ api, ws }: Props) {
     } catch {}
     return allSupportedTabs;
   });
-  const [dragOverTab, setDragOverTab] = useState<string | null>(null);
   const [hiddenTabs, setHiddenTabs] = useState<Set<string>>(() => {
     try {
       const stored = localStorage.getItem('flightdeck-hidden-tabs');
@@ -132,7 +127,7 @@ export function LeadDashboard({ api, ws }: Props) {
   // ── Catch-up summary banner ──────────────────────────────────────────
   const lastInteractionRef = useRef(Date.now());
   const snapshotRef = useRef<{ tasks: number; decisions: number; comms: number; reports: number }>({ tasks: 0, decisions: 0, comms: 0, reports: 0 });
-  const [catchUpSummary, setCatchUpSummary] = useState<{ tasksCompleted: number; pendingDecisions: number; newMessages: number; newReports: number } | null>(null);
+  const [catchUpSummary, setCatchUpSummary] = useState<CatchUpSummary | null>(null);
 
   // Track user interactions
   useEffect(() => {
@@ -701,35 +696,14 @@ export function LeadDashboard({ api, ws }: Props) {
     document.addEventListener('mouseup', onMouseUp);
   }, [decisionsPanelHeight]);
 
-  const handleTabDragStart = useCallback((e: React.DragEvent, tabId: string) => {
-    e.dataTransfer.setData('text/plain', tabId);
-    e.dataTransfer.effectAllowed = 'move';
+  const handleTabOrderChange = useCallback((newOrder: string[]) => {
+    setTabOrder(newOrder);
+    localStorage.setItem('flightdeck-sidebar-tabs', JSON.stringify(newOrder));
   }, []);
 
-  const handleTabDragOver = useCallback((e: React.DragEvent, tabId: string) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    setDragOverTab(tabId);
-  }, []);
-
-  const handleTabDrop = useCallback((e: React.DragEvent, targetTabId: string) => {
-    e.preventDefault();
-    setDragOverTab(null);
-    const sourceTabId = e.dataTransfer.getData('text/plain');
-    if (!sourceTabId || sourceTabId === targetTabId) return;
-    setTabOrder((prev) => {
-      const newOrder = [...prev];
-      const srcIdx = newOrder.indexOf(sourceTabId);
-      const tgtIdx = newOrder.indexOf(targetTabId);
-      if (srcIdx === -1 || tgtIdx === -1) return prev;
-      [newOrder[srcIdx], newOrder[tgtIdx]] = [newOrder[tgtIdx], newOrder[srcIdx]];
-      localStorage.setItem('flightdeck-sidebar-tabs', JSON.stringify(newOrder));
-      return newOrder;
-    });
-  }, []);
-
-  const handleTabDragEnd = useCallback(() => {
-    setDragOverTab(null);
+  const handleDismissCatchUp = useCallback(() => setCatchUpSummary(null), []);
+  const handleScrollToBottom = useCallback(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, []);
 
   const toggleTabVisibility = useCallback((tabId: string) => {
@@ -1327,436 +1301,71 @@ export function LeadDashboard({ api, ws }: Props) {
               </div>
             )}
 
-            {/* Messages with prompt navigation */}
-            <div className="flex-1 relative min-h-0">
-              <div ref={chatContainerRef} className="absolute inset-0 overflow-y-auto p-4 space-y-1">
-              {messages.filter((msg) => msg.text).map((msg, i, filtered) => {
-                if (msg.queued) return null; // queued messages rendered below
-                const ts = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+            <ChatMessages
+              messages={messages}
+              agents={agents}
+              isActive={!!isActive}
+              chatContainerRef={chatContainerRef}
+              messagesEndRef={messagesEndRef}
+              catchUpSummary={catchUpSummary}
+              onDismissCatchUp={handleDismissCatchUp}
+              onScrollToBottom={handleScrollToBottom}
+            />
 
-                if (msg.sender === 'user') {
-                  return (
-                    <div key={i} data-user-prompt={i} className="flex justify-end items-start gap-2 py-1">
-                      <span className="text-[10px] text-th-text-muted mt-1.5 shrink-0">{ts}</span>
-                      <div className="max-w-[80%]">
-                        {msg.attachments && msg.attachments.length > 0 && (
-                          <div className="flex flex-wrap gap-1.5 mb-1.5 justify-end">
-                            {msg.attachments.map((att, ai) => (
-                              <div key={ai} className="rounded-lg overflow-hidden border border-white/20">
-                                {att.thumbnailDataUrl ? (
-                                  <img src={att.thumbnailDataUrl} alt={att.name} className="max-h-24 rounded-lg" />
-                                ) : (
-                                  <div className="px-2 py-1 bg-blue-700 text-xs text-blue-200">{att.name}</div>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                        <div className="rounded-lg px-3 py-2 bg-blue-600 text-white font-mono text-sm whitespace-pre-wrap">
-                          <MentionText text={msg.text} agents={agents} onClickAgent={(id) => useAppStore.getState().setSelectedAgent(id)} />
-                        </div>
-                      </div>
-                    </div>
-                  );
-                }
-
-                if (msg.sender === 'external') {
-                  return (
-                    <div key={i} className="flex items-start gap-2 py-1 bg-amber-500/[0.06] rounded-md border-l-2 border-amber-500/30 pl-2">
-                      <div className="max-w-[85%] rounded-lg px-3 py-2 bg-amber-500/10 dark:bg-amber-900/30 border border-amber-400/20 dark:border-amber-600/30 font-mono text-sm whitespace-pre-wrap text-th-text-alt">
-                        <div className="flex items-center gap-1.5 mb-1 text-amber-600 dark:text-amber-400 text-xs font-medium">
-                          <MessageSquare className="w-3 h-3" />
-                          {msg.fromRole || 'Agent'}
-                        </div>
-                        <MarkdownContent text={msg.text} mentionAgents={agents} onMentionClick={(id) => useAppStore.getState().setSelectedAgent(id)} />
-                      </div>
-                      <span className="text-[10px] text-th-text-muted mt-1.5 shrink-0">{ts}</span>
-                    </div>
-                  );
-                }
-
-                if (msg.sender === 'system') {
-                  const sysText = typeof msg.text === 'string' ? msg.text : '';
-                  // Hide outgoing DM notifications — redundant with command blocks
-                  if (sysText.startsWith('📤')) return null;
-                  // Hide incoming DM notifications — shown in agent chat panes instead
-                  if (sysText.startsWith('📨')) return null;
-                  // Hide inter-agent DMs — shown in comms panel
-                  if (sysText.startsWith('💬')) return null;
-                  // Hide broadcasts — shown in comms panel
-                  if (sysText.startsWith('📢')) return null;
-                  // Hide group messages — shown in comms panel and groups tab
-                  if (sysText.startsWith('🗣️')) return null;
-                  return (
-                    <div key={i} className="flex justify-center py-1">
-                      <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-th-bg-alt/60 border border-th-border/50 text-xs font-mono text-th-text-muted">
-                        <RefreshCw className="w-3 h-3 text-th-text-muted" />
-                        <MentionText text={msg.text} agents={agents} onClickAgent={(id) => useAppStore.getState().setSelectedAgent(id)} />
-                        {ts && <span className="text-[10px] text-th-text-muted ml-1">{ts}</span>}
-                      </div>
-                    </div>
-                  );
-                }
-
-                // Thinking/reasoning — collapsed by default, expandable on click
-                if (msg.sender === 'thinking') {
-                  return <CollapsibleReasoningBlock key={i} text={msg.text} timestamp={ts} />;
-                }
-
-                // Agent (lead) messages: no bubble, just flowing text
-                // Merge consecutive agent text messages so split command blocks render correctly.
-                // Only the first message in a run gets the timestamp and renders the merged text.
-                // NOTE: Parallel merge logic exists in AcpOutput.tsx (TimelineRow agent-group rendering).
-                const prevMsg = i > 0 ? filtered[i - 1] : null;
-                const isFirstInRun = !prevMsg || prevMsg.sender !== 'agent' || prevMsg.queued
-                  || (prevMsg.contentType && prevMsg.contentType !== 'text');
-                const agentTs = isFirstInRun ? ts : '';
-
-                if (!isFirstInRun && (!msg.contentType || msg.contentType === 'text')) {
-                  // Skip — this message's text was merged into the first message of the run
-                  return null;
-                }
-
-                // Collect all consecutive agent text messages in this run
-                let mergedText = msg.text;
-                if (isFirstInRun && (!msg.contentType || msg.contentType === 'text')) {
-                  for (let j = i + 1; j < filtered.length; j++) {
-                    const next = filtered[j];
-                    if (next.sender !== 'agent' || next.queued || (next.contentType && next.contentType !== 'text')) break;
-                    mergedText += next.text;
-                  }
-                }
-
-                if (msg.contentType && msg.contentType !== 'text') {
-                  return (
-                    <div key={i} className="py-1" {...(hasUserMention(msg.text) ? { 'data-user-prompt': i } : {})}>
-                      <div className="flex items-start gap-2">
-                        <div className="flex-1 min-w-0">
-                          <RichContentBlock msg={msg} />
-                        </div>
-                        {agentTs && <span className="text-[10px] text-th-text-muted mt-0.5 shrink-0">{agentTs}</span>}
-                      </div>
-                    </div>
-                  );
-                }
-                return (
-                  <div key={i} className="flex items-start gap-2 py-1" {...(hasUserMention(msg.text) ? { 'data-user-prompt': i } : {})}>
-                    <div className="max-w-[90%] rounded-lg px-3 py-2 bg-amber-500/[0.04] dark:bg-amber-900/20 border border-amber-400/15 dark:border-amber-600/20">
-                      <div className="font-mono text-sm whitespace-pre-wrap min-w-0 text-th-text-alt">
-                        <AgentTextBlock text={mergedText} />
-                      </div>
-                    </div>
-                    {agentTs && <span className="text-[10px] text-th-text-muted mt-1.5 shrink-0">{agentTs}</span>}
-                  </div>
-                );
-              })}
-              {isActive && messages.length > 0 && messages[messages.length - 1]?.sender === 'user' && !messages[messages.length - 1]?.queued && (
-                <div className="flex justify-start py-1">
-                  <div className="text-th-text-muted font-mono text-sm flex items-center gap-2">
-                    <Loader2 className="w-3 h-3 animate-spin text-yellow-600 dark:text-yellow-400" />
-                    <span>Working...</span>
-                  </div>
-                </div>
-              )}
-              <div ref={messagesEndRef} />
-              </div>
-              {/* Prompt navigation */}
-              <PromptNav containerRef={chatContainerRef} messages={messages} />
-              {/* Catch-up summary — floating overlay at bottom-center */}
-              {catchUpSummary && (
-                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 w-[420px] max-w-[calc(100%-2rem)] animate-in slide-in-from-bottom fade-in duration-300">
-                  <div
-                    role="status"
-                    aria-live="polite"
-                    tabIndex={0}
-                    className="bg-th-bg/95 backdrop-blur-md border border-th-border rounded-xl shadow-2xl px-4 py-3"
-                    onKeyDown={(e) => { if (e.key === 'Escape' || e.key === 'Enter') setCatchUpSummary(null); }}
-                  >
-                    <div className="flex items-center gap-2 mb-2">
-                      <RefreshCw className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                      <span className="text-xs font-semibold text-th-text-alt">While you were away</span>
-                    </div>
-                    <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs font-mono">
-                      {catchUpSummary.tasksCompleted > 0 && <span className="text-emerald-400">{catchUpSummary.tasksCompleted} task{catchUpSummary.tasksCompleted !== 1 ? 's' : ''} completed</span>}
-                      {catchUpSummary.pendingDecisions > 0 && <span className="text-amber-400">⚠ {catchUpSummary.pendingDecisions} decision{catchUpSummary.pendingDecisions !== 1 ? 's' : ''} pending</span>}
-                      {catchUpSummary.newMessages > 0 && <span className="text-blue-400">{catchUpSummary.newMessages} new message{catchUpSummary.newMessages !== 1 ? 's' : ''}</span>}
-                      {catchUpSummary.newReports > 0 && <span className="text-amber-600 dark:text-amber-400">{catchUpSummary.newReports} report{catchUpSummary.newReports !== 1 ? 's' : ''}</span>}
-                    </div>
-                    <div className="flex gap-2 mt-2.5">
-                      <button onClick={() => setCatchUpSummary(null)} className="text-[11px] px-2 py-1 rounded-md bg-th-bg-alt border border-th-border text-th-text-alt hover:bg-th-bg-muted transition-colors">Dismiss</button>
-                      <button onClick={() => { setCatchUpSummary(null); messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }} className="text-[11px] px-2 py-1 rounded-md bg-blue-600 text-white hover:bg-blue-500 transition-colors">Show All</button>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Queued messages (pending) */}
-            {messages.some((m) => m.queued) && (
-              <div className="border-t border-dashed border-th-border px-4 py-2 bg-th-bg-alt/50 max-h-48 overflow-y-auto">
-                <div className="text-[10px] text-th-text-muted uppercase tracking-wider mb-1 flex items-center gap-1 sticky top-0 bg-th-bg-alt/50">
-                  <Clock className="w-3 h-3" />
-                  Queued ({messages.filter((m) => m.queued).length})
-                </div>
-                {messages.filter((m) => m.queued).map((msg, i, arr) => (
-                  <div key={`q-${i}`} className="flex justify-end items-center gap-1.5 py-0.5 group">
-                    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                      {i > 0 && (
-                        <button type="button" aria-label="Move message up" onClick={() => reorderQueuedMessage(i, i - 1)} className="p-0.5 rounded hover:bg-th-bg-muted text-th-text-muted hover:text-th-text" title="Move up">
-                          <ChevronUp className="w-3 h-3" />
-                        </button>
-                      )}
-                      {i < arr.length - 1 && (
-                        <button type="button" aria-label="Move message down" onClick={() => reorderQueuedMessage(i, i + 1)} className="p-0.5 rounded hover:bg-th-bg-muted text-th-text-muted hover:text-th-text" title="Move down">
-                          <ChevronDown className="w-3 h-3" />
-                        </button>
-                      )}
-                      <button type="button" aria-label="Remove queued message" onClick={() => removeQueuedMessage(i)} className="p-0.5 rounded hover:bg-red-500/20 text-th-text-muted hover:text-red-400" title="Remove">
-                        <X className="w-3 h-3" />
-                      </button>
-                    </div>
-                    <span className="text-[10px] text-th-text-muted">
-                      {msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
-                    </span>
-                    <div className="max-w-[70%] rounded-lg px-3 py-1.5 bg-blue-600/40 text-blue-600 dark:text-blue-200 font-mono text-sm whitespace-pre-wrap border border-blue-500/30">
-                      {msg.text}
-                    </div>
-                    <Loader2 className="w-3 h-3 animate-spin text-blue-400 shrink-0" />
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Input */}
-            <div className="border-t border-th-border p-3">
-              <AttachmentBar attachments={attachments} onRemove={removeAttachment} />
-              <div
-                className="flex gap-2 items-end relative rounded transition-all"
-              >
-                <textarea
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.nativeEvent.isComposing) return;
-                    if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
-                      e.preventDefault();
-                      sendMessage('queue');
-                    } else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                      e.preventDefault();
-                      if (input.trim()) {
-                        sendMessage('interrupt');
-                      } else if (selectedLeadId) {
-                        apiFetch(`/agents/${selectedLeadId}/interrupt`, { method: 'POST' });
-                      }
-                    }
-                  }}
-                  placeholder={isActive ? 'Message the Lead... (Enter = send, Ctrl+Enter = interrupt, @ to mention files, drag & drop images)' : 'Project Lead is not active'}
-                  disabled={!isActive}
-                  rows={1}
-                  onInput={(e) => {
-                    const el = e.currentTarget;
-                    el.style.height = 'auto';
-                    el.style.height = Math.min(el.scrollHeight, 150) + 'px';
-                  }}
-                  className="flex-1 bg-th-bg-alt border border-th-border rounded px-3 py-2 text-sm font-mono text-th-text-alt focus:outline-none focus:border-yellow-500 disabled:opacity-50 resize-none overflow-y-auto"
-                  style={{ maxHeight: 150 }}
-                />
-                <div className="flex flex-col gap-1 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => sendMessage('queue')}
-                    disabled={!isActive || !input.trim()}
-                    title="Send (queued) — Enter"
-                    className="bg-yellow-600 hover:bg-yellow-500 disabled:bg-th-bg-hover text-black px-3 py-1.5 rounded text-xs font-medium flex items-center gap-1"
-                  >
-                    <Send className="w-3.5 h-3.5" />
-                    Queue
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (input.trim()) {
-                        sendMessage('interrupt');
-                      } else if (selectedLeadId) {
-                        apiFetch(`/agents/${selectedLeadId}/interrupt`, { method: 'POST' });
-                      }
-                    }}
-                    disabled={!isActive}
-                    title="Interrupt agent (Ctrl+Enter)"
-                    className="bg-red-700 hover:bg-red-600 disabled:bg-th-bg-hover text-white px-3 py-1.5 rounded text-xs font-medium flex items-center gap-1"
-                  >
-                    <Zap className="w-3.5 h-3.5" />
-                    Interrupt
-                  </button>
-                </div>
-              </div>
-            </div>
+            <InputComposer
+              input={input}
+              onInputChange={setInput}
+              isActive={!!isActive}
+              selectedLeadId={selectedLeadId}
+              messages={messages}
+              attachments={attachments}
+              onRemoveAttachment={removeAttachment}
+              onSendMessage={sendMessage}
+              onRemoveQueuedMessage={removeQueuedMessage}
+              onReorderQueuedMessage={reorderQueuedMessage}
+            />
           </div>
 
-          {/* Right sidebar: decisions + comms + activity + team */}
-          {sidebarCollapsed ? (
-            <div className="border-l border-th-border flex flex-col items-center py-2 w-10 shrink-0">
-              <button
-                type="button"
-                aria-label="Expand sidebar"
-                onClick={() => setSidebarCollapsed(false)}
-                className="p-1.5 rounded hover:bg-th-bg-muted text-th-text-muted hover:text-th-text relative"
-                title="Expand sidebar"
-              >
-                <PanelRightOpen className="w-4 h-4" />
-                {pendingConfirmations.length > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-yellow-500 rounded-full text-[8px] font-bold text-black flex items-center justify-center" title={`${pendingConfirmations.length} decision(s) need confirmation`}>
-                    {pendingConfirmations.length}
-                  </span>
-                )}
-              </button>
-            </div>
-          ) : (
-            <div className="flex shrink-0" style={{ width: sidebarWidth }}>
-              {/* Drag handle */}
-              <div
-                onMouseDown={startResize}
-                className="w-1 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-500 transition-colors shrink-0"
+          <SidebarTabs
+            sidebarCollapsed={sidebarCollapsed}
+            onToggleSidebar={() => setSidebarCollapsed((v) => !v)}
+            sidebarWidth={sidebarWidth}
+            startResize={startResize}
+            sidebarTab={sidebarTab}
+            onTabChange={setSidebarTab}
+            tabOrder={tabOrder}
+            onTabOrderChange={handleTabOrderChange}
+            hiddenTabs={hiddenTabs}
+            onToggleTabVisibility={toggleTabVisibility}
+            showTabConfig={showTabConfig}
+            onToggleTabConfig={() => setShowTabConfig((v) => !v)}
+            decisions={decisions}
+            pendingConfirmations={pendingConfirmations}
+            decisionsPanelHeight={decisionsPanelHeight}
+            startDecisionsResize={startDecisionsResize}
+            onConfirmDecision={handleConfirmDecision}
+            onRejectDecision={handleRejectDecision}
+            onDismissDecision={handleDismissDecision}
+            teamTabContent={
+              <TeamStatusContent
+                agents={teamAgents}
+                delegations={progress?.delegations ?? []}
+                comms={comms}
+                activity={activity}
+                allAgents={agents}
+                onOpenChat={handleOpenAgentChat}
               />
-              <div className="flex-1 border-l border-th-border flex flex-col overflow-hidden min-w-0">
-                <div className="px-2 py-1 border-b border-th-border flex items-center justify-end shrink-0">
-                  <button
-                    type="button"
-                    aria-label="Collapse sidebar"
-                    onClick={() => setSidebarCollapsed(true)}
-                    className="p-1 rounded hover:bg-th-bg-muted text-th-text-muted hover:text-th-text"
-                    title="Collapse sidebar"
-                  >
-                    <PanelRightClose className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-                {/* Decisions — always visible at top */}
-                <div className="shrink-0 flex flex-col relative" style={{ height: decisionsPanelHeight, maxHeight: '30%' }}>
-                  <div className="px-3 py-1.5 flex items-center gap-2 border-b border-th-border shrink-0">
-                    <Lightbulb className="w-3.5 h-3.5 text-yellow-600 dark:text-yellow-400" />
-                    <span className="text-xs font-semibold">Decisions</span>
-                    {pendingConfirmations.length > 0 && (
-                      <span className="w-2 h-2 bg-yellow-500 rounded-full" title={`${pendingConfirmations.length} pending`} />
-                    )}
-                    <span className="text-[10px] text-th-text-muted ml-auto">{decisions.length}</span>
-                  </div>
-                  <div className="flex-1 min-h-0 overflow-y-auto">
-                    <DecisionPanelContent decisions={decisions} onConfirm={handleConfirmDecision} onReject={handleRejectDecision} onDismiss={handleDismissDecision} />
-                  </div>
-                  {/* Resize handle for decisions panel */}
-                  <div
-                    onMouseDown={startDecisionsResize}
-                    className="h-1 cursor-row-resize hover:bg-blue-500/50 active:bg-blue-500 transition-colors shrink-0 absolute bottom-0 left-0 right-0"
-                    style={{ transform: 'translateY(2px)', zIndex: 10 }}
-                  />
-                </div>
-
-                {/* Tabbed bottom panels */}
-                <div className="flex-1 min-h-0 border-t border-th-border flex flex-col relative">
-                  <div className="flex flex-wrap border-b border-th-border shrink-0 items-center">
-                    {(() => {
-                      const allTabs: Record<string, { icon: React.ReactNode; label: string; badge?: number }> = {
-                        team: { icon: <Bot className="w-3 h-3" />, label: 'Team' },
-                        comms: { icon: <MessageSquare className="w-3 h-3" />, label: 'Comms', badge: comms.length },
-                        groups: { icon: <Users className="w-3 h-3" />, label: 'Groups', badge: groups.length },
-                        dag: { icon: <Network className="w-3 h-3" />, label: 'DAG', badge: dagStatus?.tasks.length },
-                        models: { icon: <Wrench className="w-3 h-3" />, label: 'Models' },
-                        costs: { icon: <BarChart3 className="w-3 h-3" />, label: 'Attribution' },
-                        timers: { icon: <Clock className="w-3 h-3" />, label: 'Timers', badge: activeTimerCount || undefined },
-                      };
-                      const orderedIds = tabOrder.filter((id) => id in allTabs && !hiddenTabs.has(id));
-                      // Append any missing visible tabs (safety net)
-                      for (const id of Object.keys(allTabs)) {
-                        if (!orderedIds.includes(id) && !hiddenTabs.has(id)) orderedIds.push(id);
-                      }
-                      return orderedIds.map((tabId) => {
-                        const tab = allTabs[tabId];
-                        return (
-                          <button
-                            key={tabId}
-                            draggable
-                            onDragStart={(e) => handleTabDragStart(e, tabId)}
-                            onDragOver={(e) => handleTabDragOver(e, tabId)}
-                            onDrop={(e) => handleTabDrop(e, tabId)}
-                            onDragEnd={handleTabDragEnd}
-                            onDragLeave={() => setDragOverTab(null)}
-                            onClick={() => setSidebarTab(tabId)}
-                            className={`flex items-center gap-1 px-2 py-1.5 text-[11px] whitespace-nowrap border-b-2 transition-colors cursor-grab active:cursor-grabbing ${
-                              dragOverTab === tabId
-                                ? 'border-blue-400 bg-blue-500/10 text-blue-600 dark:text-blue-300'
-                                : sidebarTab === tabId
-                                  ? 'border-yellow-500 text-yellow-600 dark:text-yellow-400'
-                                  : 'border-transparent text-th-text-muted hover:text-th-text-alt'
-                            }`}
-                          >
-                            {tab.icon}
-                            {tab.label}
-                            {tab.badge !== undefined && tab.badge > 0 && (
-                              <span className="text-[9px] bg-th-bg-muted text-th-text-muted px-1 rounded-full ml-0.5">{tab.badge}</span>
-                            )}
-                          </button>
-                        );
-                      });
-                    })()}
-                    {/* Tab visibility settings */}
-                    <div className="relative ml-auto">
-                      <button
-                        onClick={() => setShowTabConfig((v) => !v)}
-                        className="flex items-center px-1.5 py-1.5 text-th-text-muted hover:text-th-text-alt transition-colors"
-                        title="Configure visible tabs"
-                      >
-                        <Settings className="w-3 h-3" />
-                      </button>
-                      {showTabConfig && (
-                        <>
-                          <div className="fixed inset-0 z-40" onClick={() => setShowTabConfig(false)} />
-                          <div className="absolute right-0 top-full mt-1 z-50 glass-dropdown rounded-md py-1 min-w-[140px]">
-                            {(['team', 'comms', 'groups', 'dag', 'models', 'costs', 'timers'] as const).map((tabId) => (
-                              <button
-                                key={tabId}
-                                onClick={() => toggleTabVisibility(tabId)}
-                                className="flex items-center gap-2 w-full px-3 py-1.5 text-[11px] hover:bg-th-bg-muted transition-colors"
-                              >
-                                {hiddenTabs.has(tabId)
-                                  ? <EyeOff className="w-3 h-3 text-th-text-muted" />
-                                  : <Eye className="w-3 h-3 text-blue-500" />
-                                }
-                                <span className={hiddenTabs.has(tabId) ? 'text-th-text-muted' : ''}>{tabId.charAt(0).toUpperCase() + tabId.slice(1)}</span>
-                              </button>
-                            ))}
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex-1 min-h-0 overflow-hidden">
-                    {sidebarTab === 'team' && <TeamStatusContent agents={teamAgents} delegations={progress?.delegations ?? []} comms={comms} activity={activity} allAgents={agents} onOpenChat={handleOpenAgentChat} />}
-                    {sidebarTab === 'comms' && <CommsPanelContent comms={comms} groupMessages={groupMessages} leadId={selectedLeadId} />}
-                    {sidebarTab === 'groups' && <GroupsPanelContent groups={groups} groupMessages={groupMessages} leadId={selectedLeadId} projectId={leadAgent?.projectId ?? (selectedLeadId?.startsWith('project:') ? selectedLeadId.slice(8) : null)} />}
-                    {sidebarTab === 'dag' && <TaskDagPanelContent dagStatus={dagStatus} />}
-                    {sidebarTab === 'models' && leadAgent?.projectId && (
-                      <div className="h-full overflow-y-auto p-2">
-                        <ModelConfigPanel projectId={leadAgent.projectId} compact />
-                      </div>
-                    )}
-                    {sidebarTab === 'models' && !leadAgent?.projectId && (
-                      <div className="flex items-center justify-center h-full text-th-text-muted text-xs">
-                        No project selected
-                      </div>
-                    )}
-                    {sidebarTab === 'costs' && <CostBreakdown />}
-                    {sidebarTab === 'timers' && <TimerDisplay projectAgentIds={teamAgentIds} />}
-                  </div>
-                  {/* Resize handle for tabbed section */}
-                  <div
-                    onMouseDown={startTabResize}
-                    className="h-1 cursor-row-resize hover:bg-blue-500/50 active:bg-blue-500 transition-colors shrink-0 absolute top-0 left-0 right-0"
-                    style={{ transform: 'translateY(-2px)' }}
-                  />
-                </div>
-              </div>
-            </div>
-          )}
+            }
+            comms={comms}
+            groups={groups}
+            groupMessages={groupMessages}
+            dagStatus={dagStatus}
+            leadAgent={leadAgent}
+            selectedLeadId={selectedLeadId}
+            activeTimerCount={activeTimerCount}
+            teamAgentIds={teamAgentIds}
+            startTabResize={startTabResize}
+          />
         </>
       )}
 
@@ -2044,6 +1653,15 @@ function TeamStatusContent({ agents, delegations, comms, activity, allAgents, on
                   {(selectedAgent.model || selectedAgent.role.model) && (
                     <span className="bg-th-bg-muted/50 px-1.5 rounded">{selectedAgent.model || selectedAgent.role.model}</span>
                   )}
+                  {selectedAgent.sessionId && (
+                    <button
+                      className="bg-th-bg-muted/50 px-1.5 rounded hover:bg-th-bg-muted transition-colors"
+                      title={`Session: ${selectedAgent.sessionId} — click to copy`}
+                      onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(selectedAgent.sessionId!); }}
+                    >
+                      sess:{selectedAgent.sessionId.slice(0, 8)}
+                    </button>
+                  )}
                 </div>
               </div>
               {(selectedAgent.status === 'running' || selectedAgent.status === 'idle') && (
@@ -2305,7 +1923,7 @@ function TeamStatusContent({ agents, delegations, comms, activity, allAgents, on
       {/* Comm detail popup */}
       {selectedComm && (
         <div
-          className="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4"
+          className="fixed inset-0 bg-black/60 z-modal flex items-center justify-center p-4"
           onMouseDown={(e) => { if (e.target === e.currentTarget) setSelectedComm(null); }}
         >
           <div className="bg-th-bg-alt border border-th-border rounded-lg shadow-2xl max-w-2xl w-full max-h-[80vh] flex flex-col">

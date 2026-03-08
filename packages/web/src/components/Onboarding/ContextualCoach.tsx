@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAppStore } from '../../stores/appStore';
 import type { AgentInfo, Decision } from '../../types';
 
+const CONTEXT_PRESSURE_THRESHOLD = 0.8;
+
 interface CoachTip {
   id: string;
   trigger: (state: { agents: AgentInfo[]; pendingDecisions: Decision[]; sessionMinutes: number }) => boolean;
@@ -29,7 +31,7 @@ const TIPS: CoachTip[] = [
   },
   {
     id: 'coach-context-pressure',
-    trigger: ({ agents }) => agents.some(a => a.contextWindowSize && a.contextWindowUsed && (a.contextWindowUsed / a.contextWindowSize) > 0.8),
+    trigger: ({ agents }) => agents.some(a => a.contextWindowSize && a.contextWindowUsed && (a.contextWindowUsed / a.contextWindowSize) > CONTEXT_PRESSURE_THRESHOLD),
     title: 'Context running low',
     body: 'An agent is running low on context. You can compact it to continue.',
     icon: '💡',
@@ -104,7 +106,7 @@ export function ContextualCoach({ onNavigate }: Props) {
       onNavigate(activeTip.cta.action);
     } else if (activeTip.cta.action === 'compact') {
       // Navigate to the agent chat where the user can trigger compaction
-      const pressured = agents.find(a => a.contextWindowSize && a.contextWindowUsed && (a.contextWindowUsed / a.contextWindowSize) > 0.8);
+      const pressured = agents.find(a => a.contextWindowSize && a.contextWindowUsed && (a.contextWindowUsed / a.contextWindowSize) > CONTEXT_PRESSURE_THRESHOLD);
       if (pressured && onNavigate) {
         onNavigate(`/projects/${pressured.projectId}/session?agent=${pressured.id}`);
       }
@@ -115,7 +117,7 @@ export function ContextualCoach({ onNavigate }: Props) {
 
   return (
     <div
-      className="fixed bottom-16 right-4 z-40 max-w-xs bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 rounded-lg shadow-lg p-3 animate-in slide-in-from-right"
+      className="fixed bottom-16 right-4 z-overlay max-w-xs bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 rounded-lg shadow-lg p-3 animate-in slide-in-from-right"
       role="alert"
     >
       <div className="flex items-start gap-2">
