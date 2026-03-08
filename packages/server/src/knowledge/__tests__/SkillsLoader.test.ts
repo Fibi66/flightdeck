@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -336,6 +336,72 @@ describe('SkillsLoader', () => {
       const result = loader.formatForInjection();
       expect(result).toContain('tiny');
       expect(result).toContain('Tiny.');
+    });
+  });
+
+  describe('hot-reload', () => {
+    it('startWatching detects new skill files and reloads', async () => {
+      const loader = new SkillsLoader(tempDir);
+      loader.loadAll();
+      expect(loader.count).toBe(0);
+
+      let reloadResult: ReturnType<typeof loader.loadAll> | null = null;
+      const reloadPromise = new Promise<void>((resolve) => {
+        loader.startWatching((result) => {
+          reloadResult = result;
+          resolve();
+        });
+      });
+
+      // Add a skill file after watching has started
+      writeSkill(tempDir, 'dynamic-skill', { description: 'Added at runtime' });
+
+      // Wait for the debounced reload (500ms + buffer)
+      await Promise.race([
+        reloadPromise,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Watcher timeout')), 3000)),
+      ]);
+
+      expect(reloadResult).not.toBeNull();
+      expect(loader.count).toBe(1);
+      expect(loader.getSkillByName('dynamic-skill')).toBeDefined();
+
+      loader.stopWatching();
+    });
+
+    it('stopWatching prevents further reloads', () => {
+      const loader = new SkillsLoader(tempDir);
+      loader.loadAll();
+
+      const callback = vi.fn();
+      loader.startWatching(callback);
+      loader.stopWatching();
+
+      // After stopping, adding files should not trigger callback
+      writeSkill(tempDir, 'ignored-skill');
+
+      // Give it more than the debounce period
+      return new Promise<void>((resolve) => {
+        setTimeout(() => {
+          expect(callback).not.toHaveBeenCalled();
+          resolve();
+        }, 800);
+      });
+    });
+
+    it('startWatching is idempotent', () => {
+      const loader = new SkillsLoader(tempDir);
+      loader.loadAll();
+
+      loader.startWatching();
+      loader.startWatching(); // second call should be no-op
+      loader.stopWatching();
+    });
+
+    it('startWatching on non-existent directory is a no-op', () => {
+      const loader = new SkillsLoader('/nonexistent/path');
+      loader.startWatching(); // should not throw
+      loader.stopWatching();
     });
   });
 });
