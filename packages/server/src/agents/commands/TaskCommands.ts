@@ -309,6 +309,9 @@ function handleCompleteTask(ctx: CommandHandlerContext, agent: Agent, data: stri
       const summary = (req.summary || req.output || '(no summary)').slice(0, MAX_FIELD_LENGTH);
       const status = (req.status || 'done').slice(0, 200);
 
+      // Store on agent for knowledge extraction on session end
+      agent.completionSummary = summary;
+
       if (!agent.parentId) {
         agent.sendMessage('[System] COMPLETE_TASK failed: no parent agent found.');
         return;
@@ -401,6 +404,9 @@ function handleCompleteTask(ctx: CommandHandlerContext, agent: Agent, data: stri
       return;
     }
     const summary = (req.summary || req.output || '').slice(0, 10_000) || undefined;
+
+    // Store on agent for knowledge extraction on session end
+    if (summary) agent.completionSummary = summary;
     const error = ctx.taskDAG.getTransitionError(agent.id, req.taskId, 'complete');
     if (error) {
       if (error.currentStatus === 'done' && error.attemptedAction === 'complete') {
