@@ -289,7 +289,7 @@ function handleResetDAG(ctx: CommandHandlerContext, agent: Agent, _data: string)
   const cancelledDelegations = markAgentDelegations(ctx, agent.id, 'from', 'cancelled');
   if (count > 0) {
     const delNote = cancelledDelegations > 0 ? ` ${cancelledDelegations} delegation(s) cancelled.` : '';
-    agent.sendMessage(`[System] DAG reset: ${count} task(s) removed.${delNote} You can now DECLARE_TASKS again.`);
+    agent.sendMessage(`[System] DAG reset: ${count} task(s) archived.${delNote} You can now DECLARE_TASKS again.`);
   } else {
     agent.sendMessage('[System] No DAG tasks to reset.');
   }

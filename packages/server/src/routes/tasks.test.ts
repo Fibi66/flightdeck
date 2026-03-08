@@ -200,6 +200,21 @@ describe('GET /tasks — global task query', () => {
     expect(body.total).toBe(2); // 2 running tasks
     expect(body.hasMore).toBe(true);
   });
+
+  it('passes includeArchived to getAll', async () => {
+    await fetch(`${baseUrl}/tasks?includeArchived=true`);
+    expect(mockTaskDAG.getAll).toHaveBeenCalledWith({ includeArchived: true });
+  });
+
+  it('passes includeArchived to getTasksByProject', async () => {
+    await fetch(`${baseUrl}/tasks?scope=project&projectId=proj-a&includeArchived=true`);
+    expect(mockTaskDAG.getTasksByProject).toHaveBeenCalledWith('proj-a', { includeArchived: true });
+  });
+
+  it('defaults includeArchived to false', async () => {
+    await fetch(`${baseUrl}/tasks`);
+    expect(mockTaskDAG.getAll).toHaveBeenCalledWith({ includeArchived: false });
+  });
 });
 
 describe('GET /attention — attention items', () => {

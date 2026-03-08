@@ -31,6 +31,7 @@ export function tasksRoutes(ctx: AppContext): Router {
     const statusFilter = req.query.status as string | undefined;
     const roleFilter = req.query.role as string | undefined;
     const agentFilter = req.query.assignedAgentId as string | undefined;
+    const includeArchived = req.query.includeArchived === 'true';
     const limit = Math.min(Math.max(parseInt(req.query.limit as string, 10) || 200, 1), 1000);
     const offset = Math.max(parseInt(req.query.offset as string, 10) || 0, 0);
 
@@ -40,9 +41,9 @@ export function tasksRoutes(ctx: AppContext): Router {
       if (!projectId) {
         return res.status(400).json({ error: 'projectId is required when scope=project' });
       }
-      tasks = taskDAG.getTasksByProject(projectId);
+      tasks = taskDAG.getTasksByProject(projectId, { includeArchived });
     } else {
-      tasks = taskDAG.getAll();
+      tasks = taskDAG.getAll({ includeArchived });
     }
 
     // Apply optional filters

@@ -252,7 +252,8 @@ export function leadRoutes(ctx: AppContext): Router {
   router.get('/lead/:id/dag', (req, res) => {
     const agent = agentManager.get(req.params.id);
     if (!agent || agent.role.id !== 'lead') return res.status(404).json({ error: 'Lead not found' });
-    const status = agentManager.getTaskDAG().getStatus(agent.id);
+    const includeArchived = req.query.includeArchived === 'true';
+    const status = agentManager.getTaskDAG().getStatus(agent.id, undefined, { includeArchived });
     res.json(status);
   });
 

@@ -828,4 +828,60 @@ describe('KanbanBoard', () => {
       expect(screen.getByText('Retry')).toBeTruthy();
     });
   });
+
+  describe('archived tasks', () => {
+    it('renders "Show archived" toggle when onShowArchivedChange is provided', () => {
+      const tasks = [makeTask({ dagStatus: 'done' })];
+      const status = makeDagStatus(tasks);
+      const onChange = vi.fn();
+      render(<KanbanBoard dagStatus={status} projectId="proj-1" showArchived={false} onShowArchivedChange={onChange} />);
+      expect(screen.getByTestId('show-archived-toggle')).toBeTruthy();
+      expect(screen.getByText('Show archived')).toBeTruthy();
+    });
+
+    it('does not render "Show archived" toggle when onShowArchivedChange is not provided', () => {
+      const tasks = [makeTask({ dagStatus: 'done' })];
+      const status = makeDagStatus(tasks);
+      render(<KanbanBoard dagStatus={status} projectId="proj-1" />);
+      expect(screen.queryByTestId('show-archived-toggle')).toBeNull();
+    });
+
+    it('calls onShowArchivedChange when toggle is clicked', () => {
+      const tasks = [makeTask({ dagStatus: 'done' })];
+      const status = makeDagStatus(tasks);
+      const onChange = vi.fn();
+      render(<KanbanBoard dagStatus={status} projectId="proj-1" showArchived={false} onShowArchivedChange={onChange} />);
+      const checkbox = screen.getByTestId('show-archived-toggle').querySelector('input[type="checkbox"]')!;
+      fireEvent.click(checkbox);
+      expect(onChange).toHaveBeenCalledWith(true);
+    });
+
+    it('renders archived tasks with dimmed opacity and ARCHIVED badge', () => {
+      const archivedTask = makeTask({
+        id: 'archived-1',
+        dagStatus: 'ready',
+        archivedAt: '2026-03-08T00:00:00Z',
+      });
+      const tasks = [archivedTask];
+      const status = makeDagStatus(tasks);
+      render(<KanbanBoard dagStatus={status} projectId="proj-1" showArchived={true} onShowArchivedChange={vi.fn()} />);
+      expect(screen.getByTestId('archived-badge')).toBeTruthy();
+      expect(screen.getByText('ARCHIVED')).toBeTruthy();
+      const card = screen.getByTestId('kanban-card-archived-1');
+      expect(card.className).toContain('opacity-50');
+    });
+
+    it('does not show context menu actions for archived tasks', () => {
+      const archivedTask = makeTask({
+        id: 'archived-fail',
+        dagStatus: 'ready',
+        archivedAt: '2026-03-08T00:00:00Z',
+      });
+      const tasks = [archivedTask];
+      const status = makeDagStatus(tasks);
+      render(<KanbanBoard dagStatus={status} projectId="proj-1" showArchived={true} onShowArchivedChange={vi.fn()} />);
+      // Archived task should NOT show the "..." context menu trigger
+      expect(screen.queryByTestId('context-menu-trigger')).toBeNull();
+    });
+  });
 });

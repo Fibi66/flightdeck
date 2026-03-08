@@ -42,6 +42,7 @@ export function TaskCard({ task, allTasks, isDragOverlay, projectId, onTaskUpdat
   const hasDetails = task.dependsOn.length > 0 || task.files.length > 0 || task.assignedAgentId;
   const stale = isStale(task);
   const statusTime = timeInStatus(task);
+  const isArchived = !!task.archivedAt;
 
   // Auto-expand in detailed mode (AC-16.4)
   useEffect(() => {
@@ -112,6 +113,7 @@ export function TaskCard({ task, allTasks, isDragOverlay, projectId, onTaskUpdat
 
   // Build context menu items based on current status
   const contextMenuItems = useMemo(() => {
+    if (isArchived) return []; // no actions on archived tasks
     const items: Array<{ label: string; action: string; icon: React.ReactNode }> = [];
     const s = task.dagStatus;
     if (s === 'failed') items.push({ label: 'Retry', action: 'retry', icon: <RotateCcw size={12} /> });
@@ -128,7 +130,7 @@ export function TaskCard({ task, allTasks, isDragOverlay, projectId, onTaskUpdat
         stale ? 'border-l-2 border-l-amber-400 border-t-th-border border-r-th-border border-b-th-border' : 'border-th-border'
       } ${isMinimal ? 'p-1.5' : 'p-2.5'} shadow-sm transition-all ${
         isDragOverlay ? 'opacity-80 shadow-lg ring-2 ring-blue-500/30' : 'hover:border-th-text-muted/30 cursor-pointer'
-      }`}
+      } ${isArchived ? 'opacity-50' : ''}`}
       onClick={() => !isDragOverlay && hasDetails && setExpanded(!expanded)}
       onContextMenu={!isDragOverlay ? handleContextMenu : undefined}
       data-testid={`kanban-card-${task.id}`}
@@ -156,6 +158,11 @@ export function TaskCard({ task, allTasks, isDragOverlay, projectId, onTaskUpdat
           {stale && (
             <span className="text-[9px] px-1 py-0.5 rounded bg-amber-500/20 text-amber-400 font-medium" data-testid="stale-badge">
               STALE
+            </span>
+          )}
+          {isArchived && (
+            <span className="text-[9px] px-1 py-0.5 rounded bg-th-bg-muted text-th-text-muted font-medium" data-testid="archived-badge">
+              ARCHIVED
             </span>
           )}
           {priorityBadge(task.priority)}

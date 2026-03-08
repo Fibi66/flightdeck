@@ -1235,6 +1235,59 @@ describe('TaskDAG', () => {
       const result = dag.declareTaskBatch('lead-1', [{ taskId: 'a', role: 'Dev' }]);
       expect(result.tasks).toHaveLength(1);
     });
+
+    it('soft-deletes tasks (sets archivedAt, keeps rows in DB)', () => {
+      dag.declareTaskBatch('lead-1', [
+        { taskId: 'a', role: 'Dev' },
+        { taskId: 'b', role: 'Dev', dependsOn: ['a'] },
+      ]);
+      dag.resetDAG('lead-1');
+      // Active view sees nothing
+      expect(dag.getTasks('lead-1')).toHaveLength(0);
+      // includeArchived reveals the soft-deleted tasks
+      const archived = dag.getTasks('lead-1', { includeArchived: true });
+      expect(archived).toHaveLength(2);
+      expect(archived[0].archivedAt).toBeDefined();
+      expect(archived[1].archivedAt).toBeDefined();
+    });
+
+    it('getAll excludes archived tasks by default', () => {
+      dag.declareTaskBatch('lead-1', [{ taskId: 'a', role: 'Dev' }]);
+      dag.declareTaskBatch('lead-2', [{ taskId: 'b', role: 'Dev' }]);
+      dag.resetDAG('lead-1');
+      expect(dag.getAll()).toHaveLength(1);
+      expect(dag.getAll({ includeArchived: true })).toHaveLength(2);
+    });
+
+    it('getTasksByProject excludes archived by default', () => {
+      dag.declareTaskBatch('lead-1', [{ taskId: 'a', role: 'Dev' }], 'proj-1');
+      dag.declareTaskBatch('lead-2', [{ taskId: 'b', role: 'Dev' }], 'proj-1');
+      dag.resetDAG('lead-1');
+      expect(dag.getTasksByProject('proj-1')).toHaveLength(1);
+      expect(dag.getTasksByProject('proj-1', { includeArchived: true })).toHaveLength(2);
+    });
+
+    it('hasAnyTasks returns false after reset (archived excluded)', () => {
+      dag.declareTaskBatch('lead-1', [{ taskId: 'a', role: 'Dev' }]);
+      dag.resetDAG('lead-1');
+      expect(dag.hasAnyTasks('lead-1')).toBe(false);
+    });
+
+    it('hasActiveTasks returns false after reset (archived excluded)', () => {
+      dag.declareTaskBatch('lead-1', [{ taskId: 'a', role: 'Dev' }]);
+      dag.resetDAG('lead-1');
+      expect(dag.hasActiveTasks('lead-1')).toBe(false);
+    });
+
+    it('getStatus excludes archived and supports includeArchived', () => {
+      dag.declareTaskBatch('lead-1', [{ taskId: 'a', role: 'Dev' }]);
+      dag.resetDAG('lead-1');
+      const status = dag.getStatus('lead-1');
+      expect(status.tasks).toHaveLength(0);
+      const statusWithArchived = dag.getStatus('lead-1', undefined, { includeArchived: true });
+      expect(statusWithArchived.tasks).toHaveLength(1);
+      expect(statusWithArchived.tasks[0].archivedAt).toBeDefined();
+    });
   });
 
   describe('addDependency', () => {

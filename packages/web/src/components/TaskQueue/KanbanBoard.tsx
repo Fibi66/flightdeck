@@ -11,7 +11,7 @@ import {
   type DragOverEvent,
 } from '@dnd-kit/core';
 import { arrayMove } from '@dnd-kit/sortable';
-import { Plus, Search } from 'lucide-react';
+import { Plus, Search, Archive } from 'lucide-react';
 import { apiFetch } from '../../hooks/useApi';
 import type { DagStatus, DagTask, DagTaskStatus } from '../../types';
 import { COLUMNS, UNDROP_TARGETS, resolveColumnStatus, type FilterState, EMPTY_FILTERS, hasActiveFilters } from './kanbanConstants';
@@ -30,9 +30,11 @@ interface KanbanBoardProps {
   projectNameMap?: Map<string, string>;
   hasMore?: boolean;
   onLoadMore?: () => void;
+  showArchived?: boolean;
+  onShowArchivedChange?: (show: boolean) => void;
 }
 
-function KanbanBoard({ dagStatus, projectId, onTaskUpdated, scope = 'project', projectNameMap, hasMore, onLoadMore }: KanbanBoardProps) {
+function KanbanBoard({ dagStatus, projectId, onTaskUpdated, scope = 'project', projectNameMap, hasMore, onLoadMore, showArchived = false, onShowArchivedChange }: KanbanBoardProps) {
   const storageKey = projectId ? `kanban-${projectId}` : 'kanban-global';
 
   // Load persisted state
@@ -352,6 +354,18 @@ function KanbanBoard({ dagStatus, projectId, onTaskUpdated, scope = 'project', p
             />
             Hide empty
           </label>
+          {onShowArchivedChange && (
+            <label className="flex items-center gap-1.5 text-[11px] text-th-text-muted cursor-pointer" data-testid="show-archived-toggle">
+              <Archive size={11} />
+              <input
+                type="checkbox"
+                checked={showArchived}
+                onChange={(e) => onShowArchivedChange(e.target.checked)}
+                className="rounded border-th-border"
+              />
+              Show archived
+            </label>
+          )}
         </div>
       </div>
 

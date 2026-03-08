@@ -73,6 +73,7 @@ export function projectsRoutes(ctx: AppContext): Router {
   router.get('/projects/:id/dag', (req, res) => {
     if (!_db) return res.json({ tasks: [], summary: {} });
     const projectId = req.params.id;
+    const includeArchived = req.query.includeArchived === 'true';
 
     // Primary: query by project_id column directly
     let allTasks = _db.drizzle.select().from(dagTasks)
@@ -92,6 +93,11 @@ export function projectsRoutes(ctx: AppContext): Router {
           .where(inArray(dagTasks.leadId, leadIds))
           .all();
       }
+    }
+
+    // Filter archived unless explicitly included
+    if (!includeArchived) {
+      allTasks = allTasks.filter(t => !t.archivedAt);
     }
 
     // Build summary
@@ -116,6 +122,7 @@ export function projectsRoutes(ctx: AppContext): Router {
         createdAt: t.createdAt ?? '',
         startedAt: t.startedAt ?? null,
         completedAt: t.completedAt ?? null,
+        archivedAt: t.archivedAt ?? null,
       })),
       fileLockMap: {},
       summary,

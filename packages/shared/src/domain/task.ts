@@ -24,5 +24,6 @@ export const DagTaskSchema = z.object({
   createdAt: z.string(),
   startedAt: z.string().optional(),
   completedAt: z.string().optional(),
+  archivedAt: z.string().optional(),
 });
 export type DagTask = z.infer<typeof DagTaskSchema>;

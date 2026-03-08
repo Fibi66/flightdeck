@@ -120,6 +120,7 @@ function rowToTask(row: typeof dagTasks.$inferSelect): DagTask {
     createdAt: row.createdAt!,
     startedAt: row.startedAt || undefined,
     completedAt: row.completedAt || undefined,
+    archivedAt: row.archivedAt || undefined,
   };
 }
 
@@ -138,7 +139,7 @@ export class TaskDAG extends EventEmitter {
     const existingRows = this.db.drizzle
       .select({ id: dagTasks.id })
       .from(dagTasks)
-      .where(eq(dagTasks.leadId, leadId))
+      .where(and(eq(dagTasks.leadId, leadId), sql`${dagTasks.archivedAt} IS NULL`))
       .all();
     const existingIds = new Set(existingRows.map(r => r.id));
     const allIds = new Set([...taskIds, ...existingIds]);
@@ -207,6 +208,10 @@ export class TaskDAG extends EventEmitter {
           });
           dagStatus = allDepsSatisfied ? 'ready' : 'pending';
         }
+        // Remove any archived task with the same ID to avoid PK conflict
+        this.db.drizzle.delete(dagTasks)
+          .where(and(eq(dagTasks.id, task.taskId), eq(dagTasks.leadId, leadId), sql`${dagTasks.archivedAt} IS NOT NULL`))
+          .run();
         this.db.drizzle.insert(dagTasks).values({
           id: task.taskId,
           leadId,
@@ -648,55 +653,63 @@ export class TaskDAG extends EventEmitter {
     return row ? rowToTask(row) : null;
   }
 
-  /** Get all tasks for a lead */
-  getTasks(leadId: string): DagTask[] {
+  /** Get all tasks for a lead (excludes archived by default) */
+  getTasks(leadId: string, opts?: { includeArchived?: boolean }): DagTask[] {
+    const conditions = [eq(dagTasks.leadId, leadId)];
+    if (!opts?.includeArchived) conditions.push(sql`${dagTasks.archivedAt} IS NULL`);
     return this.db.drizzle
       .select()
       .from(dagTasks)
-      .where(eq(dagTasks.leadId, leadId))
+      .where(and(...conditions))
       .orderBy(desc(dagTasks.priority), asc(dagTasks.createdAt))
       .all()
       .map(rowToTask);
   }
 
-  /** Get all tasks scoped to a project (across all leads in that project) */
-  getTasksByProject(projectId: string): DagTask[] {
+  /** Get all tasks scoped to a project (excludes archived by default) */
+  getTasksByProject(projectId: string, opts?: { includeArchived?: boolean }): DagTask[] {
+    const conditions = [eq(dagTasks.projectId, projectId)];
+    if (!opts?.includeArchived) conditions.push(sql`${dagTasks.archivedAt} IS NULL`);
     return this.db.drizzle
       .select()
       .from(dagTasks)
-      .where(eq(dagTasks.projectId, projectId))
+      .where(and(...conditions))
       .orderBy(desc(dagTasks.priority), asc(dagTasks.createdAt))
       .all()
       .map(rowToTask);
   }
 
-  /** Get all tasks across all leads (used by EagerScheduler and global queries) */
-  getAll(): DagTask[] {
-    return this.db.drizzle
+  /** Get all tasks across all leads (excludes archived by default) */
+  getAll(opts?: { includeArchived?: boolean }): DagTask[] {
+    const conditions = opts?.includeArchived ? [] : [sql`${dagTasks.archivedAt} IS NULL`];
+    const query = this.db.drizzle
       .select()
       .from(dagTasks)
-      .orderBy(desc(dagTasks.priority), asc(dagTasks.createdAt))
-      .all()
-      .map(rowToTask);
+      .orderBy(desc(dagTasks.priority), asc(dagTasks.createdAt));
+    return (conditions.length > 0
+      ? query.where(and(...conditions))
+      : query
+    ).all().map(rowToTask);
   }
 
-  /** Lightweight check: does this lead have any tasks in the DAG? */
+  /** Lightweight check: does this lead have any non-archived tasks in the DAG? */
   hasAnyTasks(leadId: string): boolean {
     const row = this.db.drizzle
       .select({ count: sql<number>`count(*)` })
       .from(dagTasks)
-      .where(eq(dagTasks.leadId, leadId))
+      .where(and(eq(dagTasks.leadId, leadId), sql`${dagTasks.archivedAt} IS NULL`))
       .get();
     return (row?.count ?? 0) > 0;
   }
 
-  /** Lightweight check: does this lead have active (non-terminal) tasks? */
+  /** Lightweight check: does this lead have active (non-terminal, non-archived) tasks? */
   hasActiveTasks(leadId: string): boolean {
     const row = this.db.drizzle
       .select({ count: sql<number>`count(*)` })
       .from(dagTasks)
       .where(and(
         eq(dagTasks.leadId, leadId),
+        sql`${dagTasks.archivedAt} IS NULL`,
         ne(dagTasks.dagStatus, 'done'),
         ne(dagTasks.dagStatus, 'skipped'),
         ne(dagTasks.dagStatus, 'failed'),
@@ -706,13 +719,13 @@ export class TaskDAG extends EventEmitter {
   }
 
   /** Get full DAG status (for TASK_STATUS command) */
-  getStatus(leadId: string, activeAgents?: Array<{ id: string; role: string }>): {
+  getStatus(leadId: string, activeAgents?: Array<{ id: string; role: string }>, opts?: { includeArchived?: boolean }): {
     tasks: DagTask[];
     fileLockMap: Record<string, { taskId: string; agentId?: string }>;
     summary: { pending: number; ready: number; running: number; done: number; failed: number; blocked: number; paused: number; skipped: number };
     coverage?: { tracked: number; untracked: number; total: number; percentage: number; untrackedAgents: Array<{ id: string; role: string }> };
   } {
-    const tasks = this.getTasks(leadId);
+    const tasks = this.getTasks(leadId, opts);
     const fileLockMap: Record<string, { taskId: string; agentId?: string }> = {};
 
     for (const task of tasks) {
@@ -760,6 +773,7 @@ export class TaskDAG extends EventEmitter {
         eq(dagTasks.leadId, leadId),
         eq(dagTasks.assignedAgentId, agentId),
         eq(dagTasks.dagStatus, 'running'),
+        sql`${dagTasks.archivedAt} IS NULL`,
       ))
       .get();
     if (running) return rowToTask(running);
@@ -772,6 +786,7 @@ export class TaskDAG extends EventEmitter {
         eq(dagTasks.leadId, leadId),
         eq(dagTasks.assignedAgentId, agentId),
         eq(dagTasks.dagStatus, 'ready'),
+        sql`${dagTasks.archivedAt} IS NULL`,
       ))
       .get();
     return ready ? rowToTask(ready) : null;
@@ -789,6 +804,7 @@ export class TaskDAG extends EventEmitter {
         eq(dagTasks.leadId, leadId),
         eq(dagTasks.role, role),
         eq(dagTasks.dagStatus, 'ready'),
+        sql`${dagTasks.archivedAt} IS NULL`,
       ))
       .orderBy(desc(dagTasks.priority), asc(dagTasks.createdAt))
       .get();
@@ -803,6 +819,7 @@ export class TaskDAG extends EventEmitter {
     // Primary: explicit dagTaskId lookup
     if (options.dagTaskId) {
       const task = this.getTask(leadId, options.dagTaskId);
+      if (task?.archivedAt) return null; // archived tasks are not eligible
       if (task && task.dagStatus === 'ready') return task;
       // Auto-resolve: if task is pending but deps are already satisfied, promote to ready.
       // This is a safety net for any code path that missed calling resolveReady().
@@ -831,6 +848,7 @@ export class TaskDAG extends EventEmitter {
         eq(dagTasks.leadId, leadId),
         eq(dagTasks.role, options.role),
         eq(dagTasks.dagStatus, 'ready'),
+        sql`${dagTasks.archivedAt} IS NULL`,
       ))
       .orderBy(desc(dagTasks.priority), asc(dagTasks.createdAt))
       .all()
@@ -866,13 +884,15 @@ export class TaskDAG extends EventEmitter {
     return this.validateTransition(leadId, taskId, action);
   }
 
-  /** Reset (clear) all DAG tasks for a lead */
+  /** Reset (archive) all DAG tasks for a lead — soft delete */
   resetDAG(leadId: string): number {
     const tasks = this.getTasks(leadId);
     if (tasks.length === 0) return 0;
+    const now = new Date().toISOString();
     this.db.drizzle
-      .delete(dagTasks)
-      .where(eq(dagTasks.leadId, leadId))
+      .update(dagTasks)
+      .set({ archivedAt: now })
+      .where(and(eq(dagTasks.leadId, leadId), sql`${dagTasks.archivedAt} IS NULL`))
       .run();
     this.emit('dag:updated', { leadId });
     return tasks.length;

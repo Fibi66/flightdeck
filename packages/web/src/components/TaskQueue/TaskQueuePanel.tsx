@@ -135,6 +135,7 @@ function DagPanel({
   const [globalDagStatus, setGlobalDagStatus] = useState<DagStatus | null>(null);
   const [globalHasMore, setGlobalHasMore] = useState(false);
   const [globalOffset, setGlobalOffset] = useState(0);
+  const [showArchived, setShowArchived] = useState(false);
   const GLOBAL_PAGE_SIZE = 200;
   const [projectNameMap, setProjectNameMap] = useState<Map<string, string>>(new Map());
   const hasDeps = dagStatus?.tasks.some((t) => t.dependsOn.length > 0) ?? false;
@@ -144,9 +145,10 @@ function DagPanel({
   useEffect(() => {
     if (kanbanScope !== 'global' || effectiveView !== 'kanban') return;
     let cancelled = false;
+    const archivedParam = showArchived ? '&includeArchived=true' : '';
     const fetchGlobal = async () => {
       try {
-        const data = await apiFetch<{ tasks: any[]; total: number; hasMore: boolean; offset: number; limit: number }>(`/tasks?scope=global&limit=${GLOBAL_PAGE_SIZE}&offset=0`);
+        const data = await apiFetch<{ tasks: any[]; total: number; hasMore: boolean; offset: number; limit: number }>(`/tasks?scope=global&limit=${GLOBAL_PAGE_SIZE}&offset=0${archivedParam}`);
         if (!cancelled && data) {
           const tasks = data.tasks;
           setGlobalDagStatus({
@@ -173,7 +175,7 @@ function DagPanel({
     fetchGlobal();
     const interval = setInterval(fetchGlobal, 5000);
     return () => { cancelled = true; clearInterval(interval); };
-  }, [kanbanScope, effectiveView]);
+  }, [kanbanScope, effectiveView, showArchived]);
 
   // Fetch project names for global view
   useEffect(() => {
@@ -191,7 +193,8 @@ function DagPanel({
   const loadMoreGlobalTasks = async () => {
     if (!globalHasMore || !globalDagStatus) return;
     try {
-      const data = await apiFetch<{ tasks: any[]; total: number; hasMore: boolean; offset: number; limit: number }>(`/tasks?scope=global&limit=${GLOBAL_PAGE_SIZE}&offset=${globalOffset}`);
+      const archivedParam = showArchived ? '&includeArchived=true' : '';
+      const data = await apiFetch<{ tasks: any[]; total: number; hasMore: boolean; offset: number; limit: number }>(`/tasks?scope=global&limit=${GLOBAL_PAGE_SIZE}&offset=${globalOffset}${archivedParam}`);
       if (data) {
         const merged = [...globalDagStatus.tasks, ...data.tasks];
         setGlobalDagStatus({
@@ -319,6 +322,8 @@ function DagPanel({
             projectNameMap={projectNameMap}
             hasMore={kanbanScope === 'global' ? globalHasMore : false}
             onLoadMore={kanbanScope === 'global' ? loadMoreGlobalTasks : undefined}
+            showArchived={showArchived}
+            onShowArchivedChange={setShowArchived}
           />
         </div>
       ) : effectiveView === 'graph' ? (
@@ -417,7 +422,7 @@ export function TaskQueuePanel({ api }: Props) {
       setHistoricalDag(null);
       return;
     }
-    apiFetch<DagStatus>(`/projects/${currentTab.project.id}/dag`)
+    apiFetch<DagStatus>(`/projects/${currentTab.project.id}/dag?includeArchived=true`)
       .then((data) => {
         if (data?.tasks?.length > 0) setHistoricalDag(data);
       })
@@ -543,7 +548,7 @@ export function TaskQueuePanel({ api }: Props) {
       </div>
 
       {/* ---- Content for selected tab ---- */}
-      <div className="flex-1 overflow-auto p-4">
+      <div className="flex-1 overflow-auto p-4 focus:outline-none" tabIndex={0}>
         {!currentTab ? (
           <div className="flex flex-col items-center justify-center py-12 text-th-text-muted">
             <Network size={32} className="mb-2 opacity-50" />
