@@ -94,6 +94,7 @@ export class ClaudeSdkAdapter extends EventEmitter implements AgentAdapter {
   private autopilot: boolean;
   private maxTurns?: number;
   private systemPrompt?: string;
+  private providerEnv?: Record<string, string>;
   private pendingPermissions = new Map<string, {
     resolve: (result: { allow: boolean }) => void;
     timeout: ReturnType<typeof setTimeout>;
@@ -131,6 +132,7 @@ export class ClaudeSdkAdapter extends EventEmitter implements AgentAdapter {
     if (opts.model) this.model = opts.model;
     if (opts.maxTurns) this.maxTurns = opts.maxTurns;
     if (opts.systemPrompt) this.systemPrompt = opts.systemPrompt;
+    if (opts.env && Object.keys(opts.env).length > 0) this.providerEnv = opts.env;
 
     if (opts.sessionId) {
       // Resume existing session
@@ -196,6 +198,7 @@ export class ClaudeSdkAdapter extends EventEmitter implements AgentAdapter {
       ...(this.sdkSessionId ? { resume: this.sdkSessionId } : {}),
       ...(this.maxTurns ? { maxTurns: this.maxTurns } : {}),
       ...(this.systemPrompt ? { systemPrompt: this.systemPrompt } : {}),
+      ...(this.providerEnv ? { env: this.providerEnv } : {}),
     };
 
     try {

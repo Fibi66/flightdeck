@@ -23,6 +23,8 @@ export interface QueryOptions {
   maxTurns?: number;
   systemPrompt?: string;
   allowedTools?: string[];
+  /** Environment variables to pass to the SDK subprocess (e.g., Bedrock/Vertex config) */
+  env?: Record<string, string>;
 }
 
 /** SDK message types emitted during query iteration */
