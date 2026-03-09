@@ -5,6 +5,7 @@ import {
   agentStatusProps,
   connectionStatusProps,
   providerStatusProps,
+  projectStatusProps,
   type StatusVariant,
 } from '../StatusBadge';
 
@@ -175,5 +176,47 @@ describe('providerStatusProps', () => {
   it('maps not installed to neutral', () => {
     expect(providerStatusProps({ installed: false, authenticated: null }))
       .toEqual({ variant: 'neutral', label: 'Not installed' });
+  });
+});
+
+describe('projectStatusProps', () => {
+  it('returns Active with pulse when agents are running', () => {
+    expect(projectStatusProps({ status: 'active', runningAgentCount: 2, idleAgentCount: 0, failedAgentCount: 0 }))
+      .toEqual({ variant: 'success', label: 'Active', pulse: true });
+  });
+
+  it('returns Idle when agents exist but all idle', () => {
+    expect(projectStatusProps({ status: 'active', runningAgentCount: 0, idleAgentCount: 3, failedAgentCount: 0 }))
+      .toEqual({ variant: 'warning', label: 'Idle', pulse: false });
+  });
+
+  it('returns Error when agents have failed and none active', () => {
+    expect(projectStatusProps({ status: 'active', runningAgentCount: 0, idleAgentCount: 0, failedAgentCount: 2 }))
+      .toEqual({ variant: 'error', label: 'Error', pulse: false });
+  });
+
+  it('returns Stopped when no agents at all', () => {
+    expect(projectStatusProps({ status: 'active', runningAgentCount: 0, idleAgentCount: 0, failedAgentCount: 0 }))
+      .toEqual({ variant: 'neutral', label: 'Stopped', pulse: false });
+  });
+
+  it('returns Archived for archived projects regardless of agents', () => {
+    expect(projectStatusProps({ status: 'archived', runningAgentCount: 1, idleAgentCount: 0, failedAgentCount: 0 }))
+      .toEqual({ variant: 'neutral', label: 'Archived', pulse: false });
+  });
+
+  it('falls back to activeAgentCount when per-status counts are missing', () => {
+    expect(projectStatusProps({ status: 'active', activeAgentCount: 3 }))
+      .toEqual({ variant: 'success', label: 'Active', pulse: true });
+  });
+
+  it('returns Stopped when only activeAgentCount is 0', () => {
+    expect(projectStatusProps({ status: 'active', activeAgentCount: 0 }))
+      .toEqual({ variant: 'neutral', label: 'Stopped', pulse: false });
+  });
+
+  it('prefers running over failed when both present', () => {
+    expect(projectStatusProps({ status: 'active', runningAgentCount: 1, idleAgentCount: 0, failedAgentCount: 2 }))
+      .toEqual({ variant: 'success', label: 'Active', pulse: true });
   });
 });

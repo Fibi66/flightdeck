@@ -22,6 +22,7 @@ import { apiFetch } from '../../hooks/useApi';
 import { formatRelativeTime } from '../../utils/formatRelativeTime';
 import { useToastStore } from '../Toast';
 import { NewProjectModal } from '../LeadDashboard/NewProjectModal';
+import { StatusBadge, projectStatusProps } from '../ui/StatusBadge';
 
 /** Extended project type with storage and agent count info from the enriched API */
 interface EnrichedProject {
@@ -33,6 +34,9 @@ interface EnrichedProject {
   createdAt: string;
   updatedAt: string;
   activeAgentCount: number;
+  runningAgentCount?: number;
+  idleAgentCount?: number;
+  failedAgentCount?: number;
   storageMode: 'user' | 'local';
   sessions?: Array<{
     id: number;
@@ -76,17 +80,6 @@ function StorageBadge({ mode }: { mode: 'user' | 'local' }) {
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const colors: Record<string, string> = {
-    active: 'bg-green-500/10 text-green-600 dark:text-green-400',
-    archived: 'bg-gray-500/10 text-gray-500',
-  };
-  return (
-    <span className={`text-[10px] px-1.5 py-0.5 rounded ${colors[status] ?? colors.active}`}>
-      {status}
-    </span>
-  );
-}
 
 function ProjectCard({
   project,
@@ -122,7 +115,7 @@ function ProjectCard({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-sm font-medium text-th-text-alt">{project.name}</span>
-            <StatusBadge status={project.status} />
+            <StatusBadge {...projectStatusProps(project)} dot />
             <StorageBadge mode={project.storageMode} />
           </div>
           {project.description && (

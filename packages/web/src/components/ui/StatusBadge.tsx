@@ -146,3 +146,26 @@ export function providerStatusProps(provider: {
   if (provider.authenticated === false) return { variant: 'warning', label: 'Not authenticated' };
   return { variant: 'info', label: 'Installed' };
 }
+
+/** Derive project status from agent counts + project status field. */
+export function projectStatusProps(project: {
+  status: string;
+  runningAgentCount?: number;
+  idleAgentCount?: number;
+  failedAgentCount?: number;
+  activeAgentCount?: number;
+}): { variant: StatusVariant; label: string; pulse: boolean } {
+  if (project.status === 'archived') return { variant: 'neutral', label: 'Archived', pulse: false };
+
+  const running = project.runningAgentCount ?? 0;
+  const idle = project.idleAgentCount ?? 0;
+  const failed = project.failedAgentCount ?? 0;
+  // Fallback for callers that only have activeAgentCount (backward compat)
+  const active = running + idle || (project.activeAgentCount ?? 0);
+
+  if (running > 0)  return { variant: 'success', label: 'Active', pulse: true };
+  if (idle > 0)     return { variant: 'warning', label: 'Idle', pulse: false };
+  if (failed > 0)   return { variant: 'error', label: 'Error', pulse: false };
+  if (active > 0)   return { variant: 'success', label: 'Active', pulse: true };
+  return { variant: 'neutral', label: 'Stopped', pulse: false };
+}
