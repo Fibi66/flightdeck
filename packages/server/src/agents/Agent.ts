@@ -169,7 +169,8 @@ export class Agent {
 
     // On resume, the SDK restores conversation history which already contains
     // system prompt, context manifest, and task. Only send the resume notice.
-    // If resume fails, the session_resume_failed handler sends the full prompt.
+    // If resume fails, the adapter emits session_resume_failed and starts a
+    // fresh session with a new ID.
     let initialPrompt: string;
     if (isResume) {
       initialPrompt = RESUME_PREAMBLE;
