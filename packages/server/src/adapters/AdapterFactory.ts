@@ -2,13 +2,12 @@
  * Unified adapter factory for multi-backend support.
  *
  * Single entry point for creating agent adapters. Resolves the correct
- * adapter type based on provider config, SDK mode preference, and graceful
- * fallback when SDK is unavailable.
+ * adapter type based on provider config with graceful fallback when
+ * SDK is unavailable.
  *
  * Decision logic:
- *   provider='copilot' AND sdkMode=true → CopilotSdkAdapter (in-process SDK)
- *   provider='claude'  AND sdkMode=true → ClaudeSdkAdapter  (in-process SDK)
- *   provider='copilot' AND sdkMode=false → AcpAdapter with Copilot preset (subprocess, fallback only)
+ *   provider='copilot' → CopilotSdkAdapter (in-process SDK)
+ *   provider='claude'  → ClaudeSdkAdapter  (in-process SDK)
  *   all other providers → AcpAdapter with provider preset (subprocess)
  *
  * Session resume is handled at the adapter level:
@@ -20,6 +19,8 @@
  */
 import { getPreset } from './presets.js';
 import { resolveModel } from './ModelResolver.js';
+import { cloudProviderToEnv } from '../config/configSchema.js';
+import type { CloudProvider } from '../config/configSchema.js';
 import type { ProviderId } from './presets.js';
 import type {
   AgentAdapter,
@@ -33,8 +34,6 @@ import { logger } from '../utils/logger.js';
 export interface AdapterConfig {
   /** Provider ID (e.g., 'copilot', 'claude', 'gemini') */
   provider: string;
-  /** Use the in-process SDK instead of ACP subprocess (Claude only) */
-  sdkMode?: boolean;
   /** Run in autopilot mode (auto-approve tool calls) */
   autopilot?: boolean;
   /** Model name or tier alias */
@@ -47,6 +46,8 @@ export interface AdapterConfig {
   argsOverride?: string[];
   /** Extra environment variables for CLI process */
   envOverride?: Record<string, string>;
+  /** Structured cloud provider config (Bedrock, Vertex, Anthropic) — translated to env vars */
+  cloudProvider?: CloudProvider;
   /** Base CLI args from server config */
   cliArgs?: string[];
   /** Default CLI command from server config */
@@ -69,23 +70,13 @@ export interface AdapterResult {
 export type BackendType = 'acp' | 'claude-sdk' | 'copilot-sdk' | 'mock';
 
 /**
- * Determine which backend to use based on provider and config.
- * Pure function — no side effects, safe to call for inspection.
+ * Determine which backend to use based on provider.
+ * Each provider maps directly to its designed adapter — no config toggles.
  */
-export function resolveBackend(provider: string, sdkMode?: boolean): BackendType {
+export function resolveBackend(provider: string): BackendType {
   if (provider === 'mock') return 'mock';
-  // Copilot always uses SDK adapter — never AcpAdapter
-  if (provider === 'copilot') {
-    if (sdkMode === false) {
-      // sdkMode: false is ignored for Copilot — log so operators notice dead config
-      logger.warn({
-        module: 'adapter-factory',
-        msg: 'sdkMode: false is ignored for Copilot — Copilot always uses SDK adapter',
-      });
-    }
-    return 'copilot-sdk';
-  }
-  if (provider === 'claude' && sdkMode) return 'claude-sdk';
+  if (provider === 'copilot') return 'copilot-sdk';
+  if (provider === 'claude') return 'claude-sdk';
   return 'acp';
 }
 
@@ -123,8 +114,9 @@ export function buildStartOptions(
   const binary = config.binaryOverride || preset?.binary || config.cliCommand || 'copilot';
   const baseArgs = config.argsOverride || preset?.args;
 
-  // Merge env: config overrides take precedence, filter out empty/falsy values
-  const rawEnv = { ...preset?.env, ...config.envOverride };
+  // Merge env: cloudProvider → preset → explicit envOverride (last wins)
+  const cloudEnv = cloudProviderToEnv(config.cloudProvider);
+  const rawEnv = { ...cloudEnv, ...preset?.env, ...config.envOverride };
   const env = Object.fromEntries(
     Object.entries(rawEnv).filter(([, v]) => v),
   );
@@ -163,7 +155,7 @@ export function buildStartOptions(
  * - Logging of backend decisions
  */
 export async function createAdapterForProvider(config: AdapterConfig): Promise<AdapterResult> {
-  const preferredBackend = resolveBackend(config.provider, config.sdkMode);
+  const preferredBackend = resolveBackend(config.provider);
 
   if (preferredBackend === 'mock') {
     const { MockAdapter } = await import('./MockAdapter.js');

@@ -237,7 +237,6 @@ models:
 
 provider:
   id: copilot                    # Active provider: copilot | claude | gemini | codex | cursor | opencode
-  sdkMode: false                 # Use in-process SDK (Claude/Copilot only)
 
 budget:
   limit: null                    # null = unlimited; set a dollar amount to cap spend

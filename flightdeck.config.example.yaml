@@ -67,7 +67,6 @@ budget:
 
 provider:
   id: copilot                         # Active provider — one of the 6 below
-  # sdkMode: false                    # true = use in-process SDK (Claude only)
   # binaryOverride: null              # Override binary path (optional)
   # argsOverride: null                # Override spawn args (optional)
   # envOverride: {}                   # Extra env vars (optional)

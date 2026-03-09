@@ -106,7 +106,6 @@ function makeConfig() {
     cliCommand: 'copilot',
     cliArgs: [],
     provider: 'mock',
-    sdkMode: false,
     maxConcurrentAgents: 10,
     dbPath: ':memory:',
   };

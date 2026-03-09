@@ -75,7 +75,6 @@ const fakeConfig: ServerConfig = {
   cliCommand: 'copilot',
   cliArgs: [],
   provider: 'copilot',
-  sdkMode: false,
   maxConcurrentAgents: 50,
   dbPath: './test.db',
 };

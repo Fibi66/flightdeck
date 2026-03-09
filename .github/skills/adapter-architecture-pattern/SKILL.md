@@ -12,10 +12,10 @@ Flightdeck supports multiple AI CLI providers (Copilot, Claude, Gemini, Cursor, 
 ```
 AdapterFactory.createAdapterForProvider(config)
     │
-    ├── provider='mock'                    → MockAdapter (testing)
-    ├── provider='claude' + sdkMode=true   → ClaudeSdkAdapter (in-process SDK)
-    ├── provider='copilot' + sdkMode=true  → CopilotSdkAdapter (JSON-RPC SDK)
-    └── all other combinations             → AcpAdapter (subprocess via stdio)
+    ├── provider='mock'    → MockAdapter (testing)
+    ├── provider='claude'  → ClaudeSdkAdapter (in-process SDK)
+    ├── provider='copilot' → CopilotSdkAdapter (JSON-RPC SDK)
+    └── all others         → AcpAdapter (subprocess via stdio)
 ```
 
 Three adapter backends implement the same `AgentAdapter` interface:

@@ -295,12 +295,12 @@ describe('AgentServerRecovery', () => {
       mockCreateAdapter.mockReturnValue({ adapter, backend: 'acp', fallback: false } as any);
 
       const recovery = new AgentServerRecovery(persistence, {
-        adapterConfig: { provider: 'copilot', sdkMode: true },
+        adapterConfig: { provider: 'copilot' },
       });
       await recovery.recover();
 
       expect(mockCreateAdapter).toHaveBeenCalledWith(
-        expect.objectContaining({ provider: 'copilot', sdkMode: true, model: 'claude-opus' }),
+        expect.objectContaining({ provider: 'copilot', model: 'claude-opus' }),
       );
     });
   });

@@ -287,36 +287,31 @@ describe('CopilotSdkAdapter', () => {
       expect(mockClient.createSession).not.toHaveBeenCalled();
     });
 
-    it('should fallback to createSession with fresh sessionId if resume fails', async () => {
+    it('should throw when resume fails instead of falling back', async () => {
       mockClient.resumeSession.mockRejectedValueOnce(new Error('Session not found'));
 
-      const sessionId = await adapter.start({
+      await expect(adapter.start({
         ...defaultStartOpts(),
         sessionId: 'missing-session',
-      });
+      })).rejects.toThrow('Session resume failed: Session not found');
 
-      // Fallback generates a new UUID — should NOT reuse the failed one
-      expect(sessionId).not.toBe('missing-session');
-      expect(sessionId).toMatch(/^[0-9a-f-]{36}$/);
       expect(mockClient.resumeSession).toHaveBeenCalled();
-      expect(mockClient.createSession).toHaveBeenCalled();
+      expect(mockClient.createSession).not.toHaveBeenCalled();
     });
 
-    it('should emit session_resume_failed with fresh newSessionId on fallback', async () => {
+    it('should emit session_resume_failed on resume failure', async () => {
       mockClient.resumeSession.mockRejectedValueOnce(new Error('Session not found'));
       const handler = vi.fn();
       adapter.on('session_resume_failed', handler);
 
-      const sessionId = await adapter.start({
+      await expect(adapter.start({
         ...defaultStartOpts(),
         sessionId: 'dead-session-id',
-      });
+      })).rejects.toThrow('Session resume failed');
 
       expect(handler).toHaveBeenCalledOnce();
       const payload = handler.mock.calls[0][0];
       expect(payload.requestedSessionId).toBe('dead-session-id');
-      expect(payload.newSessionId).toBe(sessionId);
-      expect(payload.newSessionId).not.toBe('dead-session-id');
       expect(payload.error).toBe('Session not found');
     });
   });
@@ -936,20 +931,14 @@ describe('CopilotSdkAdapter', () => {
   // ── AdapterFactory Integration ──────────────────────────
 
   describe('AdapterFactory integration', () => {
-    it('should resolve copilot-sdk backend for copilot provider with sdkMode', async () => {
+    it('should resolve copilot-sdk backend for copilot provider', async () => {
       const { resolveBackend } = await import('./AdapterFactory.js');
-      expect(resolveBackend('copilot', true)).toBe('copilot-sdk');
-    });
-
-    it('should resolve copilot-sdk backend for copilot regardless of sdkMode', async () => {
-      const { resolveBackend } = await import('./AdapterFactory.js');
-      expect(resolveBackend('copilot', false)).toBe('copilot-sdk');
       expect(resolveBackend('copilot')).toBe('copilot-sdk');
     });
 
-    it('should still resolve claude-sdk for claude with sdkMode', async () => {
+    it('should resolve claude-sdk for claude provider', async () => {
       const { resolveBackend } = await import('./AdapterFactory.js');
-      expect(resolveBackend('claude', true)).toBe('claude-sdk');
+      expect(resolveBackend('claude')).toBe('claude-sdk');
     });
 
     it('should create CopilotSdkAdapter via factory', async () => {
@@ -957,7 +946,6 @@ describe('CopilotSdkAdapter', () => {
 
       const result = await createAdapterForProvider({
         provider: 'copilot',
-        sdkMode: true,
         autopilot: false,
       });
 

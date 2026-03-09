@@ -51,16 +51,73 @@ const budgetSchema = z.object({
 // since Zod .enum() requires a const tuple, not a runtime import.
 const VALID_PROVIDERS = ['copilot', 'gemini', 'opencode', 'cursor', 'codex', 'claude'] as const;
 
+// ── Cloud Provider schema (Bedrock / Vertex / Anthropic) ───
+
+const bedrockSchema = z.object({
+  type: z.literal('bedrock'),
+  awsRegion: z.string().default('us-east-1'),
+  awsProfile: z.string().optional(),
+});
+
+const vertexSchema = z.object({
+  type: z.literal('vertex'),
+  projectId: z.string(),
+  region: z.string().default('us-central1'),
+});
+
+const anthropicSchema = z.object({
+  type: z.literal('anthropic'),
+  apiKey: z.string().optional(),
+});
+
+const cloudProviderSchema = z.discriminatedUnion('type', [
+  bedrockSchema,
+  vertexSchema,
+  anthropicSchema,
+]).optional();
+
+export type CloudProvider = z.infer<typeof cloudProviderSchema>;
+
+/**
+ * Translate structured cloudProvider config into the environment variables
+ * that the Claude Agent SDK expects. Returns empty object for anthropic
+ * (default) since it uses ANTHROPIC_API_KEY from the environment.
+ */
+export function cloudProviderToEnv(cp: CloudProvider): Record<string, string> {
+  if (!cp) return {};
+  switch (cp.type) {
+    case 'bedrock': {
+      const env: Record<string, string> = {
+        CLAUDE_CODE_USE_BEDROCK: '1',
+        AWS_REGION: cp.awsRegion,
+      };
+      if (cp.awsProfile) env.AWS_PROFILE = cp.awsProfile;
+      return env;
+    }
+    case 'vertex':
+      return {
+        CLAUDE_CODE_USE_VERTEX: '1',
+        ANTHROPIC_VERTEX_PROJECT_ID: cp.projectId,
+        CLOUD_ML_REGION: cp.region,
+      };
+    case 'anthropic': {
+      const env: Record<string, string> = {};
+      if (cp.apiKey) env.ANTHROPIC_API_KEY = cp.apiKey;
+      return env;
+    }
+  }
+}
+
 const providerSchema = z.object({
   id: z.enum(VALID_PROVIDERS).default('copilot'),
-  /** Use in-process SDK instead of ACP subprocess (Claude only, default: false) */
-  sdkMode: z.boolean().default(false),
   /** Override the preset's default binary path */
   binaryOverride: z.string().optional(),
   /** Override the preset's default spawn args */
   argsOverride: z.array(z.string()).optional(),
   /** Extra environment variables to pass to the CLI process */
   envOverride: z.record(z.string(), z.string()).optional(),
+  /** Structured cloud provider config (Bedrock, Vertex, or Anthropic direct) */
+  cloudProvider: cloudProviderSchema,
 });
 
 const telegramSchema = z.object({

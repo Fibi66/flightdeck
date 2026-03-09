@@ -692,7 +692,6 @@ export async function createTestContainer(
       cliCommand: 'copilot',
       cliArgs: [],
       provider: 'copilot',
-      sdkMode: false,
       maxConcurrentAgents: 10,
       dbPath: ':memory:',
       ...overrides.config,
