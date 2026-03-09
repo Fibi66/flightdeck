@@ -34,6 +34,10 @@ import {
   Crown,
   Loader2,
   AlertTriangle,
+  FolderOpen,
+  Pencil,
+  Check,
+  X,
 } from 'lucide-react';
 import type { Decision, DagStatus } from '../../types';
 import type { ReplayKeyframe } from '../../hooks/useSessionReplay';
@@ -99,6 +103,45 @@ export function OverviewPage(_props: Props) {
   const [stopping, setStopping] = useState(false);
   const [showNewSessionDialog, setShowNewSessionDialog] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(!hasActiveLead);
+
+  // ── Project directory state ──────────────────────────────────
+  const currentProject = useMemo(() => {
+    if (!effectiveId) return null;
+    return projects.find(p => p.id === effectiveId) ?? null;
+  }, [effectiveId, projects]);
+
+  const [editingCwd, setEditingCwd] = useState(false);
+  const [cwdValue, setCwdValue] = useState('');
+  const [cwdSaving, setCwdSaving] = useState(false);
+  const [cwdError, setCwdError] = useState<string | null>(null);
+
+  const handleEditCwd = useCallback(() => {
+    setCwdValue(currentProject?.cwd || '');
+    setCwdError(null);
+    setEditingCwd(true);
+  }, [currentProject]);
+
+  const handleCancelCwdEdit = useCallback(() => {
+    setEditingCwd(false);
+    setCwdError(null);
+  }, []);
+
+  const handleSaveCwd = useCallback(async () => {
+    if (!effectiveId) return;
+    setCwdSaving(true);
+    setCwdError(null);
+    try {
+      await apiFetch(`/projects/${effectiveId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ cwd: cwdValue.trim() || null }),
+      });
+      setEditingCwd(false);
+    } catch (err) {
+      setCwdError(err instanceof Error ? err.message : 'Failed to update directory');
+    } finally {
+      setCwdSaving(false);
+    }
+  }, [effectiveId, cwdValue]);
 
   // Auto-expand history when session stops, collapse when it starts
   useEffect(() => { setHistoryOpen(!hasActiveLead); }, [hasActiveLead]);
@@ -308,6 +351,70 @@ export function OverviewPage(_props: Props) {
           <span className="text-xs text-th-text-muted">
             No active session. Start a new one or resume from history below.
           </span>
+        </div>
+      )}
+
+      {/* ── Project Directory ──────────────────────────────────── */}
+      {currentProject && (
+        <div className="bg-surface-raised border border-th-border rounded-lg px-4 py-3" data-testid="project-directory">
+          <div className="flex items-center gap-2 mb-1">
+            <FolderOpen size={14} className="text-th-text-muted" />
+            <span className="text-xs font-medium text-th-text-muted uppercase tracking-wide">Working Directory</span>
+          </div>
+          {editingCwd ? (
+            <div className="flex items-center gap-1.5">
+              <input
+                value={cwdValue}
+                onChange={(e) => setCwdValue(e.target.value)}
+                className="flex-1 text-sm font-mono bg-th-bg border border-th-border rounded px-2 py-1 text-th-text-alt focus:outline-none focus:border-accent"
+                placeholder="/path/to/project"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleSaveCwd();
+                  if (e.key === 'Escape') handleCancelCwdEdit();
+                }}
+                data-testid="cwd-input"
+              />
+              <button
+                onClick={handleSaveCwd}
+                disabled={cwdSaving}
+                className="p-1 text-green-500 hover:text-green-400 transition-colors disabled:opacity-50"
+                title="Save"
+                data-testid="cwd-save-btn"
+              >
+                {cwdSaving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+              </button>
+              <button
+                onClick={handleCancelCwdEdit}
+                className="p-1 text-th-text-muted hover:text-th-text transition-colors"
+                title="Cancel"
+                data-testid="cwd-cancel-btn"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5">
+              <span
+                className="text-sm font-mono text-th-text-alt truncate"
+                title={currentProject.cwd || 'Not set'}
+                data-testid="cwd-display"
+              >
+                {currentProject.cwd || <span className="text-th-text-muted italic">Not set</span>}
+              </span>
+              <button
+                onClick={handleEditCwd}
+                className="p-0.5 text-th-text-muted hover:text-th-text transition-colors rounded"
+                title="Edit working directory"
+                data-testid="cwd-edit-btn"
+              >
+                <Pencil size={12} />
+              </button>
+            </div>
+          )}
+          {cwdError && (
+            <p className="text-xs text-red-500 mt-1" data-testid="cwd-error">{cwdError}</p>
+          )}
         </div>
       )}
 
