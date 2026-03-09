@@ -111,6 +111,8 @@ export class CopilotSdkAdapter extends EventEmitter implements AgentAdapter {
   private _resumeStartedAt: number | null = null;
   /** Dedup SDK event delivery bug (github/copilot-sdk#567): resumeSession() causes 2x+ delivery */
   private _seenEventIds = new Set<string>();
+  /** Tracks whether streaming deltas delivered text for the current turn */
+  private _currentTurnStreamed = false;
 
   constructor(opts?: { model?: string; autopilot?: boolean; sendTimeout?: number }) {
     super();
@@ -353,7 +355,10 @@ export class CopilotSdkAdapter extends EventEmitter implements AgentAdapter {
     switch (event.type) {
       case 'assistant.message': {
         const content = (event.data as { content?: string }).content;
-        if (content) {
+        // Only emit text from the final message if streaming deltas didn't already deliver it.
+        // The SDK fires streaming_delta events during generation, then a final assistant.message
+        // with the complete content — emitting both would double every command and message.
+        if (content && !this._currentTurnStreamed) {
           this.emit('text', content);
         }
         const toolCalls = (event.data as { toolCalls?: Array<{
@@ -379,6 +384,7 @@ export class CopilotSdkAdapter extends EventEmitter implements AgentAdapter {
       case 'assistant.streaming_delta': {
         const delta = (event.data as { content?: string }).content;
         if (delta) {
+          this._currentTurnStreamed = true;
           this.emit('text', delta);
         }
         break;
@@ -431,6 +437,7 @@ export class CopilotSdkAdapter extends EventEmitter implements AgentAdapter {
 
       case 'session.idle': {
         // Session has finished processing current turn.
+        this._currentTurnStreamed = false;
         // DO NOT clear _seenEventIds here — SDK bug #567 can deliver duplicate
         // events from a stale subscription AFTER idle fires. The set is bounded
         // to 2000 entries (cleared on overflow) so growth is controlled.
@@ -618,6 +625,7 @@ export class CopilotSdkAdapter extends EventEmitter implements AgentAdapter {
     this.abortController?.abort();
     this._resumeStartedAt = null;
     this._seenEventIds.clear();
+    this._currentTurnStreamed = false;
 
     // Unsubscribe from events
     if (this.unsubscribeEvents) {

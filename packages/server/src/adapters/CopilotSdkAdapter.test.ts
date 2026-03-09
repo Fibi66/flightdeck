@@ -535,6 +535,77 @@ describe('CopilotSdkAdapter', () => {
       expect(text).toHaveBeenCalledWith('stream chunk');
     });
 
+    it('should suppress assistant.message text when streaming deltas already delivered content', () => {
+      const text = vi.fn();
+      adapter.on('text', text);
+
+      // Streaming deltas deliver the content incrementally
+      mockSessionEventHandler!(makeEvent('assistant.streaming_delta', { content: 'Hello ' }));
+      mockSessionEventHandler!(makeEvent('assistant.streaming_delta', { content: 'world' }));
+
+      // Final assistant.message arrives with complete content — should NOT re-emit
+      mockSessionEventHandler!(makeEvent('assistant.message', { content: 'Hello world' }));
+
+      // Only the streaming deltas should have emitted text
+      expect(text).toHaveBeenCalledTimes(2);
+      expect(text).toHaveBeenCalledWith('Hello ');
+      expect(text).toHaveBeenCalledWith('world');
+    });
+
+    it('should emit assistant.message text when no streaming deltas occurred', () => {
+      const text = vi.fn();
+      adapter.on('text', text);
+
+      // Non-streaming response — only assistant.message, no deltas
+      mockSessionEventHandler!(makeEvent('assistant.message', { content: 'Non-streamed response' }));
+
+      expect(text).toHaveBeenCalledTimes(1);
+      expect(text).toHaveBeenCalledWith('Non-streamed response');
+    });
+
+    it('should reset streaming state on session.idle for next turn', () => {
+      const text = vi.fn();
+      adapter.on('text', text);
+
+      // Turn 1: streaming
+      mockSessionEventHandler!(makeEvent('assistant.streaming_delta', { content: 'turn 1' }));
+      mockSessionEventHandler!(makeEvent('assistant.message', { content: 'turn 1' }));
+
+      // session.idle resets state
+      mockSessionEventHandler!(makeEvent('session.idle', {}));
+
+      // Turn 2: non-streaming — should emit from assistant.message
+      mockSessionEventHandler!(makeEvent('assistant.message', { content: 'turn 2' }));
+
+      // turn 1 delta + turn 2 message = 2 text emissions
+      expect(text).toHaveBeenCalledTimes(2);
+      expect(text).toHaveBeenCalledWith('turn 1');
+      expect(text).toHaveBeenCalledWith('turn 2');
+    });
+
+    it('should still emit tool calls from assistant.message even when streamed', () => {
+      const text = vi.fn();
+      const toolCall = vi.fn();
+      adapter.on('text', text);
+      adapter.on('tool_call', toolCall);
+
+      // Streaming delivered text
+      mockSessionEventHandler!(makeEvent('assistant.streaming_delta', { content: 'thinking...' }));
+
+      // Final message has tool calls (text suppressed, but tool calls still emitted)
+      mockSessionEventHandler!(makeEvent('assistant.message', {
+        content: 'thinking...',
+        toolCalls: [{
+          id: 'tc-1',
+          type: 'function',
+          function: { name: 'bash', arguments: '{"cmd": "ls"}' },
+        }],
+      }));
+
+      expect(text).toHaveBeenCalledTimes(1); // Only streaming delta
+      expect(toolCall).toHaveBeenCalledTimes(1); // Tool call still emitted
+    });
+
     it('should translate assistant.reasoning to thinking', () => {
       const thinking = vi.fn();
       adapter.on('thinking', thinking);
