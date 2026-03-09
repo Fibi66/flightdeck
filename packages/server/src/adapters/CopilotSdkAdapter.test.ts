@@ -656,7 +656,100 @@ describe('CopilotSdkAdapter', () => {
     });
   });
 
-  // ── Permission Handling ─────────────────────────────────
+  // ── Event Dedup (SDK bug github/copilot-sdk#567) ───────
+
+  describe('event dedup (copilot-sdk#567)', () => {
+    beforeEach(async () => {
+      await adapter.start(defaultStartOpts());
+    });
+
+    it('should suppress duplicate events with the same ID', () => {
+      const textHandler = vi.fn();
+      adapter.on('text', textHandler);
+
+      const event: CopilotSessionEvent = {
+        id: 'evt-dedup-1',
+        timestamp: new Date().toISOString(),
+        parentId: null,
+        type: 'assistant.streaming_delta',
+        data: { content: 'hello' },
+      };
+
+      mockSessionEventHandler!(event);
+      mockSessionEventHandler!(event); // duplicate delivery
+      mockSessionEventHandler!(event); // triple delivery (3x bug)
+
+      expect(textHandler).toHaveBeenCalledTimes(1);
+      expect(textHandler).toHaveBeenCalledWith('hello');
+    });
+
+    it('should allow distinct events with different IDs', () => {
+      const textHandler = vi.fn();
+      adapter.on('text', textHandler);
+
+      mockSessionEventHandler!({
+        id: 'evt-a', timestamp: new Date().toISOString(),
+        parentId: null, type: 'assistant.streaming_delta', data: { content: 'hello' },
+      });
+      mockSessionEventHandler!({
+        id: 'evt-b', timestamp: new Date().toISOString(),
+        parentId: null, type: 'assistant.streaming_delta', data: { content: ' world' },
+      });
+
+      expect(textHandler).toHaveBeenCalledTimes(2);
+    });
+
+    it('should clear dedup set on session.idle', () => {
+      const textHandler = vi.fn();
+      adapter.on('text', textHandler);
+
+      const event: CopilotSessionEvent = {
+        id: 'evt-reuse',
+        timestamp: new Date().toISOString(),
+        parentId: null,
+        type: 'assistant.streaming_delta',
+        data: { content: 'hello' },
+      };
+
+      mockSessionEventHandler!(event);
+      expect(textHandler).toHaveBeenCalledTimes(1);
+
+      // session.idle clears the set
+      mockSessionEventHandler!(makeEvent('session.idle'));
+
+      // Same ID now accepted again (new turn)
+      mockSessionEventHandler!(event);
+      expect(textHandler).toHaveBeenCalledTimes(2);
+    });
+
+    it('should cap dedup set size to prevent unbounded growth', () => {
+      const textHandler = vi.fn();
+      adapter.on('text', textHandler);
+
+      // Fill the set past the 2000 cap
+      for (let i = 0; i < 2001; i++) {
+        mockSessionEventHandler!({
+          id: `evt-fill-${i}`,
+          timestamp: new Date().toISOString(),
+          parentId: null,
+          type: 'assistant.streaming_delta',
+          data: { content: '.' },
+        });
+      }
+
+      expect(textHandler).toHaveBeenCalledTimes(2001);
+
+      // After clear, an old ID is accepted again
+      mockSessionEventHandler!({
+        id: 'evt-fill-0',
+        timestamp: new Date().toISOString(),
+        parentId: null,
+        type: 'assistant.streaming_delta',
+        data: { content: '!' },
+      });
+      expect(textHandler).toHaveBeenCalledTimes(2002);
+    });
+  });
 
   describe('permission handling', () => {
     it('should use approveAll in autopilot mode', async () => {

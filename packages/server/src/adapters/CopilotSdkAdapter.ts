@@ -107,6 +107,8 @@ export class CopilotSdkAdapter extends EventEmitter implements AgentAdapter {
   private promptQueuePriorityCount = 0;
   /** Timestamp (epoch ms) when resumeSession() was called — events older than this are historical replay */
   private _resumeStartedAt: number | null = null;
+  /** Dedup SDK event delivery bug (github/copilot-sdk#567): resumeSession() causes 2x+ delivery */
+  private _seenEventIds = new Set<string>();
 
   constructor(opts?: { model?: string; autopilot?: boolean; sendTimeout?: number }) {
     super();
@@ -298,6 +300,18 @@ export class CopilotSdkAdapter extends EventEmitter implements AgentAdapter {
   // ── Event Processing ───────────────────────────────────────
 
   private processEvent(event: CopilotSessionEvent): void {
+    // Dedup: SDK bug github/copilot-sdk#567 — resumeSession() causes the CLI
+    // binary to deliver each event 2x+ (subscription leak). Exact copies share
+    // the same event.id, arriving within 0-1ms. Safe to skip by ID.
+    if (event.id && this._seenEventIds.has(event.id)) {
+      return;
+    }
+    if (event.id) {
+      this._seenEventIds.add(event.id);
+      // Cap set size to prevent unbounded growth if session.idle never fires
+      if (this._seenEventIds.size > 2000) this._seenEventIds.clear();
+    }
+
     // Suppress historical event replay after resume: events with timestamps
     // older than resumeStartedAt are from the previous session.
     if (this._resumeStartedAt && event.type.startsWith('assistant.')) {
@@ -389,7 +403,8 @@ export class CopilotSdkAdapter extends EventEmitter implements AgentAdapter {
       }
 
       case 'session.idle': {
-        // Session has finished processing
+        // Session has finished processing — safe to clear dedup set between turns
+        this._seenEventIds.clear();
         break;
       }
 
@@ -573,6 +588,7 @@ export class CopilotSdkAdapter extends EventEmitter implements AgentAdapter {
   terminate(): void {
     this.abortController?.abort();
     this._resumeStartedAt = null;
+    this._seenEventIds.clear();
 
     // Unsubscribe from events
     if (this.unsubscribeEvents) {
