@@ -694,12 +694,9 @@ export function projectsRoutes(ctx: AppContext): Router {
       const lastSessions = projectRegistry.getSessions(project.id);
       const lastSession = !freshStart && lastSessions.length > 0 ? lastSessions[0] : null;
 
-      // Don't attempt SDK resume for crashed sessions — the SDK won't have the data
+      // Log diagnostic when attempting to resume a crashed session
       if (!freshStart && lastSession?.status === 'crashed') {
-        return res.status(409).json({
-          error: 'This session crashed and cannot be resumed. Please start a new session.',
-          crashed: true,
-        });
+        logger.warn({ module: 'project', msg: 'Attempting resume of crashed session — SDK may or may not recover it', sessionId: lastSession.sessionId, projectId: project.id });
       }
 
       const resumeSessionId = lastSession
@@ -713,8 +710,7 @@ export function projectsRoutes(ctx: AppContext): Router {
 
       // Reactivate existing session row when resuming; only INSERT for fresh/new sessions.
       // Don't check lastSession.status — after a stop the session may still show 'active'
-      // if the exit event didn't fire (e.g. ServerClientAdapter bug). The 409 guard above
-      // already ensures no agent is actually running.
+      // if the exit event didn't fire (e.g. ServerClientAdapter bug).
       if (lastSession) {
         projectRegistry.reactivateSession(lastSession.id, agent.id, task, role.id);
       } else {
