@@ -36,15 +36,19 @@ export function projectsRoutes(ctx: AppContext): Router {
     const status = typeof _req.query.status === 'string' ? _req.query.status : undefined;
     const projects = projectRegistry.list(status);
 
-    // Enrich with storage info and active agent counts
+    // Enrich with storage info and per-status agent counts
     const allAgents = agentManager.getAll();
     const enriched = projects.map((p) => {
-      const activeAgents = allAgents.filter(
-        (a) => a.projectId === p.id && (a.status === 'running' || a.status === 'idle')
-      );
+      const projectAgents = allAgents.filter((a) => a.projectId === p.id);
+      const runningCount = projectAgents.filter((a) => a.status === 'running').length;
+      const idleCount = projectAgents.filter((a) => a.status === 'idle').length;
+      const failedCount = projectAgents.filter((a) => a.status === 'failed').length;
       return {
         ...p,
-        activeAgentCount: activeAgents.length,
+        activeAgentCount: runningCount + idleCount,
+        runningAgentCount: runningCount,
+        idleAgentCount: idleCount,
+        failedAgentCount: failedCount,
         storageMode: storageManager?.getStorageMode(p.id) ?? 'user',
       };
     });
@@ -59,14 +63,18 @@ export function projectsRoutes(ctx: AppContext): Router {
     const sessions = projectRegistry.getSessions(project.id);
     const activeLeadId = projectRegistry.getActiveLeadId(project.id);
     const allAgents = agentManager.getAll();
-    const activeAgents = allAgents.filter(
-      (a) => a.projectId === project.id && (a.status === 'running' || a.status === 'idle')
-    );
+    const projectAgents = allAgents.filter((a) => a.projectId === project.id);
+    const runningCount = projectAgents.filter((a) => a.status === 'running').length;
+    const idleCount = projectAgents.filter((a) => a.status === 'idle').length;
+    const failedCount = projectAgents.filter((a) => a.status === 'failed').length;
     res.json({
       ...project,
       sessions,
       activeLeadId,
-      activeAgentCount: activeAgents.length,
+      activeAgentCount: runningCount + idleCount,
+      runningAgentCount: runningCount,
+      idleAgentCount: idleCount,
+      failedAgentCount: failedCount,
       storageMode: storageManager?.getStorageMode(project.id) ?? 'user',
     });
   });
@@ -690,7 +698,7 @@ export function projectsRoutes(ctx: AppContext): Router {
     const sharedDir = join(project.cwd, '.flightdeck', 'shared');
     const result = resolveAndValidate(project.cwd, '.flightdeck/shared');
     if (!result) {
-      return res.json({ groups: [] }); // No .flightdeck/shared — not an error
+      return res.json({ groups: [], sharedPath: sharedDir }); // No .flightdeck/shared — not an error
     }
 
     try {
@@ -734,10 +742,10 @@ export function projectsRoutes(ctx: AppContext): Router {
       }).filter(g => g.files.length > 0) // Only groups with artifacts
         .sort((a, b) => a.role.localeCompare(b.role));
 
-      res.json({ groups });
+      res.json({ groups, sharedPath: sharedDir });
     } catch (err: any) {
       logger.warn({ module: 'project-artifacts', msg: 'Cannot read artifacts', error: err.message, projectId: project.id });
-      res.json({ groups: [] });
+      res.json({ groups: [], sharedPath: sharedDir });
     }
   });
 
