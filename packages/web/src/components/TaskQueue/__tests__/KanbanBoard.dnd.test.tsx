@@ -113,15 +113,14 @@ describe('KanbanBoard DnD', () => {
     try { localStorage.clear(); } catch { /* ignore */ }
   });
 
-  describe('cross-column drag (status change)', () => {
-    it('calls PATCH /status when dragged to a different column', async () => {
+  describe('cross-column drag (blocked)', () => {
+    it('blocks cross-column drag with toast message', async () => {
       const tasks = [
         makeTask({ id: 'task-a', dagStatus: 'ready', title: 'Ready Task' }),
         makeTask({ id: 'task-b', dagStatus: 'done', title: 'Done Task' }),
       ];
       render(<KanbanBoard dagStatus={makeDagStatus(tasks)} projectId="proj-1" />);
 
-      // Simulate drag: task-a from 'ready' to 'done' column
       act(() => {
         capturedHandlers.onDragEnd?.({
           active: { id: 'task-a' },
@@ -129,25 +128,17 @@ describe('KanbanBoard DnD', () => {
         });
       });
 
-      await waitFor(() => {
-        expect(mockApiFetch).toHaveBeenCalledWith(
-          '/projects/proj-1/tasks/task-a/status',
-          expect.objectContaining({
-            method: 'PATCH',
-            body: JSON.stringify({ status: 'done' }),
-          }),
-        );
-      });
+      expect(mockApiFetch).not.toHaveBeenCalled();
+      expect(screen.getByText('Only the lead can change task status')).toBeTruthy();
     });
 
-    it('calls PATCH /status when dragged onto a task in different column', async () => {
+    it('blocks drag onto a task in a different column', async () => {
       const tasks = [
         makeTask({ id: 'task-a', dagStatus: 'ready', title: 'Ready Task' }),
         makeTask({ id: 'task-b', dagStatus: 'done', title: 'Done Task' }),
       ];
       render(<KanbanBoard dagStatus={makeDagStatus(tasks)} projectId="proj-1" />);
 
-      // Drag task-a onto task-b (which is in 'done' column)
       act(() => {
         capturedHandlers.onDragEnd?.({
           active: { id: 'task-a' },
@@ -155,35 +146,11 @@ describe('KanbanBoard DnD', () => {
         });
       });
 
-      await waitFor(() => {
-        expect(mockApiFetch).toHaveBeenCalledWith(
-          '/projects/proj-1/tasks/task-a/status',
-          expect.objectContaining({
-            method: 'PATCH',
-            body: JSON.stringify({ status: 'done' }),
-          }),
-        );
-      });
+      expect(mockApiFetch).not.toHaveBeenCalled();
+      expect(screen.getByText('Only the lead can change task status')).toBeTruthy();
     });
 
-    it('calls onTaskUpdated after successful status change', async () => {
-      const onUpdated = vi.fn();
-      const tasks = [makeTask({ id: 'task-a', dagStatus: 'ready' })];
-      render(<KanbanBoard dagStatus={makeDagStatus(tasks)} projectId="proj-1" onTaskUpdated={onUpdated} />);
-
-      act(() => {
-        capturedHandlers.onDragEnd?.({
-          active: { id: 'task-a' },
-          over: { id: 'column-done' },
-        });
-      });
-
-      await waitFor(() => {
-        expect(onUpdated).toHaveBeenCalled();
-      });
-    });
-
-    it('drags failed task to ready (retry via DnD)', async () => {
+    it('blocks drag of failed task to ready column', async () => {
       const tasks = [makeTask({ id: 'task-f', dagStatus: 'failed' })];
       render(<KanbanBoard dagStatus={makeDagStatus(tasks)} projectId="proj-1" />);
 
@@ -194,19 +161,11 @@ describe('KanbanBoard DnD', () => {
         });
       });
 
-      await waitFor(() => {
-        expect(mockApiFetch).toHaveBeenCalledWith(
-          '/projects/proj-1/tasks/task-f/status',
-          expect.objectContaining({
-            body: JSON.stringify({ status: 'ready' }),
-          }),
-        );
-      });
+      expect(mockApiFetch).not.toHaveBeenCalled();
+      expect(screen.getByText('Only the lead can change task status')).toBeTruthy();
     });
-  });
 
-  describe('invalid drop targets (UNDROP_TARGETS)', () => {
-    it('rejects drag to "running" column with toast message', async () => {
+    it('blocks drag to running column', async () => {
       const tasks = [
         makeTask({ id: 'task-a', dagStatus: 'ready' }),
         makeTask({ id: 'task-b', dagStatus: 'running', startedAt: new Date().toISOString() }),
@@ -220,14 +179,11 @@ describe('KanbanBoard DnD', () => {
         });
       });
 
-      // Should NOT call apiFetch
       expect(mockApiFetch).not.toHaveBeenCalled();
-
-      // Should show error toast
-      expect(screen.getByText(/Cannot manually move tasks to "running"/)).toBeTruthy();
+      expect(screen.getByText('Only the lead can change task status')).toBeTruthy();
     });
 
-    it('rejects drag to "blocked" column with toast message', async () => {
+    it('blocks drag to blocked column', async () => {
       const tasks = [
         makeTask({ id: 'task-a', dagStatus: 'ready' }),
         makeTask({ id: 'task-b', dagStatus: 'blocked' }),
@@ -242,12 +198,12 @@ describe('KanbanBoard DnD', () => {
       });
 
       expect(mockApiFetch).not.toHaveBeenCalled();
-      expect(screen.getByText(/Cannot manually move tasks to "blocked"/)).toBeTruthy();
+      expect(screen.getByText('Only the lead can change task status')).toBeTruthy();
     });
   });
 
   describe('same-column drag (priority reorder)', () => {
-    it('calls PATCH /priority when reordered within same column', async () => {
+    it('calls PATCH /priority when reordered within ready column', async () => {
       const tasks = [
         makeTask({ id: 'task-a', dagStatus: 'ready', priority: 3, createdAt: '2026-03-01' }),
         makeTask({ id: 'task-b', dagStatus: 'ready', priority: 2, createdAt: '2026-03-02' }),
@@ -272,6 +228,67 @@ describe('KanbanBoard DnD', () => {
           }),
         );
       });
+    });
+
+    it('calls PATCH /priority when reordered within pending column', async () => {
+      const tasks = [
+        makeTask({ id: 'task-a', dagStatus: 'pending', priority: 3 }),
+        makeTask({ id: 'task-b', dagStatus: 'pending', priority: 1 }),
+      ];
+      render(<KanbanBoard dagStatus={makeDagStatus(tasks)} projectId="proj-1" />);
+
+      act(() => {
+        capturedHandlers.onDragEnd?.({
+          active: { id: 'task-b' },
+          over: { id: 'task-a' },
+        });
+      });
+
+      await waitFor(() => {
+        expect(mockApiFetch).toHaveBeenCalledWith(
+          '/projects/proj-1/tasks/task-b/priority',
+          expect.objectContaining({
+            method: 'PATCH',
+            body: expect.stringContaining('"priority"'),
+          }),
+        );
+      });
+    });
+
+    it('blocks reorder in non-reorderable columns (e.g. done)', async () => {
+      const tasks = [
+        makeTask({ id: 'task-a', dagStatus: 'done', priority: 2, completedAt: '2026-03-01T00:00:00Z' }),
+        makeTask({ id: 'task-b', dagStatus: 'done', priority: 1, completedAt: '2026-03-02T00:00:00Z' }),
+      ];
+      render(<KanbanBoard dagStatus={makeDagStatus(tasks)} projectId="proj-1" />);
+
+      act(() => {
+        capturedHandlers.onDragEnd?.({
+          active: { id: 'task-b' },
+          over: { id: 'task-a' },
+        });
+      });
+
+      expect(mockApiFetch).not.toHaveBeenCalled();
+      expect(screen.getByText(/Reordering is not allowed in the "done" column/)).toBeTruthy();
+    });
+
+    it('blocks reorder in running column', async () => {
+      const tasks = [
+        makeTask({ id: 'task-a', dagStatus: 'running', startedAt: '2026-03-01T00:00:00Z' }),
+        makeTask({ id: 'task-b', dagStatus: 'running', startedAt: '2026-03-02T00:00:00Z' }),
+      ];
+      render(<KanbanBoard dagStatus={makeDagStatus(tasks)} projectId="proj-1" />);
+
+      act(() => {
+        capturedHandlers.onDragEnd?.({
+          active: { id: 'task-b' },
+          over: { id: 'task-a' },
+        });
+      });
+
+      expect(mockApiFetch).not.toHaveBeenCalled();
+      expect(screen.getByText(/Reordering is not allowed in the "running" column/)).toBeTruthy();
     });
 
     it('does not call API when dropped on same position', () => {
@@ -349,38 +366,28 @@ describe('KanbanBoard DnD', () => {
     });
   });
 
-  describe('API error handling during DnD', () => {
-    it('shows toast on 409 conflict error', async () => {
-      mockApiFetch.mockRejectedValueOnce(new Error('409 Conflict'));
-      const tasks = [makeTask({ id: 'task-a', dagStatus: 'ready' })];
+  describe('API error handling during reorder', () => {
+    it('shows no error when reorder fails silently', async () => {
+      mockApiFetch.mockRejectedValueOnce(new Error('Network error'));
+      const tasks = [
+        makeTask({ id: 'task-a', dagStatus: 'ready', priority: 3 }),
+        makeTask({ id: 'task-b', dagStatus: 'ready', priority: 1 }),
+      ];
       render(<KanbanBoard dagStatus={makeDagStatus(tasks)} projectId="proj-1" />);
 
       act(() => {
         capturedHandlers.onDragEnd?.({
-          active: { id: 'task-a' },
-          over: { id: 'column-done' },
+          active: { id: 'task-b' },
+          over: { id: 'task-a' },
         });
       });
 
+      // Priority reorder failures are logged but don't show toast
       await waitFor(() => {
-        expect(screen.getByText(/Invalid transition: ready → done/)).toBeTruthy();
-      });
-    });
-
-    it('shows generic error toast on non-409 failure', async () => {
-      mockApiFetch.mockRejectedValueOnce(new Error('Network timeout'));
-      const tasks = [makeTask({ id: 'task-a', dagStatus: 'ready' })];
-      render(<KanbanBoard dagStatus={makeDagStatus(tasks)} projectId="proj-1" />);
-
-      act(() => {
-        capturedHandlers.onDragEnd?.({
-          active: { id: 'task-a' },
-          over: { id: 'column-done' },
-        });
-      });
-
-      await waitFor(() => {
-        expect(screen.getByText('Network timeout')).toBeTruthy();
+        expect(mockApiFetch).toHaveBeenCalledWith(
+          '/projects/proj-1/tasks/task-b/priority',
+          expect.objectContaining({ method: 'PATCH' }),
+        );
       });
     });
   });

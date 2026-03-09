@@ -13,6 +13,7 @@ import {
   Play,
   SkipForward,
   MoreHorizontal,
+  MessageSquare,
 } from 'lucide-react';
 import { apiFetch } from '../../hooks/useApi';
 import { useSettingsStore } from '../../stores/settingsStore';
@@ -37,7 +38,11 @@ export function TaskCard({ task, allTasks, isDragOverlay, projectId, onTaskUpdat
   const isDetailed = oversightLevel === 'detailed';
   const [expanded, setExpanded] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const [showCommentDialog, setShowCommentDialog] = useState(false);
+  const [commentText, setCommentText] = useState('');
+  const [commentSending, setCommentSending] = useState(false);
   const contextMenuRef = useRef<HTMLDivElement>(null);
+  const commentInputRef = useRef<HTMLTextAreaElement>(null);
   const title = task.title || task.description || task.id;
   const hasDetails = task.dependsOn.length > 0 || task.files.length > 0 || task.assignedAgentId;
   const stale = isStale(task);
@@ -114,6 +119,33 @@ export function TaskCard({ task, allTasks, isDragOverlay, projectId, onTaskUpdat
     }
   }, [projectId, task.id, onTaskUpdated]);
 
+  const handleCommentSubmit = useCallback(async () => {
+    if (!commentText.trim() || !task.leadId) return;
+    setCommentSending(true);
+    try {
+      const taskLabel = task.title || task.id;
+      const text = `[Task Comment] Re: "${taskLabel}" (${task.id})\n\n${commentText.trim()}`;
+      await apiFetch(`/lead/${task.leadId}/message`, {
+        method: 'POST',
+        body: JSON.stringify({ text, mode: 'queue' }),
+      });
+      setCommentText('');
+      setShowCommentDialog(false);
+      onTaskUpdated?.(); // refresh to show toast externally if needed
+    } catch (err: any) {
+      console.warn('Failed to send comment to lead', err);
+    } finally {
+      setCommentSending(false);
+    }
+  }, [commentText, task.leadId, task.title, task.id, onTaskUpdated]);
+
+  // Focus comment textarea when dialog opens
+  useEffect(() => {
+    if (showCommentDialog && commentInputRef.current) {
+      commentInputRef.current.focus();
+    }
+  }, [showCommentDialog]);
+
   // Build context menu items based on current status
   const contextMenuItems = useMemo(() => {
     if (isArchived) return [{ label: 'Restore', action: 'restore', icon: <RotateCcw size={12} /> }];
@@ -169,6 +201,20 @@ export function TaskCard({ task, allTasks, isDragOverlay, projectId, onTaskUpdat
             </span>
           )}
           {priorityBadge(task.priority)}
+          {!isDragOverlay && !isArchived && task.leadId && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowCommentDialog(prev => !prev);
+              }}
+              className="opacity-0 group-hover/card:opacity-100 focus:opacity-100 p-0.5 rounded hover:bg-th-bg-muted text-th-text-muted hover:text-th-text transition-opacity"
+              aria-label="Comment on task"
+              data-testid="comment-trigger"
+              title="Send comment to lead"
+            >
+              <MessageSquare size={12} />
+            </button>
+          )}
           {!isDragOverlay && contextMenuItems.length > 0 && (
             <button
               onClick={(e) => {
@@ -281,6 +327,55 @@ export function TaskCard({ task, allTasks, isDragOverlay, projectId, onTaskUpdat
           ))}
         </div>
       )}
+
+      {/* Comment dialog */}
+      {showCommentDialog && (
+        <div
+          className="mt-2 p-2 bg-th-bg-muted rounded border border-th-border"
+          onClick={(e) => e.stopPropagation()}
+          data-testid="comment-dialog"
+        >
+          <textarea
+            ref={commentInputRef}
+            value={commentText}
+            onChange={(e) => setCommentText(e.target.value)}
+            placeholder="Send a comment to the lead..."
+            className="w-full text-[11px] bg-th-bg border border-th-border rounded px-2 py-1.5 text-th-text placeholder-th-text-muted resize-none focus:outline-none focus:ring-1 focus:ring-blue-500/50"
+            rows={2}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                handleCommentSubmit();
+              }
+              if (e.key === 'Escape') {
+                setShowCommentDialog(false);
+                setCommentText('');
+              }
+            }}
+            data-testid="comment-input"
+          />
+          <div className="flex items-center justify-between mt-1.5">
+            <span className="text-[9px] text-th-text-muted">⌘+Enter to send</span>
+            <div className="flex gap-1.5">
+              <button
+                onClick={() => { setShowCommentDialog(false); setCommentText(''); }}
+                className="text-[10px] px-2 py-0.5 rounded text-th-text-muted hover:text-th-text hover:bg-th-bg"
+                data-testid="comment-cancel"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCommentSubmit}
+                disabled={!commentText.trim() || commentSending}
+                className="text-[10px] px-2 py-0.5 rounded bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                data-testid="comment-send"
+              >
+                {commentSending ? 'Sending…' : 'Send to Lead'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -294,10 +389,12 @@ export interface SortableTaskCardProps {
   onTaskUpdated?: () => void;
   showProjectName?: boolean;
   projectName?: string;
+  reorderable?: boolean;
 }
 
-export function SortableTaskCard({ task, allTasks, projectId, onTaskUpdated, showProjectName, projectName }: SortableTaskCardProps) {
+export function SortableTaskCard({ task, allTasks, projectId, onTaskUpdated, showProjectName, projectName, reorderable = true }: SortableTaskCardProps) {
   const isArchived = !!task.archivedAt;
+  const dragDisabled = isArchived || !reorderable;
   const {
     attributes,
     listeners,
@@ -305,7 +402,7 @@ export function SortableTaskCard({ task, allTasks, projectId, onTaskUpdated, sho
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: task.id, disabled: isArchived });
+  } = useSortable({ id: task.id, disabled: dragDisabled });
 
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
@@ -314,7 +411,7 @@ export function SortableTaskCard({ task, allTasks, projectId, onTaskUpdated, sho
   };
 
   return (
-    <div ref={setNodeRef} style={style} {...attributes} {...(isArchived ? {} : listeners)}>
+    <div ref={setNodeRef} style={style} {...attributes} {...(dragDisabled ? {} : listeners)}>
       <TaskCard task={task} allTasks={allTasks} projectId={projectId} onTaskUpdated={onTaskUpdated} showProjectName={showProjectName} projectName={projectName} />
     </div>
   );

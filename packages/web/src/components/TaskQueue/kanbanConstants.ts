@@ -39,6 +39,9 @@ export const COLUMN_STATUSES = new Set<string>(COLUMNS.map(c => c.status));
 // Statuses that cannot be set via drag – they are auto-managed
 export const UNDROP_TARGETS = new Set<DagTaskStatus>(['running', 'blocked']);
 
+// Columns where within-column reorder (priority drag) is allowed
+export const REORDERABLE_COLUMNS = new Set<DagTaskStatus>(['pending', 'ready']);
+
 // ── Status background styles (matches DagGraph conventions) ─────────
 
 export const STATUS_BG: Record<DagTaskStatus, string> = {

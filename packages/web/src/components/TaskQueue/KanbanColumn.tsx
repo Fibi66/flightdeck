@@ -20,9 +20,10 @@ export interface KanbanColumnProps {
   onTaskUpdated?: () => void;
   showProjectName?: boolean;
   projectNameMap?: Map<string, string>;
+  reorderable?: boolean;
 }
 
-export function KanbanColumn({ column, tasks, allTasks, collapsed, onToggleCollapse, isDropTarget, isInvalidTarget, projectId, onTaskUpdated, showProjectName, projectNameMap }: KanbanColumnProps) {
+export function KanbanColumn({ column, tasks, allTasks, collapsed, onToggleCollapse, isDropTarget, isInvalidTarget, projectId, onTaskUpdated, showProjectName, projectNameMap, reorderable = true }: KanbanColumnProps) {
   const { setNodeRef } = useDroppable({ id: `column-${column.status}` });
   const [showAll, setShowAll] = useState(false);
 
@@ -82,6 +83,7 @@ export function KanbanColumn({ column, tasks, allTasks, collapsed, onToggleColla
                     onTaskUpdated={onTaskUpdated}
                     showProjectName={showProjectName}
                     projectName={projectNameMap?.get(task.projectId ?? '') ?? task.projectId}
+                    reorderable={reorderable}
                   />
                 ))}
                 {hiddenCount > 0 && (

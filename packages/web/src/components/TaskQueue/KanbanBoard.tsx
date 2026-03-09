@@ -15,7 +15,7 @@ import { Plus, Search, Archive } from 'lucide-react';
 import { apiFetch } from '../../hooks/useApi';
 import { useSettingsStore } from '../../stores/settingsStore';
 import type { DagStatus, DagTask, DagTaskStatus } from '../../types';
-import { COLUMNS, UNDROP_TARGETS, resolveColumnStatus, type FilterState, EMPTY_FILTERS, hasActiveFilters } from './kanbanConstants';
+import { COLUMNS, UNDROP_TARGETS, REORDERABLE_COLUMNS, resolveColumnStatus, type FilterState, EMPTY_FILTERS, hasActiveFilters } from './kanbanConstants';
 import { TaskCard } from './TaskCard';
 import { FilterBar } from './FilterBar';
 import { KanbanColumn, InlineToast } from './KanbanColumn';
@@ -220,30 +220,18 @@ function KanbanBoard({ dagStatus, projectId, onTaskUpdated, scope = 'project', p
 
     const sourceStatus = draggedTask.dagStatus;
 
-    // Cross-column drag → status change
+    // Cross-column drag is disabled — only the lead/system can change task status
     if (targetStatus !== sourceStatus) {
-      if (UNDROP_TARGETS.has(targetStatus)) {
-        setToastMessage(`Cannot manually move tasks to "${targetStatus}" – it is auto-managed`);
-        return;
-      }
-
-      apiFetch(`/projects/${projectId}/tasks/${draggedTask.id}/status`, {
-        method: 'PATCH',
-        body: JSON.stringify({ status: targetStatus }),
-      })
-        .then(() => onTaskUpdated?.())
-        .catch((err: any) => {
-          const msg = err.message?.includes('409')
-            ? `Invalid transition: ${sourceStatus} → ${targetStatus}`
-            : err.message ?? 'Failed to update task status';
-          setToastMessage(msg);
-          console.warn('Status update failed', err);
-        });
+      setToastMessage('Only the lead can change task status');
       return;
     }
 
-    // Same-column drag → reorder (priority change)
+    // Same-column drag → reorder (only in pending/ready columns)
     if (String(active.id) !== String(over.id)) {
+      if (!REORDERABLE_COLUMNS.has(sourceStatus)) {
+        setToastMessage(`Reordering is not allowed in the "${sourceStatus}" column`);
+        return;
+      }
       const columnTasks = tasksByStatus.get(sourceStatus);
       if (!columnTasks) return;
 
@@ -424,6 +412,7 @@ function KanbanBoard({ dagStatus, projectId, onTaskUpdated, scope = 'project', p
               onTaskUpdated={onTaskUpdated}
               showProjectName={isGlobalView}
               projectNameMap={projectNameMap}
+              reorderable={REORDERABLE_COLUMNS.has(col.status)}
             />
           ))}
         </div>

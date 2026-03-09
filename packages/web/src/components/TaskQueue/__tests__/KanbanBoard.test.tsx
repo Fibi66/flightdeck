@@ -890,4 +890,84 @@ describe('KanbanBoard', () => {
       expect(screen.queryByText('Force Ready')).toBeNull();
     });
   });
+
+  describe('task comment feature', () => {
+    it('shows comment button on hover and opens dialog', () => {
+      const tasks = [makeTask({ id: 'task-1', dagStatus: 'ready', leadId: 'lead-1', title: 'My Task' })];
+      render(<KanbanBoard dagStatus={makeDagStatus(tasks)} projectId="proj-1" />);
+
+      const card = screen.getByTestId('kanban-card-task-1');
+      const commentBtn = within(card).getByTestId('comment-trigger');
+      expect(commentBtn).toBeTruthy();
+
+      fireEvent.click(commentBtn);
+      expect(screen.getByTestId('comment-dialog')).toBeTruthy();
+      expect(screen.getByTestId('comment-input')).toBeTruthy();
+    });
+
+    it('sends comment to lead via API', async () => {
+      mockApiFetch.mockResolvedValueOnce({ ok: true });
+      const tasks = [makeTask({ id: 'task-1', dagStatus: 'ready', leadId: 'lead-1', title: 'My Task' })];
+      render(<KanbanBoard dagStatus={makeDagStatus(tasks)} projectId="proj-1" />);
+
+      const card = screen.getByTestId('kanban-card-task-1');
+      fireEvent.click(within(card).getByTestId('comment-trigger'));
+
+      const input = screen.getByTestId('comment-input');
+      fireEvent.change(input, { target: { value: 'Please prioritize this task' } });
+
+      const sendBtn = screen.getByTestId('comment-send');
+      fireEvent.click(sendBtn);
+
+      await waitFor(() => {
+        expect(mockApiFetch).toHaveBeenCalledWith(
+          '/lead/lead-1/message',
+          expect.objectContaining({
+            method: 'POST',
+            body: expect.stringContaining('Please prioritize this task'),
+          }),
+        );
+      });
+    });
+
+    it('includes task context in comment message', async () => {
+      mockApiFetch.mockResolvedValueOnce({ ok: true });
+      const tasks = [makeTask({ id: 'task-42', dagStatus: 'pending', leadId: 'lead-1', title: 'Fix bug #99' })];
+      render(<KanbanBoard dagStatus={makeDagStatus(tasks)} projectId="proj-1" />);
+
+      const card = screen.getByTestId('kanban-card-task-42');
+      fireEvent.click(within(card).getByTestId('comment-trigger'));
+      fireEvent.change(screen.getByTestId('comment-input'), { target: { value: 'Needs more info' } });
+      fireEvent.click(screen.getByTestId('comment-send'));
+
+      await waitFor(() => {
+        const call = mockApiFetch.mock.calls[0];
+        const body = JSON.parse(call[1].body);
+        expect(body.text).toContain('Fix bug #99');
+        expect(body.text).toContain('task-42');
+        expect(body.mode).toBe('queue');
+      });
+    });
+
+    it('closes dialog on cancel', () => {
+      const tasks = [makeTask({ id: 'task-1', dagStatus: 'ready', leadId: 'lead-1' })];
+      render(<KanbanBoard dagStatus={makeDagStatus(tasks)} projectId="proj-1" />);
+
+      const card = screen.getByTestId('kanban-card-task-1');
+      fireEvent.click(within(card).getByTestId('comment-trigger'));
+      expect(screen.getByTestId('comment-dialog')).toBeTruthy();
+
+      fireEvent.click(screen.getByTestId('comment-cancel'));
+      expect(screen.queryByTestId('comment-dialog')).toBeNull();
+    });
+
+    it('disables send button when comment is empty', () => {
+      const tasks = [makeTask({ id: 'task-1', dagStatus: 'ready', leadId: 'lead-1' })];
+      render(<KanbanBoard dagStatus={makeDagStatus(tasks)} projectId="proj-1" />);
+
+      fireEvent.click(within(screen.getByTestId('kanban-card-task-1')).getByTestId('comment-trigger'));
+      const sendBtn = screen.getByTestId('comment-send') as HTMLButtonElement;
+      expect(sendBtn.disabled).toBe(true);
+    });
+  });
 });
