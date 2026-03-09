@@ -666,59 +666,6 @@ export function projectsRoutes(ctx: AppContext): Router {
     res.json({ ...briefing, formatted: projectRegistry.formatBriefing(briefing) });
   });
 
-  // Enriched session history with agent composition, task summary, and duration
-  router.get('/projects/:id/sessions/detail', (req, res) => {
-    if (!projectRegistry) return res.status(500).json({ error: 'Projects not available' });
-    const project = projectRegistry.get(req.params.id);
-    if (!project) return res.status(404).json({ error: 'Project not found' });
-
-    const sessions = projectRegistry.getSessions(project.id);
-    const taskDAG = agentManager.getTaskDAG();
-    const allRosterAgents = agentRoster?.getAllAgents() ?? [];
-
-    const detailed = sessions.map((session) => {
-      // Find agents that participated in this session via metadata.parentId
-      const agents = allRosterAgents
-        .filter((a) => {
-          if (a.agentId === session.leadId) return true;
-          const meta = a.metadata as Record<string, unknown> | undefined;
-          return a.projectId === project.id && meta?.parentId === session.leadId;
-        })
-        .map((a) => ({
-          agentId: a.agentId,
-          role: a.role,
-          model: a.model,
-          sessionId: a.sessionId ?? null,
-        }));
-
-      // Task summary from DAG
-      const tasks = taskDAG.getTasks(session.leadId);
-      const done = tasks.filter((t) => t.dagStatus === 'done').length;
-      const failed = tasks.filter((t) => t.dagStatus === 'failed').length;
-
-      // Check if retro exists
-      const retros = sessionRetro?.getRetros(session.leadId) ?? [];
-
-      const startMs = new Date(session.startedAt).getTime();
-      const endMs = session.endedAt ? new Date(session.endedAt).getTime() : null;
-
-      return {
-        id: session.id,
-        leadId: session.leadId,
-        status: session.status,
-        task: session.task,
-        startedAt: session.startedAt,
-        endedAt: session.endedAt,
-        durationMs: endMs ? endMs - startMs : null,
-        agents,
-        taskSummary: { total: tasks.length, done, failed },
-        hasRetro: retros.length > 0,
-      };
-    });
-
-    res.json(detailed);
-  });
-
   // Resume a project — starts a new lead session with project context + message history
   router.post('/projects/:id/resume', (req, res) => {
     if (!projectRegistry) return res.status(500).json({ error: 'Projects not available' });

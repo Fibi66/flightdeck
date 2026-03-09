@@ -135,3 +135,232 @@ describe('POST /projects — title validation', () => {
     expect(res.status).toBe(201);
   });
 });
+
+// ── Session Detail + Enhanced Resume ──────────────────────────────
+
+describe('GET /projects/:id/sessions/detail', () => {
+  let baseUrl: string;
+  let stop: () => Promise<void>;
+
+  const mockGetSessions = vi.fn();
+  const mockGetTasks = vi.fn().mockReturnValue([]);
+  const mockGetRetros = vi.fn().mockReturnValue([]);
+  const mockGetAllAgents = vi.fn().mockReturnValue([]);
+
+  beforeAll(async () => {
+    const srv = createTestServer({
+      projectRegistry: {
+        get: vi.fn().mockReturnValue({ id: 'proj-1', name: 'Test', cwd: null }),
+        getSessions: mockGetSessions,
+      } as any,
+      agentManager: {
+        getTaskDAG: vi.fn().mockReturnValue({ getTasks: mockGetTasks }),
+      } as any,
+      agentRoster: {
+        getAllAgents: mockGetAllAgents,
+      } as any,
+      sessionRetro: {
+        getRetros: mockGetRetros,
+      } as any,
+    });
+    baseUrl = await srv.start();
+    stop = srv.stop;
+  });
+  afterAll(async () => { await stop?.(); });
+
+  it('returns 404 for missing project', async () => {
+    const srv2 = createTestServer({
+      projectRegistry: { get: vi.fn().mockReturnValue(null) } as any,
+      agentManager: { getTaskDAG: vi.fn().mockReturnValue({ getTasks: vi.fn() }) } as any,
+    });
+    const url = await srv2.start();
+    const res = await fetch(`${url}/projects/nonexistent/sessions/detail`);
+    expect(res.status).toBe(404);
+    await srv2.stop();
+  });
+
+  it('returns enriched session list with agents and task summary', async () => {
+    mockGetSessions.mockReturnValue([
+      {
+        id: 1, leadId: 'lead-1', projectId: 'proj-1', status: 'completed',
+        task: 'Build feature', startedAt: '2026-01-01T10:00:00Z', endedAt: '2026-01-01T12:00:00Z',
+      },
+    ]);
+    mockGetAllAgents.mockReturnValue([
+      { agentId: 'lead-1', role: 'lead', model: 'claude', projectId: 'proj-1', sessionId: 'ses-1', metadata: {} },
+      { agentId: 'dev-1', role: 'developer', model: 'claude', projectId: 'proj-1', sessionId: 'ses-2', metadata: { parentId: 'lead-1' } },
+      { agentId: 'dev-2', role: 'developer', model: 'gpt-4', projectId: 'other-proj', sessionId: null, metadata: { parentId: 'other-lead' } },
+    ]);
+    mockGetTasks.mockReturnValue([
+      { dagStatus: 'done' }, { dagStatus: 'done' }, { dagStatus: 'failed' }, { dagStatus: 'pending' },
+    ]);
+    mockGetRetros.mockReturnValue([{ id: 1 }]);
+
+    const res = await fetch(`${baseUrl}/projects/proj-1/sessions/detail`);
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data).toHaveLength(1);
+
+    const session = data[0];
+    expect(session.id).toBe(1);
+    expect(session.leadId).toBe('lead-1');
+    expect(session.status).toBe('completed');
+    expect(session.durationMs).toBe(2 * 60 * 60 * 1000); // 2 hours
+    expect(session.agents).toHaveLength(2); // lead-1 + dev-1 (dev-2 is other project)
+    expect(session.agents.map((a: any) => a.agentId).sort()).toEqual(['dev-1', 'lead-1']);
+    expect(session.taskSummary).toEqual({ total: 4, done: 2, failed: 1 });
+    expect(session.hasRetro).toBe(true);
+  });
+
+  it('returns null durationMs for active sessions', async () => {
+    mockGetSessions.mockReturnValue([
+      {
+        id: 2, leadId: 'lead-2', projectId: 'proj-1', status: 'active',
+        task: null, startedAt: '2026-01-02T10:00:00Z', endedAt: null,
+      },
+    ]);
+    mockGetAllAgents.mockReturnValue([]);
+    mockGetTasks.mockReturnValue([]);
+    mockGetRetros.mockReturnValue([]);
+
+    const res = await fetch(`${baseUrl}/projects/proj-1/sessions/detail`);
+    const data = await res.json();
+    expect(data[0].durationMs).toBeNull();
+    expect(data[0].hasRetro).toBe(false);
+    expect(data[0].agents).toHaveLength(0);
+  });
+});
+
+describe('POST /projects/:id/resume — enhanced with team respawn', () => {
+  const mockSpawn = vi.fn();
+  const mockGet = vi.fn();
+  const mockStartSession = vi.fn();
+  const mockGetLastLeadId = vi.fn().mockReturnValue(null);
+  const mockBuildBriefing = vi.fn().mockReturnValue(null);
+  const mockAutoSpawnSecretary = vi.fn();
+  const mockGetActiveLeadId = vi.fn().mockReturnValue(null);
+  const mockGetSessions = vi.fn().mockReturnValue([]);
+  const mockGetAllAgents = vi.fn().mockReturnValue([]);
+  const mockGetMessageHistory = vi.fn().mockReturnValue([]);
+
+  const fakeAgent = {
+    id: 'new-lead-1', status: 'running', sendMessage: vi.fn(),
+    toJSON: () => ({ id: 'new-lead-1', status: 'running', role: { id: 'lead' } }),
+  };
+
+  let baseUrl: string;
+  let stop: () => Promise<void>;
+
+  beforeAll(async () => {
+    mockSpawn.mockReturnValue(fakeAgent);
+    mockGet.mockReturnValue({ id: 'proj-1', name: 'Test', cwd: '/tmp/test' });
+
+    const srv = createTestServer({
+      projectRegistry: {
+        get: mockGet,
+        getActiveLeadId: mockGetActiveLeadId,
+        getLastLeadId: mockGetLastLeadId,
+        buildBriefing: mockBuildBriefing,
+        formatBriefing: vi.fn(),
+        startSession: mockStartSession,
+        getSessions: mockGetSessions,
+      } as any,
+      agentManager: {
+        spawn: mockSpawn,
+        get: vi.fn().mockReturnValue(null),
+        autoSpawnSecretary: mockAutoSpawnSecretary,
+        getMessageHistory: mockGetMessageHistory,
+      } as any,
+      roleRegistry: {
+        get: vi.fn().mockImplementation((id: string) => ({ id, name: id, instructions: '' })),
+      } as any,
+      agentRoster: {
+        getAllAgents: mockGetAllAgents,
+      } as any,
+    });
+    baseUrl = await srv.start();
+    stop = srv.stop;
+  });
+  afterAll(async () => { await stop?.(); });
+
+  it('spawns lead with freshStart (no team respawn)', async () => {
+    mockSpawn.mockClear();
+    const res = await fetch(`${baseUrl}/projects/proj-1/resume`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ task: 'do stuff', freshStart: true }),
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.respawning).toBe(0);
+    // Only 1 spawn call (the lead)
+    expect(mockSpawn).toHaveBeenCalledTimes(1);
+  });
+
+  it('spawns lead + schedules team respawn with resumeAll', async () => {
+    vi.useFakeTimers();
+    mockSpawn.mockClear();
+    mockGetSessions.mockReturnValue([
+      { id: 1, leadId: 'old-lead', status: 'completed', startedAt: '2026-01-01T10:00:00Z' },
+    ]);
+    mockGetAllAgents.mockReturnValue([
+      { agentId: 'dev-1', role: 'developer', model: 'claude', projectId: 'proj-1', sessionId: 'ses-dev1', lastTaskSummary: 'build UI', metadata: { parentId: 'old-lead' } },
+      { agentId: 'rev-1', role: 'code-reviewer', model: 'gpt-4', projectId: 'proj-1', sessionId: null, lastTaskSummary: null, metadata: { parentId: 'old-lead' } },
+      { agentId: 'sec-1', role: 'secretary', model: 'claude', projectId: 'proj-1', sessionId: null, metadata: { parentId: 'old-lead' } },
+    ]);
+
+    const res = await fetch(`${baseUrl}/projects/proj-1/resume`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ resumeAll: true }),
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    // Secretary excluded, so 2 agents to respawn
+    expect(body.respawning).toBe(2);
+
+    // Lead spawned immediately
+    expect(mockSpawn).toHaveBeenCalledTimes(1);
+
+    // Advance timers to trigger staggered respawns
+    vi.advanceTimersByTime(6000); // first agent at 6s
+    expect(mockSpawn).toHaveBeenCalledTimes(2);
+    vi.advanceTimersByTime(2000); // second at 8s
+    expect(mockSpawn).toHaveBeenCalledTimes(3);
+
+    // Verify respawned agents got correct params
+    const secondCall = mockSpawn.mock.calls[1];
+    expect(secondCall[0].id).toBe('developer'); // role
+    expect(secondCall[2]).toBe('new-lead-1');    // parentId = new lead
+    expect(secondCall[6]).toBe('ses-dev1');       // resumeSessionId
+
+    vi.useRealTimers();
+  });
+
+  it('respawns only selected agents when agents array provided', async () => {
+    vi.useFakeTimers();
+    mockSpawn.mockClear();
+    mockGetSessions.mockReturnValue([
+      { id: 1, leadId: 'old-lead', status: 'completed', startedAt: '2026-01-01T10:00:00Z' },
+    ]);
+    mockGetAllAgents.mockReturnValue([
+      { agentId: 'dev-1', role: 'developer', model: 'claude', projectId: 'proj-1', sessionId: 'ses-d1', metadata: { parentId: 'old-lead' } },
+      { agentId: 'rev-1', role: 'code-reviewer', model: 'gpt-4', projectId: 'proj-1', sessionId: 'ses-r1', metadata: { parentId: 'old-lead' } },
+    ]);
+
+    const res = await fetch(`${baseUrl}/projects/proj-1/resume`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agents: ['dev-1'] }),
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.respawning).toBe(1);
+
+    vi.advanceTimersByTime(8000);
+    // 1 lead + 1 selected agent
+    expect(mockSpawn).toHaveBeenCalledTimes(2);
+
+    vi.useRealTimers();
+  });
+});
