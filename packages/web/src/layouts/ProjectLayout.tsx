@@ -232,10 +232,12 @@ export function ProjectLayout() {
   }, [id, activeTab]);
 
   // Restore last tab on initial navigation to project root
+  const isProjectRoot = Boolean(id) && (
+    location.pathname === `/projects/${id}` ||
+    location.pathname === `/projects/${id}/overview`
+  );
   useEffect(() => {
-    if (!id) return;
-    const isProjectRoot = location.pathname === `/projects/${id}` || location.pathname === `/projects/${id}/overview`;
-    if (!isProjectRoot) return;
+    if (!id || !isProjectRoot) return;
     try {
       const stored = JSON.parse(localStorage.getItem(TAB_STORAGE_KEY) ?? '{}');
       const lastTab = stored[id];
@@ -243,9 +245,7 @@ export function ProjectLayout() {
         navigate(`/projects/${id}/${lastTab}`, { replace: true });
       }
     } catch { /* Gracefully ignore corrupt localStorage */ }
-  // Only run on project ID change, not on every location change
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, [id, isProjectRoot, navigate]);
 
   // B-11: Keyboard shortcuts — Alt+1-5 for primary tabs
   useEffect(() => {

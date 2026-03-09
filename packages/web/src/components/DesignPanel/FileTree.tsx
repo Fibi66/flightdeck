@@ -87,10 +87,10 @@ export function FileTree({ projectId, selectedPath, onSelectFile }: FileTreeProp
     }
   }, [dirs, fetchDir]);
 
-  // Initialize root on mount
+  // Initialize root on mount, re-fetch when projectId changes
   useEffect(() => {
-    if (!dirs['']) fetchDir('');
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    fetchDir('');
+  }, [fetchDir]);
 
   function renderEntries(entries: FileEntry[], depth: number) {
     return entries.map((entry) => {

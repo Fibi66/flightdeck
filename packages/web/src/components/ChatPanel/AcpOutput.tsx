@@ -102,7 +102,7 @@ export function AcpOutput({ agentId }: Props) {
         }
       })
       .catch(() => { /* data will load on next poll */ });
-  }, [agentId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [agentId, messages.length]);
 
   // Get activity events for this agent from leadStore
   const allProjects = useLeadStore((s) => s.projects);

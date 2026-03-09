@@ -699,14 +699,12 @@ function DagGraphInner({ dagStatus, containerRef }: { dagStatus: DagStatus; cont
 
   // Update pinned tooltip data when tasks change
   useEffect(() => {
-    if (!pinnedTooltip) return;
-    const updated = taskMap.get(pinnedTooltip.task.id);
-    if (updated) {
-      setPinnedTooltip((prev) => prev ? { ...prev, task: updated } : null);
-    } else {
-      setPinnedTooltip(null);
-    }
-  }, [dagStatus.tasks, taskMap]); // eslint-disable-line react-hooks/exhaustive-deps
+    setPinnedTooltip((prev) => {
+      if (!prev) return null;
+      const updated = taskMap.get(prev.task.id);
+      return updated ? { ...prev, task: updated } : null;
+    });
+  }, [dagStatus.tasks, taskMap]);
 
   const activeTooltip = pinnedTooltip ?? hoverTooltip;
   const containerHeight = containerRef.current?.clientHeight ?? 500;
