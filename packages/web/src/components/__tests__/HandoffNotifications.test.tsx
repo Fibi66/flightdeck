@@ -127,7 +127,7 @@ describe('Handoff Briefings', () => {
 
 describe('Notification Channels', () => {
   describe('NotificationPreferencesPanel', () => {
-    it('renders notification settings panel', async () => {
+    it('renders notification settings panel without In Development gate', async () => {
       render(<NotificationPreferencesPanel />);
       await waitFor(() => {
         expect(screen.getByTestId('notification-preferences')).toBeInTheDocument();
@@ -136,6 +136,11 @@ describe('Notification Channels', () => {
       expect(screen.getByText('Channels')).toBeInTheDocument();
       expect(screen.getByText('Event Routing')).toBeInTheDocument();
       expect(screen.getByText('Quiet Hours')).toBeInTheDocument();
+      // No longer gated behind "In Development"
+      expect(screen.queryByText('In Development')).not.toBeInTheDocument();
+      // Panel is interactive (no pointer-events-none)
+      const panel = screen.getByTestId('notification-preferences');
+      expect(panel.className).not.toContain('pointer-events-none');
     });
 
     it('shows preset buttons', async () => {
@@ -154,6 +159,29 @@ describe('Notification Channels', () => {
       });
       expect(screen.getByText('Agent crashed')).toBeInTheDocument();
       expect(screen.getByText('Session completed')).toBeInTheDocument();
+    });
+
+    it('shows event descriptions for clarity', async () => {
+      render(<NotificationPreferencesPanel />);
+      await waitFor(() => {
+        expect(screen.getByText('An agent needs your approval before proceeding')).toBeInTheDocument();
+      });
+      expect(screen.getByText('An agent process exited unexpectedly')).toBeInTheDocument();
+    });
+
+    it('defaults all notifications to OFF', async () => {
+      render(<NotificationPreferencesPanel />);
+      await waitFor(() => {
+        expect(screen.getByTestId('notification-preferences')).toBeInTheDocument();
+      });
+      // All checkboxes in the routing matrix should be unchecked by default
+      const table = screen.getByTestId('notification-preferences').querySelector('table');
+      if (table) {
+        const checkboxes = table.querySelectorAll('input[type="checkbox"]');
+        checkboxes.forEach((cb) => {
+          expect((cb as HTMLInputElement).checked).toBe(false);
+        });
+      }
     });
   });
 
