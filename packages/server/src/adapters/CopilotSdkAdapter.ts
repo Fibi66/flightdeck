@@ -105,9 +105,8 @@ export class CopilotSdkAdapter extends EventEmitter implements AgentAdapter {
 
   private promptQueue: PromptContent[] = [];
   private promptQueuePriorityCount = 0;
-  /** Suppress assistant events during resume hydration to prevent historical replay */
-  private _isHydrating = false;
-  private _hydrationTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Timestamp (epoch ms) when resumeSession() was called — events older than this are historical replay */
+  private _resumeStartedAt: number | null = null;
 
   constructor(opts?: { model?: string; autopilot?: boolean; sendTimeout?: number }) {
     super();
@@ -189,9 +188,8 @@ export class CopilotSdkAdapter extends EventEmitter implements AgentAdapter {
           SDK_TIMEOUT_MS, 'resumeSession',
         );
         this.sdkSessionId = this.session.sessionId;
-        // Suppress historical event replay during hydration
-        this._isHydrating = true;
-        this._hydrationTimer = setTimeout(() => { this._isHydrating = false; }, 2000);
+        // Record resume timestamp — events with older timestamps are historical replay
+        this._resumeStartedAt = Date.now();
         logger.info({
           module: 'copilot-sdk',
           msg: 'Resumed session via SDK',
@@ -258,11 +256,6 @@ export class CopilotSdkAdapter extends EventEmitter implements AgentAdapter {
     // Set prompting BEFORE any async gap to prevent race conditions
     this._isPrompting = true;
     this._promptingStartedAt = Date.now();
-    // Clear hydration guard on first prompt — real events expected now
-    if (this._isHydrating) {
-      this._isHydrating = false;
-      if (this._hydrationTimer) { clearTimeout(this._hydrationTimer); this._hydrationTimer = null; }
-    }
     this.emit('prompting', true);
     this.emit('response_start');
 
@@ -305,9 +298,15 @@ export class CopilotSdkAdapter extends EventEmitter implements AgentAdapter {
   // ── Event Processing ───────────────────────────────────────
 
   private processEvent(event: CopilotSessionEvent): void {
-    // During resume hydration, suppress assistant events (historical replay)
-    if (this._isHydrating && event.type.startsWith('assistant.')) {
-      return;
+    // Suppress historical event replay after resume: events with timestamps
+    // older than resumeStartedAt are from the previous session.
+    if (this._resumeStartedAt && event.type.startsWith('assistant.')) {
+      const eventTime = event.timestamp ? new Date(event.timestamp).getTime() : Date.now();
+      if (eventTime < this._resumeStartedAt) {
+        return; // historical replay — suppress
+      }
+      // First current event received — hydration complete
+      this._resumeStartedAt = null;
     }
 
     switch (event.type) {
@@ -573,8 +572,7 @@ export class CopilotSdkAdapter extends EventEmitter implements AgentAdapter {
 
   terminate(): void {
     this.abortController?.abort();
-    if (this._hydrationTimer) { clearTimeout(this._hydrationTimer); this._hydrationTimer = null; }
-    this._isHydrating = false;
+    this._resumeStartedAt = null;
 
     // Unsubscribe from events
     if (this.unsubscribeEvents) {
