@@ -46,6 +46,8 @@ Review for:
 - DRY and drift risks: Check for hardcoded lists or references that duplicate a dynamic registry or source of truth. Flag any data defined in two places that could drift.
 - Doc freshness: When deliverables change, flag if related documentation wasn't updated to match. This applies to any project type — not just code.
 - Agent-friendliness: Searchable names, self-documenting code, predictable file structure
+- API misuse prevention: When reviewing function signatures, check: could a caller pass the wrong value for a parameter and cause subtle corruption? If so, suggest making the API narrower — remove parameters that shouldn't vary, use branded types for IDs, make dangerous operations require explicit opt-in.
+- Defensive typing: Flag mutable fields that should be readonly. Flag optional parameters that are always required in practice. Flag string parameters that should be branded/opaque types.
 
 Review every line of code you are assigned. Don't skim. If you can't understand something, ask for clarification — that's a signal the code needs to be clearer.
 
@@ -78,6 +80,10 @@ Review for:
 - Structural design: Are there hardcoded lists that should be registries? Config that could drift from its source of truth? Responsibilities split across wrong modules?
 - Code health: Does this change improve or degrade the overall system? Don't accept changes that make the system worse, even small ones — complexity accumulates.
 - Failure modes: What happens when dependencies are down? What if the input is 10x larger than expected? What about race conditions?
+- Invariant enforcement: Look for invariants that should be STRUCTURALLY enforced (type system, DB constraints, API shape) rather than relying on caller discipline. If a function accepts a parameter that callers should never change, ask: why does the API accept it? The safest code is code that makes the wrong thing impossible to express, not code that handles it gracefully.
+- Design-level challenges: Don't just verify the implementation is correct — question whether the INTERFACE is correct. If a function accepts a mutable ID parameter, ask whether that ID should ever change. If a data model allows a field to be overwritten, ask whether overwrites are a valid operation. Challenge the problem framing, not just the solution.
+- Class-of-bug prevention: When you find a bug or risk, ask: does the proposed fix prevent this ENTIRE CLASS of bugs, or just this specific instance? Prefer structural fixes (remove the parameter, add a type constraint, make the field readonly) over behavioral fixes (add a guard clause, add validation).
+- Data model scrutiny: For every parameter in a new or modified function signature, ask: should this parameter exist? Could removing it eliminate an entire category of misuse? Fewer parameters = fewer ways to misuse the API.
 
 Review every line of code you are assigned. Note which parts you reviewed if you can only cover certain aspects.
 
@@ -111,6 +117,7 @@ Review for:
 - Documentation: Are key decisions and non-obvious choices explained? Comments should explain WHY, not WHAT. Doc freshness: when deliverables change, verify that related documentation reflects the changes. Stale docs are worse than no docs. This applies to any project type — software, research, design, hardware — not just code.
 - Consistency: Does this code follow the patterns and conventions of the existing codebase? Naming style, error handling patterns, file organization, API design — new code should look like it belongs.
 - Co-location: Is reference data (help text, command lists, enum descriptions) co-located with its definition? Flag data maintained separately from its source of truth.
+- Intent clarity in APIs: When a function signature has parameters that COULD be misused, check whether the naming and types make the correct usage obvious. A parameter named \`leadId\` that overwrites an existing value should signal that intent — if it doesn't, flag the naming as misleading.
 
 Review every line of code you are assigned. If you can't understand something on first read, that's a finding — the code needs to be clearer.
 
