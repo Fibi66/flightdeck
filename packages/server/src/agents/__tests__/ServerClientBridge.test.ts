@@ -288,6 +288,29 @@ describe('ServerClientAdapter', () => {
       adapter.terminate();
       expect(client.trackedAgentCount).toBe(0);
     });
+
+    it('emits exit event on terminate', async () => {
+      const adapter = new ServerClientAdapter(client, 'agent-001');
+      await adapter.start({ cliCommand: '' });
+
+      const exitCodes: number[] = [];
+      adapter.on('exit', (code: number) => exitCodes.push(code));
+
+      adapter.terminate();
+      expect(exitCodes).toEqual([0]);
+    });
+
+    it('does not emit exit twice on double-terminate', async () => {
+      const adapter = new ServerClientAdapter(client, 'agent-001');
+      await adapter.start({ cliCommand: '' });
+
+      const exitCodes: number[] = [];
+      adapter.on('exit', (code: number) => exitCodes.push(code));
+
+      adapter.terminate();
+      adapter.terminate();
+      expect(exitCodes).toEqual([0]);
+    });
   });
 
   describe('event translation', () => {

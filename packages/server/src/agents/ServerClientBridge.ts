@@ -126,6 +126,10 @@ export class ServerClientAdapter extends EventEmitter implements AgentAdapter {
     });
     this.client.clearTracking(this.agentId);
     this.removeSubscriptions();
+    // Emit exit so AgentManager's onExit handler fires (endSession, cleanup).
+    // AcpAdapter and CopilotSdkAdapter both do this; missing here caused
+    // sessions to stay 'active' after stop.
+    this.emit('exit', 0);
   }
 
   /**

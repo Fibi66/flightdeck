@@ -263,6 +263,7 @@ describe('POST /projects/:id/resume — enhanced with team respawn', () => {
         buildBriefing: mockBuildBriefing,
         formatBriefing: vi.fn(),
         startSession: mockStartSession,
+        reactivateSession: vi.fn(),
         getSessions: mockGetSessions,
       } as any,
       agentManager: {
