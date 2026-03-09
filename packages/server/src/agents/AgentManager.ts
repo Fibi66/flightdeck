@@ -1,5 +1,7 @@
 import { Agent, isTerminalStatus } from './Agent.js';
 import { generateProjectId } from '../utils/projectId.js';
+import { join } from 'path';
+import { homedir } from 'os';
 import type { AgentContextInfo } from './Agent.js';
 import type { Role, RoleRegistry } from './RoleRegistry.js';
 import type { ServerConfig } from '../config.js';
@@ -455,6 +457,14 @@ export class AgentManager extends TypedEmitter<AgentManagerEvents> {
       agent.projectId = generateProjectId(agent.task || 'untitled');
       logger.warn({ module: 'agent', msg: 'Root agent spawned without projectId', generatedProjectId: agent.projectId });
     }
+
+    // Compute organized artifact storage path
+    const artifactProjectId = agent.projectId || '_unscoped';
+    const leadId = agent.role.id === 'lead' ? agent.id : (agent.parentId || 'unknown');
+    agent.artifactDir = join(
+      homedir(), '.flightdeck', 'artifacts', artifactProjectId,
+      'sessions', leadId, `${agent.role.id}-${agent.id.slice(0, 8)}`,
+    );
 
     this.agents.set(agent.id, agent);
 

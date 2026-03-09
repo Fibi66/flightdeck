@@ -2,8 +2,8 @@
  * ACP connection management for Agent — extracted from Agent.ts to reduce file size.
  * Handles startAgent(), wireAcpEvents(), and ensureSharedWorkspace().
  */
-import { mkdirSync, existsSync, renameSync } from 'fs';
-import { join } from 'path';
+import { mkdirSync, existsSync, renameSync, symlinkSync, writeFileSync } from 'fs';
+import { join, dirname } from 'path';
 import { createAdapterForProvider, buildStartOptions } from '../adapters/AdapterFactory.js';
 import type { AgentAdapter, ToolCallInfo, PlanEntry } from '../adapters/types.js';
 import type { ServerConfig } from '../config.js';
@@ -19,8 +19,6 @@ export function ensureSharedWorkspace(agent: Agent): void {
   const legacyBase = join(baseDir, '.ai-crew');
 
   // Backward-compat: migrate .ai-crew/ → .flightdeck/ if legacy exists.
-  // Note: existing worktree symlinks pointing to .ai-crew/ will dangle until
-  // their worktree is cleaned up (next session start or cleanupOrphans).
   if (!existsSync(newBase) && existsSync(legacyBase)) {
     try {
       renameSync(legacyBase, newBase);
@@ -33,6 +31,37 @@ export function ensureSharedWorkspace(agent: Agent): void {
   const sharedDir = join(newBase, 'shared');
   if (!existsSync(sharedDir)) {
     try { mkdirSync(sharedDir, { recursive: true }); } catch (err) { logger.debug({ module: 'agent', msg: 'Shared dir already exists or cannot be created' }); }
+  }
+
+  // Create organized artifact directory and symlink from shared workspace
+  if (agent.artifactDir) {
+    try {
+      mkdirSync(agent.artifactDir, { recursive: true });
+    } catch { /* already exists */ }
+
+    const shortId = agent.id.slice(0, 8);
+    const linkPath = join(sharedDir, `${agent.role.id}-${shortId}`);
+    if (!existsSync(linkPath)) {
+      try {
+        symlinkSync(agent.artifactDir, linkPath, 'dir');
+      } catch {
+        // Fallback: if symlink fails (Windows, permissions), create local dir
+        try { mkdirSync(linkPath, { recursive: true }); } catch { /* ignore */ }
+      }
+    }
+
+    // Write session metadata (once per session directory)
+    const sessionDir = dirname(agent.artifactDir);
+    const metaPath = join(sessionDir, '_meta.json');
+    if (!existsSync(metaPath)) {
+      try {
+        writeFileSync(metaPath, JSON.stringify({
+          startedAt: new Date().toISOString(),
+          projectId: agent.projectId || '',
+          leadId: agent.parentId || agent.id,
+        }, null, 2));
+      } catch { /* non-critical */ }
+    }
   }
 }
 

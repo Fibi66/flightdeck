@@ -109,6 +109,8 @@ export class Agent {
   public provider?: string;
   /** Adapter backend type (e.g. 'acp', 'claude-sdk', 'copilot-sdk') */
   public backend?: string;
+  /** Organized artifact storage path (~/.flightdeck/artifacts/{projectId}/sessions/{leadId}/{role}-{shortId}/) */
+  public artifactDir?: string;
   /** Cumulative token usage from ACP PromptResponse */
   public inputTokens = 0;
   public outputTokens = 0;
@@ -276,8 +278,8 @@ ${crewSection}
 ${budgetSection}
 
 == SHARED WORKSPACE ==
-Path: .flightdeck/shared/ (inside your working directory)
-Use this directory for documents, reports, or artifacts that other agents need to read.
+Your artifact directory: .flightdeck/shared/${this.role.id}-${this.id.slice(0, 8)}/
+Write reports, designs, and analysis files here. All crew members can read this directory.${this.artifactDir ? `\nOrganized storage: ${this.artifactDir}` : ''}
 Convention: .flightdeck/shared/<your-role>-<short-id>/<filename>
 Example: .flightdeck/shared/architect-a1b2c3d4/design-doc.md
 All team members have access to this directory. Create your subdirectory before writing files.

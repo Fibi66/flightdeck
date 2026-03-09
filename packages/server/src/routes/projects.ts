@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { eq, inArray, desc } from 'drizzle-orm';
-import { readFileSync, readdirSync, realpathSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, realpathSync, statSync, existsSync } from 'node:fs';
 import { join, normalize, sep, extname, relative } from 'node:path';
+import { homedir } from 'node:os';
 import { logger } from '../utils/logger.js';
 import type { AppContext } from './context.js';
 import { KNOWN_MODEL_IDS, DEFAULT_MODEL_CONFIG, validateModelConfig, validateModelConfigShape } from '../projects/ModelConfigDefaults.js';
@@ -686,67 +687,79 @@ export function projectsRoutes(ctx: AppContext): Router {
 
   /**
    * GET /projects/:id/artifacts
-   * Returns markdown files from .flightdeck/shared/ grouped by agent directory.
-   * Each file includes its title (first # heading) and last-modified timestamp.
+   * Returns markdown files from organized storage (~/.flightdeck/artifacts/) and
+   * legacy .flightdeck/shared/, grouped by agent directory and session.
    */
   router.get('/projects/:id/artifacts', (req, res) => {
     if (!projectRegistry) return res.status(404).json({ error: 'Projects not available' });
     const project = projectRegistry.get(req.params.id);
     if (!project) return res.status(404).json({ error: 'Project not found' });
-    if (!project.cwd) return res.status(400).json({ error: 'Project has no working directory' });
 
-    const sharedDir = join(project.cwd, '.flightdeck', 'shared');
-    const result = resolveAndValidate(project.cwd, '.flightdeck/shared');
-    if (!result) {
-      return res.json({ groups: [], sharedPath: sharedDir }); // No .flightdeck/shared — not an error
+    type ArtifactFile = { name: string; path: string; ext: string; title: string; modifiedAt: string };
+    type ArtifactGroup = { agentDir: string; role: string; agentId: string; sessionId?: string; files: ArtifactFile[] };
+
+    function readAgentDir(dirPath: string, dirName: string, basePath: string, sessionId?: string): ArtifactGroup | null {
+      const parts = dirName.split('-');
+      const agentId = parts.pop() || '';
+      const role = parts.join('-') || 'agent';
+      let files: ArtifactFile[] = [];
+      try {
+        const entries = readdirSync(dirPath, { withFileTypes: true })
+          .filter(e => e.isFile() && (e.name.endsWith('.md') || e.name.endsWith('.mdx')));
+        files = entries.map(e => {
+          const filePath = join(dirPath, e.name);
+          const relPath = relative(basePath, filePath);
+          const stat = statSync(filePath);
+          let title = e.name.replace(/\.(md|mdx)$/, '');
+          try {
+            const content = readFileSync(filePath, 'utf-8');
+            const headingMatch = content.match(/^#\s+(.+)$/m);
+            if (headingMatch) title = headingMatch[1];
+          } catch { /* use filename as title */ }
+          return { name: e.name, path: relPath, ext: extname(e.name).slice(1), title, modifiedAt: stat.mtime.toISOString() };
+        }).sort((a, b) => new Date(b.modifiedAt).getTime() - new Date(a.modifiedAt).getTime());
+      } catch { /* skip unreadable */ }
+      if (files.length === 0) return null;
+      return { agentDir: dirName, role, agentId, sessionId, files };
     }
 
-    try {
-      const agentDirs = readdirSync(result.resolved, { withFileTypes: true })
-        .filter(e => e.isDirectory());
+    const groups: ArtifactGroup[] = [];
 
-      const groups = agentDirs.map(dir => {
-        // Agent dirs follow pattern: role-agentIdPrefix (e.g. "architect-3973583e")
-        const parts = dir.name.split('-');
-        const agentId = parts.pop() || '';
-        const role = parts.join('-') || 'agent';
+    // Read from organized storage (~/.flightdeck/artifacts/{projectId}/sessions/)
+    const organizedDir = join(homedir(), '.flightdeck', 'artifacts', req.params.id, 'sessions');
+    if (existsSync(organizedDir)) {
+      try {
+        const sessionDirs = readdirSync(organizedDir, { withFileTypes: true }).filter(e => e.isDirectory());
+        for (const sessionDir of sessionDirs) {
+          const sessionPath = join(organizedDir, sessionDir.name);
+          const agentDirs = readdirSync(sessionPath, { withFileTypes: true }).filter(e => e.isDirectory());
+          for (const agentDir of agentDirs) {
+            const group = readAgentDir(join(sessionPath, agentDir.name), agentDir.name, organizedDir, sessionDir.name);
+            if (group) groups.push(group);
+          }
+        }
+      } catch { /* ignore read errors */ }
+    }
 
-        const dirPath = join(result.resolved, dir.name);
-        let files: { name: string; path: string; ext: string; title: string; modifiedAt: string }[] = [];
+    // Fallback: read from legacy in-repo path
+    const sharedDir = project.cwd ? join(project.cwd, '.flightdeck', 'shared') : null;
+    if (sharedDir) {
+      const result = resolveAndValidate(project.cwd!, '.flightdeck/shared');
+      if (result) {
         try {
-          const entries = readdirSync(dirPath, { withFileTypes: true })
-            .filter(e => e.isFile() && (e.name.endsWith('.md') || e.name.endsWith('.mdx')));
-
-          files = entries.map(e => {
-            const filePath = join(dirPath, e.name);
-            const relPath = relative(realpathSync(project.cwd!), filePath);
-            const stat = statSync(filePath);
-            let title = e.name.replace(/\.(md|mdx)$/, '');
-            try {
-              const content = readFileSync(filePath, 'utf-8');
-              const headingMatch = content.match(/^#\s+(.+)$/m);
-              if (headingMatch) title = headingMatch[1];
-            } catch { /* use filename as title */ }
-
-            return {
-              name: e.name,
-              path: relPath,
-              ext: extname(e.name).slice(1),
-              title,
-              modifiedAt: stat.mtime.toISOString(),
-            };
-          }).sort((a, b) => new Date(b.modifiedAt).getTime() - new Date(a.modifiedAt).getTime());
-        } catch { /* skip unreadable directories */ }
-
-        return { agentDir: dir.name, role, agentId, files };
-      }).filter(g => g.files.length > 0) // Only groups with artifacts
-        .sort((a, b) => a.role.localeCompare(b.role));
-
-      res.json({ groups, sharedPath: sharedDir });
-    } catch (err: any) {
-      logger.warn({ module: 'project-artifacts', msg: 'Cannot read artifacts', error: err.message, projectId: project.id });
-      res.json({ groups: [], sharedPath: sharedDir });
+          const seenDirs = new Set(groups.map(g => g.agentDir));
+          const agentDirs = readdirSync(result.resolved, { withFileTypes: true })
+            .filter(e => e.isDirectory() && !seenDirs.has(e.name));
+          for (const dir of agentDirs) {
+            const group = readAgentDir(join(result.resolved, dir.name), dir.name, realpathSync(project.cwd!));
+            if (group) groups.push(group);
+          }
+        } catch { /* ignore */ }
+      }
     }
+
+    groups.sort((a, b) => a.role.localeCompare(b.role));
+    res.json({ groups, sharedPath: sharedDir || '' });
   });
 
   return router;
