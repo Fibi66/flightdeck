@@ -19,7 +19,10 @@ vi.mock('../../stores/appStore', () => ({
 }));
 
 vi.mock('../../stores/leadStore', () => ({
-  useLeadStore: (sel: any) => sel({ selectedLeadId: 'lead-1' }),
+  useLeadStore: (sel: any) => sel({
+    selectedLeadId: 'lead-1',
+    projects: {},
+  }),
 }));
 
 vi.mock('../../hooks/useApi', () => ({
@@ -31,6 +34,12 @@ vi.mock('../../hooks/useApi', () => ({
     }
     if (path.includes('/keyframes')) {
       return Promise.resolve({ keyframes: [] });
+    }
+    if (path.includes('/decisions')) {
+      return Promise.resolve([]);
+    }
+    if (path.includes('/activity')) {
+      return Promise.resolve([]);
     }
     return Promise.resolve({ ok: false });
   }),

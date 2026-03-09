@@ -278,7 +278,7 @@ describe('ProjectLayout', () => {
     it('ignores Alt+key for numbers beyond tab count', () => {
       renderLayout();
       mockNavigate.mockClear();
-      fireEvent.keyDown(window, { key: '9', altKey: true });
+      fireEvent.keyDown(window, { key: '0', altKey: true });
       expect(mockNavigate).not.toHaveBeenCalled();
     });
 
