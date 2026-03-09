@@ -299,6 +299,24 @@ describe('CopilotSdkAdapter', () => {
       expect(mockClient.resumeSession).toHaveBeenCalled();
       expect(mockClient.createSession).toHaveBeenCalled();
     });
+
+    it('should emit session_resume_failed when resume fails and falls back', async () => {
+      mockClient.resumeSession.mockRejectedValueOnce(new Error('Session not found'));
+      const handler = vi.fn();
+      adapter.on('session_resume_failed', handler);
+
+      await adapter.start({
+        ...defaultStartOpts(),
+        sessionId: 'dead-session-id',
+      });
+
+      expect(handler).toHaveBeenCalledOnce();
+      expect(handler).toHaveBeenCalledWith({
+        requestedSessionId: 'dead-session-id',
+        newSessionId: 'dead-session-id',
+        error: 'Session not found',
+      });
+    });
   });
 
   // ── Prompt ──────────────────────────────────────────────
