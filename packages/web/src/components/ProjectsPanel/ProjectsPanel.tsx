@@ -271,11 +271,13 @@ function ProjectCard({
                 Sessions ({project.sessions.length})
               </span>
               <div className="mt-1 space-y-1 max-h-32 overflow-y-auto">
-                {project.sessions.slice(-5).reverse().map((s) => (
+                {project.sessions.slice(-5).reverse().map((s) => {
+                  const isRunning = s.status === 'active' && s.leadId === project.activeLeadId;
+                  return (
                   <div key={s.id} className="flex items-center gap-2 text-[11px]">
                     <span
                       className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                        s.status === 'active'
+                        isRunning
                           ? 'bg-green-400'
                           : s.status === 'completed'
                             ? 'bg-blue-400'
@@ -290,7 +292,8 @@ function ProjectCard({
                       {formatRelativeTime(s.startedAt)}
                     </span>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
