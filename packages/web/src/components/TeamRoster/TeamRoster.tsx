@@ -16,6 +16,10 @@ import {
   Settings,
   Activity,
   X,
+  Zap,
+  MessageSquare,
+  Square,
+  Send,
 } from 'lucide-react';
 import { apiFetch } from '../../hooks/useApi';
 import { getRoleIcon } from '../../utils/getRoleIcon';
