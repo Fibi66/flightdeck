@@ -913,10 +913,10 @@ describe('CopilotSdkAdapter', () => {
       expect(resolveBackend('copilot', true)).toBe('copilot-sdk');
     });
 
-    it('should resolve acp backend for copilot provider without sdkMode', async () => {
+    it('should resolve copilot-sdk backend for copilot regardless of sdkMode', async () => {
       const { resolveBackend } = await import('./AdapterFactory.js');
-      expect(resolveBackend('copilot', false)).toBe('acp');
-      expect(resolveBackend('copilot')).toBe('acp');
+      expect(resolveBackend('copilot', false)).toBe('copilot-sdk');
+      expect(resolveBackend('copilot')).toBe('copilot-sdk');
     });
 
     it('should still resolve claude-sdk for claude with sdkMode', async () => {
