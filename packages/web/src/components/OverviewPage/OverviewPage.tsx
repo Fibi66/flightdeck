@@ -48,6 +48,7 @@ const SEVERITY_BG: Record<AlertSeverity, string> = {
 
 const DECISIONS_FEED_LIMIT = 6;
 const PROGRESS_FEED_LIMIT = 8;
+const EMPTY_DECISIONS: Decision[] = [];
 interface ProgressItem {
   id: string;
   icon: string;
@@ -118,7 +119,7 @@ export function OverviewPage(_props: Props) {
   });
   const storeDecisions = useLeadStore(s => {
     const proj = s.projects[effectiveId ?? ''];
-    return proj?.decisions ?? [];
+    return proj?.decisions ?? EMPTY_DECISIONS;
   });
 
   const alerts = useMemo(
