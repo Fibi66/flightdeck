@@ -238,8 +238,8 @@ export function OverviewPage(_props: Props) {
       <div className="px-4 pt-2 space-y-4">
 
       {/* ── Quick Status Bar ───────────────────────────────────── */}
-      <div className="flex items-center gap-4 px-4 py-2 bg-zinc-900/50 rounded-lg text-sm text-zinc-400" data-testid="quick-status-bar">
-        <span className={hasActiveLead ? 'text-green-400' : 'text-red-400'}>
+      <div className="flex items-center gap-4 px-4 py-2 bg-surface-raised border border-th-border rounded-lg text-sm text-th-text-muted" data-testid="quick-status-bar">
+        <span className={hasActiveLead ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
           {hasActiveLead ? '● Running' : '● Stopped'}
         </span>
         <span>{projectAgents.length} agent{projectAgents.length !== 1 ? 's' : ''}</span>
@@ -284,7 +284,7 @@ export function OverviewPage(_props: Props) {
               type="button"
               onClick={handleStopSession}
               disabled={stopping}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-red-500/20 text-red-400 rounded-md hover:bg-red-500/30 transition-colors font-medium disabled:opacity-50"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-red-500/20 text-red-600 dark:text-red-400 rounded-md hover:bg-red-500/30 transition-colors font-medium disabled:opacity-50"
               data-testid="stop-session-btn"
             >
               {stopping ? <Loader2 size={12} className="animate-spin" /> : <Square size={12} />}
@@ -314,13 +314,13 @@ export function OverviewPage(_props: Props) {
       {/* ── Attention Items (only when alerts exist) ───────────── */}
       {alerts.length > 0 && (
         <section className="space-y-2" data-testid="attention-items">
-          <h3 className="text-sm font-medium text-amber-400 flex items-center gap-2">
+          <h3 className="text-sm font-medium text-amber-600 dark:text-amber-400 flex items-center gap-2">
             <AlertTriangle className="w-4 h-4" /> Attention Required
           </h3>
           {alerts.map(alert => (
             <div key={alert.id} className={`px-3 py-2 rounded-lg text-sm ${SEVERITY_BG[alert.severity]}`}>
               <span>{alert.icon} {alert.title}</span>
-              <p className="text-xs text-zinc-400 mt-0.5">{alert.detail}</p>
+              <p className="text-xs text-th-text-muted mt-0.5">{alert.detail}</p>
             </div>
           ))}
         </section>
@@ -335,7 +335,7 @@ export function OverviewPage(_props: Props) {
             Decisions
           </h3>
           {actionableDecisions.length === 0 && decisions.length === 0 ? (
-            <p className="text-zinc-500 text-sm px-4 py-6 text-center">No decisions yet</p>
+            <p className="text-th-text-muted text-sm px-4 py-6 text-center">No decisions yet</p>
           ) : (
             <div className="divide-y divide-th-border/30">
               {(actionableDecisions.length > 0 ? actionableDecisions : decisions).slice(0, DECISIONS_FEED_LIMIT).map(d => (
@@ -348,7 +348,7 @@ export function OverviewPage(_props: Props) {
               ))}
               {(actionableDecisions.length > DECISIONS_FEED_LIMIT || decisions.length > DECISIONS_FEED_LIMIT) && (
                 <div className="px-4 py-2 text-center">
-                  <span className="text-[10px] text-zinc-500">
+                  <span className="text-[10px] text-th-text-muted">
                     +{Math.max(actionableDecisions.length, decisions.length) - DECISIONS_FEED_LIMIT} more
                   </span>
                 </div>
@@ -363,7 +363,7 @@ export function OverviewPage(_props: Props) {
             Recent Progress
           </h3>
           {progressItems.length === 0 ? (
-            <p className="text-zinc-500 text-sm px-4 py-6 text-center">No progress events yet</p>
+            <p className="text-th-text-muted text-sm px-4 py-6 text-center">No progress events yet</p>
           ) : (
             <div className="divide-y divide-th-border/30">
               {progressItems.slice(0, PROGRESS_FEED_LIMIT).map(item => (
@@ -377,7 +377,7 @@ export function OverviewPage(_props: Props) {
               ))}
               {progressItems.length > PROGRESS_FEED_LIMIT && (
                 <div className="px-4 py-2 text-center">
-                  <span className="text-[10px] text-zinc-500">+{progressItems.length - PROGRESS_FEED_LIMIT} more</span>
+                  <span className="text-[10px] text-th-text-muted">+{progressItems.length - PROGRESS_FEED_LIMIT} more</span>
                 </div>
               )}
             </div>
@@ -391,7 +391,7 @@ export function OverviewPage(_props: Props) {
           <button
             type="button"
             onClick={() => setHistoryOpen(o => !o)}
-            className="text-sm text-zinc-400 cursor-pointer hover:text-zinc-300 select-none flex items-center gap-1"
+            className="text-sm text-th-text-muted cursor-pointer hover:text-th-text select-none flex items-center gap-1"
           >
             <span className={`transition-transform ${historyOpen ? 'rotate-90' : ''}`}>▸</span>
             Session History
