@@ -21,8 +21,10 @@ interface CumulativeFlowProps {
 const MARGIN = { top: 12, right: 12, bottom: 28, left: 36 };
 
 export function CumulativeFlow({ data, width = 260, height = 180 }: CumulativeFlowProps) {
+  // SVG sits below the card header (~40px for padding + title)
+  const svgH = height - 40;
   const innerW = width - MARGIN.left - MARGIN.right;
-  const innerH = height - MARGIN.top - MARGIN.bottom;
+  const innerH = svgH - MARGIN.top - MARGIN.bottom;
 
   const { xScale, yScale } = useMemo(() => {
     if (data.length === 0) {
@@ -66,7 +68,7 @@ export function CumulativeFlow({ data, width = 260, height = 180 }: CumulativeFl
           </span>
         </div>
       </div>
-      <svg width={width} height={height - 40}>
+      <svg width={width} height={svgH}>
         <Group left={MARGIN.left} top={MARGIN.top}>
           {/* Stacked areas: created (top) → in-progress (middle) → completed (bottom) */}
           <AreaClosed
@@ -74,8 +76,8 @@ export function CumulativeFlow({ data, width = 260, height = 180 }: CumulativeFl
             x={(d) => xScale(new Date(d.time)) ?? 0}
             y={(d) => yScale(d.created) ?? 0}
             yScale={yScale}
-            fill="rgba(239, 68, 68, 0.15)"
-            stroke="rgba(239, 68, 68, 0.5)"
+            fill="rgba(239, 68, 68, 0.25)"
+            stroke="rgba(239, 68, 68, 0.8)"
             strokeWidth={1.5}
             curve={curveMonotoneX}
           />
@@ -84,8 +86,8 @@ export function CumulativeFlow({ data, width = 260, height = 180 }: CumulativeFl
             x={(d) => xScale(new Date(d.time)) ?? 0}
             y={(d) => yScale(d.inProgress + d.completed) ?? 0}
             yScale={yScale}
-            fill="rgba(234, 179, 8, 0.15)"
-            stroke="rgba(234, 179, 8, 0.5)"
+            fill="rgba(234, 179, 8, 0.3)"
+            stroke="rgba(234, 179, 8, 0.8)"
             strokeWidth={1.5}
             curve={curveMonotoneX}
           />
@@ -94,8 +96,8 @@ export function CumulativeFlow({ data, width = 260, height = 180 }: CumulativeFl
             x={(d) => xScale(new Date(d.time)) ?? 0}
             y={(d) => yScale(d.completed) ?? 0}
             yScale={yScale}
-            fill="rgba(168, 85, 247, 0.2)"
-            stroke="rgba(168, 85, 247, 0.6)"
+            fill="rgba(168, 85, 247, 0.35)"
+            stroke="rgba(168, 85, 247, 0.9)"
             strokeWidth={1.5}
             curve={curveMonotoneX}
           />
@@ -121,6 +123,10 @@ export function CumulativeFlow({ data, width = 260, height = 180 }: CumulativeFl
             scale={yScale}
             numTicks={3}
             hideZero
+            tickFormat={(v) => {
+              const n = typeof v === 'number' ? v : v.valueOf();
+              return Number.isInteger(n) ? String(n) : '';
+            }}
             stroke="#6b7280"
             tickStroke="#6b7280"
             tickLabelProps={() => ({

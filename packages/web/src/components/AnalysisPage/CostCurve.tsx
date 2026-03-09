@@ -18,8 +18,10 @@ interface CostCurveProps {
 const MARGIN = { top: 12, right: 12, bottom: 28, left: 40 };
 
 export function CostCurve({ data, width = 260, height = 180 }: CostCurveProps) {
+  // SVG sits below the card header (~32px for padding + title)
+  const svgH = height - 32;
   const innerW = width - MARGIN.left - MARGIN.right;
-  const innerH = height - MARGIN.top - MARGIN.bottom;
+  const innerH = svgH - MARGIN.top - MARGIN.bottom;
 
   const { xScale, yScale } = useMemo(() => {
     if (data.length === 0) {
@@ -66,7 +68,7 @@ export function CostCurve({ data, width = 260, height = 180 }: CostCurveProps) {
       <h3 className="text-[11px] font-medium text-th-text-muted uppercase tracking-wider mb-1">
         Token Usage
       </h3>
-      <svg width={width} height={height - 32}>
+      <svg width={width} height={svgH}>
         <Group left={MARGIN.left} top={MARGIN.top}>
           <AreaClosed
             data={data}
@@ -87,6 +89,10 @@ export function CostCurve({ data, width = 260, height = 180 }: CostCurveProps) {
             top={innerH}
             scale={xScale}
             numTicks={4}
+            tickFormat={(d) => {
+              const date = d instanceof Date ? d : new Date(d as number);
+              return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            }}
             tickLabelProps={() => ({
               fill: 'var(--th-text-muted)',
               fontSize: 9,
