@@ -143,6 +143,12 @@ export function GroupChat(_props: { api: any; ws: any }) {
 
   const leads = agents.filter((a) => a.role.id === 'lead' && !a.parentId);
 
+  // When inside a project context, only fetch groups for that project's leads
+  const scopedLeads = useMemo(() => {
+    if (!contextProjectId) return leads;
+    return leads.filter((l) => l.projectId === contextProjectId || l.id === contextProjectId);
+  }, [contextProjectId, leads]);
+
   // Mention autocomplete — scoped to group members when a group is selected
   const mentionCandidates = useMemo(() => {
     if (selectedGroup) {
@@ -180,10 +186,10 @@ export function GroupChat(_props: { api: any; ws: any }) {
 
   // Auto-select first lead as project filter (skip if context provides project)
   useEffect(() => {
-    if (!contextProjectId && !selectedProjectLeadId && leads.length > 0) {
-      setSelectedProjectLeadId(leads[0].id);
+    if (!contextProjectId && !selectedProjectLeadId && scopedLeads.length > 0) {
+      setSelectedProjectLeadId(scopedLeads[0].id);
     }
-  }, [contextProjectId, leads, selectedProjectLeadId]);
+  }, [contextProjectId, scopedLeads, selectedProjectLeadId]);
 
   // Filtered groups/tabs by selected project
   const filteredGroups = selectedProjectLeadId
@@ -193,14 +199,14 @@ export function GroupChat(_props: { api: any; ws: any }) {
     ? openTabs.filter((t) => t.leadId === selectedProjectLeadId)
     : openTabs;
 
-  /* ---- Fetch groups for every lead on mount ---- */
+  /* ---- Fetch groups for project-scoped leads ---- */
   useEffect(() => {
-    if (leads.length === 0) return;
+    if (scopedLeads.length === 0) return;
     let cancelled = false;
 
     async function fetchAllGroups() {
       const allGroups: ChatGroup[] = [];
-      for (const lead of leads) {
+      for (const lead of scopedLeads) {
         try {
           const res = await fetch(`/api/lead/${lead.id}/groups`);
           if (res.ok) {
@@ -223,7 +229,7 @@ export function GroupChat(_props: { api: any; ws: any }) {
     void fetchAllGroups();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [leads.map((l) => l.id).join(',')]);
+  }, [scopedLeads.map((l) => l.id).join(',')]);
 
   /* ---- Auto-open new groups as tabs ---- */
   useEffect(() => {
@@ -731,7 +737,7 @@ export function GroupChat(_props: { api: any; ws: any }) {
                 type="text"
                 value={newGroupName}
                 onChange={(e) => setNewGroupName(e.target.value)}
-                placeholder="e.g. frontend-team"
+                placeholder="e.g. frontend-crew"
                 className="w-full bg-th-bg-alt border border-th-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent"
                 autoFocus
               />
