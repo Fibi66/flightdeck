@@ -699,7 +699,7 @@ describe('CopilotSdkAdapter', () => {
       expect(textHandler).toHaveBeenCalledTimes(2);
     });
 
-    it('should clear dedup set on session.idle', () => {
+    it('should NOT clear dedup set on session.idle (prevents post-idle duplicate delivery)', () => {
       const textHandler = vi.fn();
       adapter.on('text', textHandler);
 
@@ -714,15 +714,15 @@ describe('CopilotSdkAdapter', () => {
       mockSessionEventHandler!(event);
       expect(textHandler).toHaveBeenCalledTimes(1);
 
-      // session.idle clears the set
+      // session.idle no longer clears the set — SDK bug #567 delivers dupes after idle
       mockSessionEventHandler!(makeEvent('session.idle'));
 
-      // Same ID now accepted again (new turn)
+      // Same ID is still rejected (dedup persists across turns)
       mockSessionEventHandler!(event);
-      expect(textHandler).toHaveBeenCalledTimes(2);
+      expect(textHandler).toHaveBeenCalledTimes(1);
     });
 
-    it('should cap dedup set size to prevent unbounded growth', () => {
+    it('should evict oldest half when dedup set exceeds cap', () => {
       const textHandler = vi.fn();
       adapter.on('text', textHandler);
 
@@ -739,13 +739,23 @@ describe('CopilotSdkAdapter', () => {
 
       expect(textHandler).toHaveBeenCalledTimes(2001);
 
-      // After clear, an old ID is accepted again
+      // After eviction, an old ID from the first half is accepted again
       mockSessionEventHandler!({
         id: 'evt-fill-0',
         timestamp: new Date().toISOString(),
         parentId: null,
         type: 'assistant.streaming_delta',
         data: { content: '!' },
+      });
+      expect(textHandler).toHaveBeenCalledTimes(2002);
+
+      // But a recent ID from the second half is still rejected
+      mockSessionEventHandler!({
+        id: 'evt-fill-2000',
+        timestamp: new Date().toISOString(),
+        parentId: null,
+        type: 'assistant.streaming_delta',
+        data: { content: '?' },
       });
       expect(textHandler).toHaveBeenCalledTimes(2002);
     });
