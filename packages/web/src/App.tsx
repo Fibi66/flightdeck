@@ -28,6 +28,7 @@ import { AttentionBar } from './components/AttentionBar';
 import { ApprovalBadge, ApprovalSlideOver } from './components/ApprovalQueue';
 import { CatchUpBanner } from './components/CatchUp';
 import { AgentServerStatus } from './components/AgentServerStatus';
+import { StatusPopover } from './components/StatusPopover/StatusPopover';
 import { SetupWizard, shouldShowSetupWizard } from './components/SetupWizard';
 import { useLeadStore } from './stores/leadStore';
 import type { AcpTextChunk, Project } from './types';
@@ -51,6 +52,7 @@ const AgentServerPanel = lazy(() => import('./components/AgentServerPanel').then
 const HomeDashboard = lazy(() => import('./components/HomeDashboard').then(m => ({ default: m.HomeDashboard })));
 const TeamPage = lazy(() => import('./pages/TeamPage').then(m => ({ default: m.TeamPage })));
 const TeamRoster = lazy(() => import('./components/TeamRoster/TeamRoster').then(m => ({ default: m.TeamRoster })));
+const GlobalAgentsPage = lazy(() => import('./components/GlobalAgentsPage').then(m => ({ default: m.GlobalAgentsPage })));
 
 function RouteSpinner() {
   return (
@@ -312,13 +314,7 @@ export function App() {
                 <span>Commands</span>
                 <kbd className="text-[10px] text-th-text-muted border border-th-border rounded px-1 py-0.5 ml-1">⌘K</kbd>
               </button>
-              <span
-                className={`inline-block w-2 h-2 rounded-full ${connected ? (systemPaused ? 'bg-yellow-400' : 'bg-green-400') : 'bg-red-400'}`}
-                title="WebSocket connection to flightdeck server"
-              />
-              <span className="text-sm text-th-text-muted" title="WebSocket connection to flightdeck server">
-                {!connected ? 'Server: Reconnecting...' : systemPaused ? 'Server: Paused' : 'Server: Connected'}
-              </span>
+              <StatusPopover />
               <span className="text-sm text-th-text-muted">{agents.length} agents</span>
             </div>
           </header>
@@ -358,7 +354,7 @@ export function App() {
             <Route path="/" element={<HomeDashboard />} />
             <Route path="/lead" element={<ProjectRedirect page="session" />} />
             <Route path="/overview" element={<ProjectRedirect page="overview" />} />
-            <Route path="/agents" element={<ProjectRedirect page="agents" />} />
+            <Route path="/agents" element={<Suspense fallback={<RouteSpinner />}><GlobalAgentsPage /></Suspense>} />
             <Route path="/team" element={<Suspense fallback={<RouteSpinner />}><TeamRoster /></Suspense>} />
             <Route path="/tasks" element={<ProjectRedirect page="tasks" />} />
             <Route path="/knowledge" element={<ProjectRedirect page="knowledge" />} />
