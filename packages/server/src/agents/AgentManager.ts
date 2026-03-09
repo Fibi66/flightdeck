@@ -1,4 +1,5 @@
 import { Agent, isTerminalStatus } from './Agent.js';
+import { RESUME_PREAMBLE } from './AgentEvents.js';
 import { generateProjectId } from '../utils/projectId.js';
 import { join } from 'path';
 import { homedir } from 'os';
@@ -774,7 +775,7 @@ export class AgentManager extends TypedEmitter<AgentManagerEvents> {
         const taskAssignment = `You are acting as the "${effectiveRole.name}" role. ${task ? `Your assigned task is: ${task}` : 'Awaiting task assignment.'}`;
         let initialPrompt = `${effectiveRole.systemPrompt}\n\n${contextManifest}\n\n${taskAssignment}`;
         if (isResume) {
-          initialPrompt += '\n\n[System] You are resuming from a previous session. Your conversation history has been restored. Continue from where you left off.';
+          initialPrompt += RESUME_PREAMBLE;
         }
         startRemoteBridge(agent, this.agentServerClient, initialPrompt);
       } else {

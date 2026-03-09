@@ -3,6 +3,10 @@
  * Provides typed listener arrays and notification helpers used by AgentAcpBridge.
  */
 import type { ToolCallInfo, PlanEntry } from '../adapters/types.js';
+
+/** Preamble appended to the system prompt when resuming a previous session */
+export const RESUME_PREAMBLE =
+  '\n\n[System] You are resuming from a previous session. Your conversation history has been restored. Continue from where you left off.';
 import type { AgentStatus } from './Agent.js';
 
 /** Typed usage info emitted by onUsage listeners */

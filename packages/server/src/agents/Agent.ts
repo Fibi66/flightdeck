@@ -5,7 +5,7 @@ import type { Role } from './RoleRegistry.js';
 import type { ServerConfig } from '../config.js';
 import { logger } from '../utils/logger.js';
 import { redact } from '../utils/redaction.js';
-import { AgentEventEmitter } from './AgentEvents.js';
+import { AgentEventEmitter, RESUME_PREAMBLE } from './AgentEvents.js';
 import type { UsageInfo, CompactionInfo } from './AgentEvents.js';
 import { startAcp as startAcpBridge, ensureSharedWorkspace } from './AgentAcpBridge.js';
 import { formatCrewUpdate } from '../coordination/agents/CrewFormatter.js';
@@ -172,10 +172,8 @@ export class Agent {
     // conversation history, but the LLM still needs its system prompt.
     let initialPrompt = `${this.role.systemPrompt}\n\n${this.buildContextManifest(this.peers, this.budget)}\n\nYou are acting as the "${this.role.name}" role. ${this.task ? `Your assigned task is: ${this.task}` : 'Awaiting task assignment.'}`;
     if (isResume) {
-      initialPrompt += '\n\n[System] You are resuming from a previous session. Your conversation history has been restored. Continue from where you left off.';
+      initialPrompt += RESUME_PREAMBLE;
     }
-
-    // startAcpBridge is async (adapter creation uses dynamic imports).
     // Errors are handled internally by the bridge (sets agent status to 'failed').
     const bridgePromise = startAcpBridge(this, this.config, initialPrompt);
     bridgePromise.catch((err) => {
