@@ -91,6 +91,12 @@ export function AttentionBar() {
   if (state.agentCount === 0) return null;
 
   const { escalation, items, progressText, runningCount, pendingDecisionCount } = state;
+
+  // Hide the bar entirely when everything is healthy — StatusPopover
+  // in the header already covers the "all good" case. Only render when
+  // there are actual problems (yellow/red), disconnection, or pending decisions.
+  if (escalation === 'green' && connected && pendingDecisionCount === 0) return null;
+
   const styles = ESCALATION_STYLES[escalation];
 
   // Build aria label for screen readers (AC-13.15)

@@ -109,17 +109,14 @@ describe('AttentionBar', () => {
     expect(screen.queryByTestId('attention-bar')).not.toBeInTheDocument();
   });
 
-  it('renders green state when agents active but no exceptions', () => {
+  it('hides when green state with no exceptions (StatusPopover covers this)', () => {
     mockAppState.agents = [makeAgent('a1', 'running')];
     mockLeadState.projects = {
       'lead-1': { dagStatus: makeDagStatus({ done: 5, running: 2 }) },
     };
     renderBar();
 
-    const bar = screen.getByTestId('attention-bar');
-    expect(bar).toHaveAttribute('data-escalation', 'green');
-    expect(screen.getByText('All healthy')).toBeInTheDocument();
-    expect(screen.getByText('5/7 done')).toBeInTheDocument();
+    expect(screen.queryByTestId('attention-bar')).not.toBeInTheDocument();
   });
 
   it('renders yellow state with 1-2 exceptions (pending decision)', () => {
@@ -207,6 +204,8 @@ describe('AttentionBar', () => {
       makeAgent('a2', 'running'),
       makeAgent('a3', 'idle'),
     ];
+    // Add a pending decision to force bar to render (green hides)
+    mockAppState.pendingDecisions = [{ id: 'd1', title: 'test' }];
     renderBar();
 
     expect(screen.getByText('2')).toBeInTheDocument();
@@ -215,6 +214,7 @@ describe('AttentionBar', () => {
 
   it('shows progress text from DAG summary', () => {
     mockAppState.agents = [makeAgent('a1', 'running')];
+    mockAppState.pendingDecisions = [{ id: 'd1', title: 'test' }];
     mockLeadState.projects = {
       'lead-1': { dagStatus: makeDagStatus({ done: 12, running: 3, pending: 5 }) },
     };
@@ -267,6 +267,7 @@ describe('AttentionBar', () => {
 
   it('aggregates across multiple projects when no project selected', () => {
     mockAppState.agents = [makeAgent('a1', 'running')];
+    mockAppState.pendingDecisions = [{ id: 'd1', title: 'test' }];
     mockLeadState.projects = {
       'proj-1': { dagStatus: makeDagStatus({ done: 5, running: 2 }) },
       'proj-2': { dagStatus: makeDagStatus({ done: 3, pending: 5 }) },
@@ -278,6 +279,7 @@ describe('AttentionBar', () => {
 
   it('shows only selected project when one is selected', () => {
     mockAppState.agents = [makeAgent('a1', 'running')];
+    mockAppState.pendingDecisions = [{ id: 'd1', title: 'test' }];
     mockLeadState.selectedLeadId = 'proj-1';
     mockLeadState.projects = {
       'proj-1': { dagStatus: makeDagStatus({ done: 5, running: 2 }) },
@@ -288,9 +290,10 @@ describe('AttentionBar', () => {
     expect(screen.getByText('5/7 done')).toBeInTheDocument();
   });
 
-  it('uses role="status" for green/yellow and role="alert" for red (AC-13.15)', () => {
-    // Green
+  it('uses role="status" for yellow and role="alert" for red (AC-13.15)', () => {
+    // Yellow (pending decision)
     mockAppState.agents = [makeAgent('a1', 'running')];
+    mockAppState.pendingDecisions = [{ id: 'd1', title: 'test' }];
     const { unmount } = renderBar();
     let bar = screen.getByTestId('attention-bar');
     expect(bar).toHaveAttribute('role', 'status');
@@ -298,6 +301,7 @@ describe('AttentionBar', () => {
     unmount();
 
     // Red
+    mockAppState.pendingDecisions = [];
     mockLeadState.projects = {
       'lead-1': {
         dagStatus: makeDagStatus(
@@ -322,14 +326,13 @@ describe('AttentionBar', () => {
   });
 
   it('shows escalation dot with correct color', () => {
-    // Green
+    // Green state is hidden — verify it doesn't render
     mockAppState.agents = [makeAgent('a1', 'running')];
     const { unmount } = renderBar();
-    let dot = screen.getByTestId('escalation-dot');
-    expect(dot.className).toContain('bg-emerald-400');
+    expect(screen.queryByTestId('attention-bar')).not.toBeInTheDocument();
     unmount();
 
-    // Red (failed task)
+    // Red (failed task) — renders with red dot
     mockLeadState.projects = {
       'lead-1': {
         dagStatus: makeDagStatus(
@@ -339,7 +342,7 @@ describe('AttentionBar', () => {
       },
     };
     renderBar();
-    dot = screen.getByTestId('escalation-dot');
+    const dot = screen.getByTestId('escalation-dot');
     expect(dot.className).toContain('bg-red-500');
     expect(dot.className).toContain('animate-pulse');
   });
