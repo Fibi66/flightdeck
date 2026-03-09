@@ -3,8 +3,8 @@ import { Crown, Users, CheckCircle, Clock, MessageSquare, GitBranch, ChevronDown
 import { useShallow } from 'zustand/react/shallow';
 import { useLeadStore } from '../../stores/leadStore';
 import { useTimerStore, selectActiveTimerCount } from '../../stores/timerStore';
-import type { AgentReport } from '../../stores/leadStore';
-import type { AcpTextChunk, DagStatus } from '../../types';
+import type { AgentReport, ProgressSnapshot, ActivityEvent, AgentComm } from '../../stores/leadStore';
+import type { AcpTextChunk, DagStatus, Decision, ChatGroup, GroupMessage, Delegation, LeadProgress } from '../../types';
 import { useAppStore } from '../../stores/appStore';
 import { useHistoricalAgents } from '../../hooks/useHistoricalAgents';
 import { AgentReportBlock } from './AgentReportBlock';
@@ -24,15 +24,15 @@ import { useDragResize } from './useDragResize';
 
 // Stable empty references — avoids new [] / {} on every render (zustand equality trap)
 const EMPTY_MESSAGES: AcpTextChunk[] = [];
-const EMPTY_DECISIONS: any[] = [];
-const EMPTY_PROGRESS_HISTORY: any[] = [];
-const EMPTY_ACTIVITY: any[] = [];
-const EMPTY_COMMS: any[] = [];
+const EMPTY_DECISIONS: Decision[] = [];
+const EMPTY_PROGRESS_HISTORY: ProgressSnapshot[] = [];
+const EMPTY_ACTIVITY: ActivityEvent[] = [];
+const EMPTY_COMMS: AgentComm[] = [];
 const EMPTY_REPORTS: AgentReport[] = [];
-const EMPTY_GROUPS: any[] = [];
-const EMPTY_GROUP_MESSAGES: Record<string, any[]> = {};
-const EMPTY_DELEGATIONS: any[] = [];
-const EMPTY_CREW_AGENTS: any[] = [];
+const EMPTY_GROUPS: ChatGroup[] = [];
+const EMPTY_GROUP_MESSAGES: Record<string, GroupMessage[]> = {};
+const EMPTY_DELEGATIONS: Delegation[] = [];
+const EMPTY_CREW_AGENTS: LeadProgress['crewAgents'] = [];
 
 interface Props {
   api: any;
