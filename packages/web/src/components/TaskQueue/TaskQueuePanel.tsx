@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAppStore } from '../../stores/appStore';
 import { useLeadStore } from '../../stores/leadStore';
 import { apiFetch } from '../../hooks/useApi';
@@ -122,11 +122,6 @@ function SessionProgress({ progress, dagStatus }: { progress: LeadProgress | nul
 
 type TaskViewMode = 'graph' | 'list' | 'gantt' | 'resource' | 'kanban' | 'split';
 
-/** Split view constraints (percentage of container height) */
-const SPLIT_DEFAULT_PCT = 40;
-const SPLIT_MIN_PCT = 20;
-const SPLIT_MAX_PCT = 75;
-
 function DagPanel({
   dagStatus,
   dagView,
@@ -153,46 +148,8 @@ function DagPanel({
   }, []);
   const GLOBAL_PAGE_SIZE = 200;
   const [projectNameMap, setProjectNameMap] = useState<Map<string, string>>(new Map());
-  const hasDeps = dagStatus?.tasks.some((t) => t.dependsOn.length > 0) ?? false;
   const effectiveView = dagView ?? 'split';
   const archivedParam = showArchived ? '&includeArchived=true' : '';
-
-  // Split view: resizable Kanban (left) + DAG (right) with percentage-based split
-  const [splitPct, setSplitPct] = useState(() => {
-    try { const v = localStorage.getItem('tasks-split-pct'); return v ? Number(v) : SPLIT_DEFAULT_PCT; } catch { return SPLIT_DEFAULT_PCT; }
-  });
-  const splitContainerRef = useRef<HTMLDivElement>(null);
-
-  const handleSplitDragStart = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    const container = splitContainerRef.current;
-    if (!container) return;
-    const startY = e.clientY;
-    const containerRect = container.getBoundingClientRect();
-    const startPct = splitPct;
-
-    const onMouseMove = (ev: MouseEvent) => {
-      const deltaY = ev.clientY - startY;
-      const deltaPct = (deltaY / containerRect.height) * 100;
-      const newPct = Math.min(SPLIT_MAX_PCT, Math.max(SPLIT_MIN_PCT, startPct + deltaPct));
-      setSplitPct(newPct);
-    };
-    const onMouseUp = () => {
-      document.removeEventListener('mousemove', onMouseMove);
-      document.removeEventListener('mouseup', onMouseUp);
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-    };
-    document.body.style.cursor = 'row-resize';
-    document.body.style.userSelect = 'none';
-    document.addEventListener('mousemove', onMouseMove);
-    document.addEventListener('mouseup', onMouseUp);
-  }, [splitPct]);
-
-  // Persist split percentage on change
-  useEffect(() => {
-    try { localStorage.setItem('tasks-split-pct', String(splitPct)); } catch { /* ignore */ }
-  }, [splitPct]);
 
   // Fetch global tasks when scope=global and view=kanban/split
   useEffect(() => {
@@ -315,8 +272,8 @@ function DagPanel({
           )}
         </h3>
         <div className="flex items-center gap-2">
-          {/* Scope switcher (shown in Kanban and Split views) */}
-          {(effectiveView === 'kanban' || effectiveView === 'split') && (
+          {/* Scope switcher (only shown when NOT inside a specific project) */}
+          {!projectId && (effectiveView === 'kanban' || effectiveView === 'split') && (
             <select
               value={kanbanScope}
               onChange={(e) => setKanbanScope(e.target.value as 'project' | 'global')}
@@ -387,33 +344,15 @@ function DagPanel({
         </div>
       </div>
       {effectiveView === 'split' ? (
-        /* Split view: DAG on top, Kanban below (vertical stack) */
-        <div
-          ref={splitContainerRef}
-          className="flex flex-col w-full flex-1"
-          style={{ minHeight: 600 }}
-          data-testid="split-view"
-        >
-          {/* DAG panel (top) */}
-          <div
-            className="overflow-hidden"
-            style={{ flex: `0 0 ${splitPct}%`, minHeight: 150 }}
-          >
+        /* Split view: DAG on top, Kanban below (simple vertical stack) */
+        <div className="flex flex-col w-full flex-1 gap-2" data-testid="split-view">
+          {/* DAG graph */}
+          <div className="overflow-hidden" style={{ height: 350 }}>
             <DagGraph dagStatus={dagStatus} fillContainer />
           </div>
 
-          {/* Horizontal drag handle */}
-          <div
-            className="flex items-center justify-center h-1.5 cursor-row-resize hover:bg-blue-500/20 active:bg-blue-500/30 transition-colors group flex-shrink-0"
-            onMouseDown={handleSplitDragStart}
-            title="Drag to resize"
-            data-testid="split-handle"
-          >
-            <div className="h-0.5 w-8 bg-th-border group-hover:bg-blue-400 rounded-full transition-colors" />
-          </div>
-
-          {/* Kanban panel (bottom) */}
-          <div className="flex-1 overflow-auto min-h-[200px]">
+          {/* Kanban board */}
+          <div className="flex-1 overflow-auto">
             <KanbanBoard {...kanbanProps} />
           </div>
         </div>
