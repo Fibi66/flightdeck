@@ -18,6 +18,7 @@ export class ConfigWatcher extends EventEmitter {
   private pollInterval: ReturnType<typeof setInterval> | null = null;
   private lastStamp: FileStamp | null = null;
   private checking = false; // guard against overlapping checks
+  private notFoundWarned = false; // only warn once per start() about missing file
   readonly filePath: string;
   private readonly pollMs: number;
 
@@ -54,6 +55,7 @@ export class ConfigWatcher extends EventEmitter {
     this.checking = true;
     try {
       const st = await stat(this.filePath);
+      this.notFoundWarned = false; // file exists again — reset so we warn if it disappears
       // Quick reject: if mtime and size unchanged, skip hashing
       if (
         this.lastStamp &&
@@ -73,8 +75,10 @@ export class ConfigWatcher extends EventEmitter {
       this.emit('changed', content);
     } catch (err: any) {
       if (err.code === 'ENOENT') {
-        // File deleted or not yet created — emit warning, keep last-known-good
-        this.emit('warning', `Config file not found: ${this.filePath}`);
+        if (!this.notFoundWarned) {
+          this.notFoundWarned = true;
+          this.emit('warning', `Config file not found: ${this.filePath}`);
+        }
       } else {
         this.emit('error', err);
       }
