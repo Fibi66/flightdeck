@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { apiFetch } from '../../hooks/useApi';
 import {
-  CHANNEL_DISPLAY, EVENT_LABELS, PRESET_DEFAULTS,
+  CHANNEL_DISPLAY, EVENT_LABELS, EVENT_DESCRIPTIONS, PRESET_DEFAULTS, ROUTING_ALL_OFF,
   type NotificationChannel, type ChannelType, type NotifiableEvent, type PresetName,
 } from './types';
 
@@ -22,7 +22,7 @@ export function NotificationPreferencesPanel() {
     Promise.all([
       apiFetch<unknown>('/notifications/channels').catch(() => []),
       apiFetch<unknown>('/notifications/routing').catch(() => ({
-        routing: PRESET_DEFAULTS.conservative,
+        routing: ROUTING_ALL_OFF,
         preset: 'conservative',
       })),
     ]).then(([channelsRaw, routingRaw]) => {
@@ -30,7 +30,7 @@ export function NotificationPreferencesPanel() {
       const ch = Array.isArray(channelsRaw) ? channelsRaw : (channelsRaw as any)?.channels ?? [];
       setChannels(ch);
       const rd = routingRaw as any;
-      setRouting(rd?.routing ?? PRESET_DEFAULTS.conservative);
+      setRouting(rd?.routing ?? ROUTING_ALL_OFF);
       setPreset(rd?.preset ?? 'conservative');
     }).finally(() => setLoading(false));
   }, []);
@@ -139,7 +139,10 @@ export function NotificationPreferencesPanel() {
             <tbody>
               {ALL_EVENTS.map((event) => (
                 <tr key={event} className="border-b border-th-border/30 hover:bg-th-bg-hover/30">
-                  <td className="py-1.5 pr-4 text-th-text-alt">{EVENT_LABELS[event]}</td>
+                  <td className="py-1.5 pr-4">
+                    <span className="text-th-text-alt">{EVENT_LABELS[event]}</span>
+                    <p className="text-[9px] text-th-text-muted leading-tight mt-0.5">{EVENT_DESCRIPTIONS[event]}</p>
+                  </td>
                   {CHANNEL_ORDER.map((type) => {
                     const isEnabled = enabledChannelTypes.includes(type);
                     const isChecked = (routing[event] ?? []).includes(type);
