@@ -1,453 +1,530 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ProjectImporter } from './ProjectImporter.js';
-import type { ProjectImporterDeps, ProjectImportOptions } from './ProjectImporter.js';
+import type { ProjectImporterDeps } from './ProjectImporter.js';
+import { createProjectManifest } from './project-bundle.js';
+import type { ProjectBundle } from './project-bundle.js';
 
-// ── fs mock ──────────────────────────────────────────────────────────
-
-vi.mock('node:fs', () => ({
-  existsSync: vi.fn(),
-  readFileSync: vi.fn(),
-  readdirSync: vi.fn(),
-  statSync: vi.fn(),
-  realpathSync: vi.fn(),
+vi.mock('../utils/logger.js', () => ({
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-import { existsSync, readFileSync, readdirSync, statSync, realpathSync } from 'node:fs';
-
-const mockExistsSync = existsSync as ReturnType<typeof vi.fn>;
-const mockReadFileSync = readFileSync as ReturnType<typeof vi.fn>;
-const mockReaddirSync = readdirSync as ReturnType<typeof vi.fn>;
-const mockStatSync = statSync as ReturnType<typeof vi.fn>;
-const mockRealpathSync = realpathSync as ReturnType<typeof vi.fn>;
-
-// ── Dependency mocks ─────────────────────────────────────────────────
-
-function createMockKnowledge() {
-  const entries = new Map<string, { projectId: string; category: string; key: string; content: string; metadata?: unknown }>();
+function createMockDeps(): ProjectImporterDeps {
   return {
-    put: vi.fn((projectId: string, category: string, key: string, content: string, metadata?: unknown) => {
-      const id = `${projectId}:${category}:${key}`;
-      entries.set(id, { projectId, category, key, content, metadata });
-      return { id: 1, projectId, category, key, content, metadata, createdAt: '', updatedAt: '' };
-    }),
-    _entries: entries,
+    knowledgeStore: { put: vi.fn() } as unknown as ProjectImporterDeps['knowledgeStore'],
+    collectiveMemory: { remember: vi.fn() } as unknown as ProjectImporterDeps['collectiveMemory'],
+    agentMemory: { store: vi.fn() } as unknown as ProjectImporterDeps['agentMemory'],
+    agentRoster: { upsertAgent: vi.fn() } as unknown as ProjectImporterDeps['agentRoster'],
+    projectRegistry: {
+      create: vi.fn().mockReturnValue({
+        id: 'new-project-id',
+        name: 'Test Project',
+        description: '',
+        cwd: '/tmp/test',
+        status: 'active',
+        createdAt: '2024-01-01T00:00:00Z',
+        updatedAt: '2024-01-01T00:00:00Z',
+      }),
+      getSessions: vi.fn().mockReturnValue([]),
+      startSession: vi.fn(),
+    } as unknown as ProjectImporterDeps['projectRegistry'],
+    trainingCapture: {
+      captureCorrection: vi.fn(),
+      captureFeedback: vi.fn(),
+    } as unknown as ProjectImporterDeps['trainingCapture'],
   };
 }
 
-function createMockMemory() {
-  const entries: Array<{ category: string; key: string; value: string; source: string; projectId: string }> = [];
-  return {
-    remember: vi.fn((category: string, key: string, value: string, source: string, projectId: string) => {
-      entries.push({ category, key, value, source, projectId });
-      return { id: 1, category, key, value, source, projectId, createdAt: '', lastUsedAt: '', useCount: 1 };
-    }),
-    _entries: entries,
+function makeBundle(overrides: Partial<Omit<ProjectBundle, 'manifest'>> = {}): ProjectBundle {
+  const content = {
+    project: { name: 'Test Project', description: 'Test desc', cwd: '/tmp/test', status: 'active' as const },
+    agents: [] as ProjectBundle['agents'],
+    knowledge: { core: [], episodic: [], procedural: [], semantic: [] } as ProjectBundle['knowledge'],
+    collectiveMemory: [] as ProjectBundle['collectiveMemory'],
+    agentMemory: [] as ProjectBundle['agentMemory'],
+    sessions: [] as ProjectBundle['sessions'],
+    training: { corrections: [], feedback: [] } as ProjectBundle['training'],
+    ...overrides,
   };
+  return { manifest: createProjectManifest(content, 'source-project-id'), ...content };
 }
-
-function createMockRegistry() {
-  const sessions: Array<{ projectId: string; leadId: string; task?: string; role?: string }> = [];
-  return {
-    startSession: vi.fn((projectId: string, leadId: string, task?: string, role?: string) => {
-      sessions.push({ projectId, leadId, task, role });
-    }),
-    getSessions: vi.fn((_projectId: string) => {
-      return sessions.map((s, i) => ({
-        id: i + 1,
-        projectId: s.projectId,
-        leadId: s.leadId,
-        task: s.task ?? null,
-        role: s.role ?? 'lead',
-        status: 'completed',
-        startedAt: new Date().toISOString(),
-        endedAt: null,
-        sessionId: null,
-      }));
-    }),
-    _sessions: sessions,
-  };
-}
-
-function createDeps() {
-  const knowledge = createMockKnowledge();
-  const memory = createMockMemory();
-  const registry = createMockRegistry();
-  return {
-    knowledgeStore: knowledge,
-    collectiveMemory: memory,
-    projectRegistry: registry,
-    _knowledge: knowledge,
-    _memory: memory,
-    _registry: registry,
-  };
-}
-
-// ── Filesystem helpers ───────────────────────────────────────────────
-
-/** Configure the fs mocks to simulate a directory tree */
-function setupFs(tree: Record<string, string | string[] | 'dir'>) {
-  mockExistsSync.mockImplementation((p: string) => p in tree);
-  mockReaddirSync.mockImplementation((p: string) => {
-    const val = tree[p];
-    if (Array.isArray(val)) return val;
-    throw new Error(`ENOENT: no such file or directory '${p}'`);
-  });
-  mockReadFileSync.mockImplementation((p: string) => {
-    const val = tree[p];
-    if (typeof val === 'string') return val;
-    throw new Error(`ENOENT: no such file or directory '${p}'`);
-  });
-  mockStatSync.mockImplementation((p: string) => {
-    const val = tree[p];
-    return {
-      isDirectory: () => val === 'dir',
-      size: typeof val === 'string' ? val.length : 0,
-    };
-  });
-  // realpathSync: identity function (no symlinks in test)
-  mockRealpathSync.mockImplementation((p: string) => {
-    if (!(p in tree) && !Object.keys(tree).some(k => k.startsWith(p))) {
-      throw new Error(`ENOENT: no such file or directory '${p}'`);
-    }
-    return p;
-  });
-}
-
-// ── Tests ────────────────────────────────────────────────────────────
 
 describe('ProjectImporter', () => {
-  let deps: ReturnType<typeof createDeps>;
+  let deps: ReturnType<typeof createMockDeps>;
   let importer: ProjectImporter;
-  const projectId = 'test-project';
-  const sourcePath = '/tmp/.flightdeck';
 
   beforeEach(() => {
-    vi.clearAllMocks();
-    deps = createDeps();
-    importer = new ProjectImporter(deps as unknown as ProjectImporterDeps);
+    deps = createMockDeps();
+    importer = new ProjectImporter(deps);
   });
 
-  // ── Knowledge ──────────────────────────────────────────────────
+  // ── Validation ────────────────────────────────────────
 
-  describe('importKnowledge', () => {
-    it('imports knowledge from JSON files', () => {
-      const entries = [
-        { key: 'rule-1', content: 'Always use TypeScript' },
-        { key: 'rule-2', content: 'Prefer composition', metadata: { confidence: 0.9 } },
-      ];
-      setupFs({
-        [sourcePath]: 'dir',
-        [`${sourcePath}/knowledge`]: ['core.json'],
-        [`${sourcePath}/knowledge/core.json`]: JSON.stringify(entries),
-      });
+  describe('validation', () => {
+    it('rejects null bundle', () => {
+      const report = importer.import(null);
+      expect(report.success).toBe(false);
+      expect(report.validation.valid).toBe(false);
+      expect(report.validation.issues).toContain('Bundle must be a non-null object');
+    });
 
-      const report = importer.import({ projectId, sourcePath });
+    it('rejects undefined bundle', () => {
+      const report = importer.import(undefined);
+      expect(report.success).toBe(false);
+      expect(report.validation.valid).toBe(false);
+    });
 
+    it('rejects bundle with invalid manifest', () => {
+      const report = importer.import({ manifest: { bundleType: 'wrong' }, project: {}, knowledge: {} });
+      expect(report.success).toBe(false);
+      expect(report.validation.issues).toContain('Invalid or missing manifest');
+    });
+
+    it('rejects bundle with bad checksum', () => {
+      const bundle = makeBundle();
+      // Tamper with content after checksum was computed
+      bundle.project.name = 'Tampered Name';
+
+      const report = importer.import(bundle);
+      expect(report.success).toBe(false);
+      expect(report.validation.issues[0]).toMatch(/[Cc]hecksum/);
+    });
+
+    it('accepts valid bundle', () => {
+      const bundle = makeBundle();
+      const report = importer.import(bundle);
       expect(report.success).toBe(true);
-      expect(report.knowledge.imported).toBe(2);
-      expect(report.knowledge.errors).toHaveLength(0);
-      expect(deps._knowledge.put).toHaveBeenCalledTimes(2);
-      expect(deps._knowledge.put).toHaveBeenCalledWith(
-        projectId, 'core', 'rule-1', 'Always use TypeScript', undefined,
-      );
-      expect(deps._knowledge.put).toHaveBeenCalledWith(
-        projectId, 'core', 'rule-2', 'Prefer composition', { confidence: 0.9 },
-      );
-    });
-
-    it('skips unknown knowledge categories with warning', () => {
-      setupFs({
-        [sourcePath]: 'dir',
-        [`${sourcePath}/knowledge`]: ['fantasy.json'],
-        [`${sourcePath}/knowledge/fantasy.json`]: JSON.stringify([{ key: 'k', content: 'v' }]),
-      });
-
-      const report = importer.import({ projectId, sourcePath });
-      expect(report.knowledge.imported).toBe(0);
-      expect(report.warnings).toContain('Skipping unknown knowledge category: fantasy');
+      expect(report.validation.valid).toBe(true);
     });
   });
 
-  // ── Memory ─────────────────────────────────────────────────────
+  // ── Project creation ──────────────────────────────────
 
-  describe('importMemory', () => {
-    it('imports collective memory from JSON files', () => {
-      const entries = [
-        { key: 'always-run-tests', value: 'Run tests before committing', source: 'dev-1' },
-        { key: 'use-strict-mode', value: 'Enable strict TS', source: 'architect-1' },
-      ];
-      setupFs({
-        [sourcePath]: 'dir',
-        [`${sourcePath}/memory`]: ['pattern.json'],
-        [`${sourcePath}/memory/pattern.json`]: JSON.stringify(entries),
-      });
+  describe('project creation', () => {
+    it('creates project with bundle metadata', () => {
+      const bundle = makeBundle();
+      importer.import(bundle);
 
-      const report = importer.import({ projectId, sourcePath });
-
-      expect(report.success).toBe(true);
-      expect(report.memory.imported).toBe(2);
-      expect(deps._memory.remember).toHaveBeenCalledTimes(2);
-      expect(deps._memory.remember).toHaveBeenCalledWith(
-        'pattern', 'always-run-tests', 'Run tests before committing', 'dev-1', projectId,
+      expect(deps.projectRegistry.create).toHaveBeenCalledWith(
+        'Test Project',
+        'Test desc',
+        '/tmp/test',
       );
     });
 
-    it('skips unknown memory categories with warning', () => {
-      setupFs({
-        [sourcePath]: 'dir',
-        [`${sourcePath}/memory`]: ['alien.json'],
-        [`${sourcePath}/memory/alien.json`]: JSON.stringify([{ key: 'k', value: 'v', source: 's' }]),
-      });
+    it('creates project with overridden name and cwd', () => {
+      const bundle = makeBundle();
+      importer.import(bundle, { name: 'Custom Name', cwd: '/custom/path' });
 
-      const report = importer.import({ projectId, sourcePath });
-      expect(report.memory.imported).toBe(0);
-      expect(report.warnings).toContain('Skipping unknown memory category: alien');
-    });
-  });
-
-  // ── Sessions ───────────────────────────────────────────────────
-
-  describe('importSessions', () => {
-    it('imports sessions avoiding duplicates', () => {
-      const session1 = { leadId: 'lead-abc', task: 'Build auth', role: 'lead' };
-      const session2 = { leadId: 'lead-xyz', task: 'Fix bugs', role: 'developer' };
-      setupFs({
-        [sourcePath]: 'dir',
-        [`${sourcePath}/sessions`]: ['session-1.json', 'session-2.json'],
-        [`${sourcePath}/sessions/session-1.json`]: JSON.stringify(session1),
-        [`${sourcePath}/sessions/session-2.json`]: JSON.stringify(session2),
-      });
-
-      const report = importer.import({ projectId, sourcePath });
-
-      expect(report.sessions.imported).toBe(2);
-      expect(deps._registry.startSession).toHaveBeenCalledTimes(2);
-      expect(deps._registry.startSession).toHaveBeenCalledWith(projectId, 'lead-abc', 'Build auth', 'lead');
-      expect(deps._registry.startSession).toHaveBeenCalledWith(projectId, 'lead-xyz', 'Fix bugs', 'developer');
-    });
-
-    it('skips duplicate sessions (same leadId + task)', () => {
-      // Pre-populate an existing session
-      deps._registry._sessions.push({ projectId, leadId: 'lead-abc', task: 'Build auth' });
-
-      const session = { leadId: 'lead-abc', task: 'Build auth', role: 'lead' };
-      setupFs({
-        [sourcePath]: 'dir',
-        [`${sourcePath}/sessions`]: ['session-1.json'],
-        [`${sourcePath}/sessions/session-1.json`]: JSON.stringify(session),
-      });
-
-      const report = importer.import({ projectId, sourcePath });
-
-      expect(report.sessions.imported).toBe(0);
-      expect(report.sessions.skipped).toBe(1);
-      // getSessions is called, but startSession is not
-      expect(deps._registry.startSession).not.toHaveBeenCalled();
-    });
-  });
-
-  // ── Shared Artifacts ───────────────────────────────────────────
-
-  describe('importSharedArtifacts', () => {
-    it('imports shared markdown artifacts as episodic knowledge', () => {
-      const sharedDir = `${sourcePath}/shared`;
-      const subdir = `${sharedDir}/dev-abc12345`;
-
-      mockExistsSync.mockImplementation((p: string) =>
-        [sourcePath, sharedDir, subdir].includes(p),
-      );
-      mockReaddirSync.mockImplementation((p: string) => {
-        if (p === sharedDir) return ['dev-abc12345'];
-        if (p === subdir) return ['notes.md', 'plan.md'];
-        throw new Error(`ENOENT: ${p}`);
-      });
-      mockReadFileSync.mockImplementation((p: string) => {
-        if (p === `${subdir}/notes.md`) return '# Dev Notes\nSome notes here.';
-        if (p === `${subdir}/plan.md`) return '# Plan\nStep 1.';
-        throw new Error(`ENOENT: ${p}`);
-      });
-      mockStatSync.mockImplementation((p: string) => ({
-        isDirectory: () => p === subdir,
-        size: 100,
-      }));
-      mockRealpathSync.mockImplementation((p: string) => p);
-
-      const report = importer.import({ projectId, sourcePath });
-
-      expect(report.knowledge.imported).toBe(2);
-      expect(deps._knowledge.put).toHaveBeenCalledWith(
-        projectId, 'episodic', 'artifact:dev:notes', '# Dev Notes\nSome notes here.', { source: 'import', role: 'dev' },
-      );
-      expect(deps._knowledge.put).toHaveBeenCalledWith(
-        projectId, 'episodic', 'artifact:dev:plan', '# Plan\nStep 1.', { source: 'import', role: 'dev' },
+      expect(deps.projectRegistry.create).toHaveBeenCalledWith(
+        'Custom Name',
+        'Test desc',
+        '/custom/path',
       );
     });
-  });
 
-  // ── Error handling ─────────────────────────────────────────────
+    it('returns failure if project creation throws', () => {
+      (deps.projectRegistry.create as ReturnType<typeof vi.fn>).mockImplementation(() => {
+        throw new Error('Duplicate project name');
+      });
 
-  describe('error handling', () => {
-    it('returns error report for missing source path', () => {
-      mockExistsSync.mockReturnValue(false);
-      mockRealpathSync.mockImplementation(() => { throw new Error('ENOENT'); });
-
-      const report = importer.import({ projectId, sourcePath: '/nonexistent' });
+      const bundle = makeBundle();
+      const report = importer.import(bundle);
 
       expect(report.success).toBe(false);
-      expect(report.warnings).toContain('Source path is invalid or inaccessible');
-      expect(deps._knowledge.put).not.toHaveBeenCalled();
-    });
-
-    it('handles malformed JSON gracefully', () => {
-      setupFs({
-        [sourcePath]: 'dir',
-        [`${sourcePath}/knowledge`]: ['core.json'],
-        [`${sourcePath}/knowledge/core.json`]: '{ this is not json }',
-      });
-
-      const report = importer.import({ projectId, sourcePath });
-
-      expect(report.success).toBe(true); // Import still succeeds overall
-      expect(report.knowledge.imported).toBe(0);
-      expect(report.knowledge.errors.length).toBeGreaterThan(0);
-      expect(report.knowledge.errors[0]).toContain('core.json');
-    });
-
-    it('handles invalid entries in otherwise valid JSON', () => {
-      const entries = [
-        { key: 'valid', content: 'ok' },
-        { noKey: true }, // invalid
-        { key: 'also-valid', content: 'good' },
-      ];
-      setupFs({
-        [sourcePath]: 'dir',
-        [`${sourcePath}/knowledge`]: ['episodic.json'],
-        [`${sourcePath}/knowledge/episodic.json`]: JSON.stringify(entries),
-      });
-
-      const report = importer.import({ projectId, sourcePath });
-
-      expect(report.knowledge.imported).toBe(2);
-      expect(report.knowledge.skipped).toBe(1);
-      expect(report.knowledge.errors).toHaveLength(1);
-    });
-
-    it('handles non-array JSON in knowledge files', () => {
-      setupFs({
-        [sourcePath]: 'dir',
-        [`${sourcePath}/knowledge`]: ['core.json'],
-        [`${sourcePath}/knowledge/core.json`]: JSON.stringify({ key: 'val' }),
-      });
-
-      const report = importer.import({ projectId, sourcePath });
-      expect(report.knowledge.imported).toBe(0);
-      expect(report.knowledge.errors).toContain('core.json: expected JSON array');
+      expect(report.warnings[0]).toMatch(/Failed to create project/);
     });
   });
 
-  // ── Dry run ────────────────────────────────────────────────────
+  // ── Knowledge import ──────────────────────────────────
+
+  describe('knowledge import', () => {
+    it('imports knowledge entries across all categories', () => {
+      const bundle = makeBundle({
+        knowledge: {
+          core: [
+            { key: 'arch', content: 'Use microservices', category: 'core', createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z' },
+          ],
+          semantic: [
+            { key: 'glossary', content: 'Domain terms', category: 'semantic', confidence: 0.8, tags: ['domain'], source: 'manual', createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z' },
+          ],
+          episodic: [],
+          procedural: [],
+        },
+      });
+
+      const report = importer.import(bundle);
+
+      expect(report.knowledge.imported).toBe(2);
+      expect(deps.knowledgeStore.put).toHaveBeenCalledTimes(2);
+      expect(deps.knowledgeStore.put).toHaveBeenCalledWith(
+        'new-project-id', 'core', 'arch', 'Use microservices',
+        expect.objectContaining({ imported: true }),
+      );
+      expect(deps.knowledgeStore.put).toHaveBeenCalledWith(
+        'new-project-id', 'semantic', 'glossary', 'Domain terms',
+        expect.objectContaining({ imported: true, confidence: 0.8, tags: ['domain'], source: 'manual' }),
+      );
+    });
+
+    it('skips invalid knowledge entries missing key', () => {
+      const bundle = makeBundle({
+        knowledge: {
+          core: [
+            { key: '', content: 'No key', category: 'core', createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z' },
+            { key: 'valid', content: 'Has key', category: 'core', createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z' },
+          ],
+          episodic: [],
+          procedural: [],
+          semantic: [],
+        },
+      });
+
+      const report = importer.import(bundle);
+      expect(report.knowledge.imported).toBe(1);
+      expect(report.knowledge.skipped).toBe(1);
+    });
+
+    it('adds imported:true to metadata', () => {
+      const bundle = makeBundle({
+        knowledge: {
+          core: [
+            { key: 'k1', content: 'c1', category: 'core', createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z' },
+          ],
+          episodic: [],
+          procedural: [],
+          semantic: [],
+        },
+      });
+
+      importer.import(bundle);
+
+      const putCall = (deps.knowledgeStore.put as ReturnType<typeof vi.fn>).mock.calls[0];
+      expect(putCall[4]).toMatchObject({ imported: true });
+    });
+  });
+
+  // ── Collective memory import ──────────────────────────
+
+  describe('collective memory import', () => {
+    it('imports collective memory entries', () => {
+      const bundle = makeBundle({
+        collectiveMemory: [
+          { category: 'pattern', key: 'retry', value: 'Use backoff', source: 'agent-1', useCount: 3 },
+          { category: 'decision', key: 'db', value: 'SQLite', source: 'lead', useCount: 1 },
+        ],
+      });
+
+      const report = importer.import(bundle);
+
+      expect(report.collectiveMemory.imported).toBe(2);
+      expect(deps.collectiveMemory.remember).toHaveBeenCalledWith(
+        'pattern', 'retry', 'Use backoff', 'agent-1', 'new-project-id',
+      );
+    });
+
+    it('skips unknown memory categories', () => {
+      const bundle = makeBundle({
+        collectiveMemory: [
+          { category: 'unknown-category', key: 'k', value: 'v', source: 's', useCount: 0 },
+        ],
+      });
+
+      const report = importer.import(bundle);
+      expect(report.collectiveMemory.skipped).toBe(1);
+      expect(deps.collectiveMemory.remember).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── Agent memory import ───────────────────────────────
+
+  describe('agent memory import', () => {
+    it('imports agent memory entries', () => {
+      const bundle = makeBundle({
+        agentMemory: [
+          { leadId: 'lead-1', agentId: 'agent-1', key: 'pref', value: 'dark-mode' },
+          { leadId: 'lead-2', agentId: 'agent-2', key: 'lang', value: 'typescript' },
+        ],
+      });
+
+      const report = importer.import(bundle);
+
+      expect(report.agentMemory.imported).toBe(2);
+      expect(deps.agentMemory.store).toHaveBeenCalledWith('lead-1', 'agent-1', 'pref', 'dark-mode');
+      expect(deps.agentMemory.store).toHaveBeenCalledWith('lead-2', 'agent-2', 'lang', 'typescript');
+    });
+
+    it('skips invalid agent memory entries', () => {
+      const bundle = makeBundle({
+        agentMemory: [
+          { leadId: '', agentId: 'agent-1', key: 'k', value: 'v' },
+          { leadId: 'lead-1', agentId: 'agent-1', key: 'k', value: 'v' },
+        ],
+      });
+
+      const report = importer.import(bundle);
+      expect(report.agentMemory.imported).toBe(1);
+      expect(report.agentMemory.skipped).toBe(1);
+    });
+  });
+
+  // ── Agent import ──────────────────────────────────────
+
+  describe('agent import', () => {
+    it('imports agents as terminated with remapped projectId', () => {
+      const bundle = makeBundle({
+        agents: [
+          {
+            agentId: 'agent-1',
+            role: 'developer',
+            model: 'gpt-4',
+            status: 'active',
+            teamId: 'team-1',
+            createdAt: '2024-01-01T00:00:00Z',
+          },
+        ],
+      });
+
+      const report = importer.import(bundle);
+
+      expect(report.agents.imported).toBe(1);
+      expect(deps.agentRoster.upsertAgent).toHaveBeenCalledWith(
+        'agent-1',
+        'developer',
+        'gpt-4',
+        'terminated',
+        undefined,
+        'new-project-id',
+        expect.objectContaining({ imported: true }),
+        'team-1',
+      );
+    });
+
+    it('skips invalid agent entries', () => {
+      const bundle = makeBundle({
+        agents: [
+          { agentId: '', role: 'dev', model: 'gpt-4', status: 'active', teamId: 't1', createdAt: '2024-01-01T00:00:00Z' },
+          { agentId: 'a1', role: '', model: 'gpt-4', status: 'active', teamId: 't1', createdAt: '2024-01-01T00:00:00Z' },
+          { agentId: 'a2', role: 'dev', model: '', status: 'active', teamId: 't1', createdAt: '2024-01-01T00:00:00Z' },
+        ],
+      });
+
+      const report = importer.import(bundle);
+      expect(report.agents.skipped).toBe(3);
+      expect(report.agents.imported).toBe(0);
+    });
+  });
+
+  // ── Session import ────────────────────────────────────
+
+  describe('session import', () => {
+    it('imports sessions', () => {
+      const bundle = makeBundle({
+        sessions: [
+          { leadId: 'lead-1', task: 'build', role: 'dev' },
+          { leadId: 'lead-2', task: 'test', role: 'qa' },
+        ],
+      });
+
+      const report = importer.import(bundle);
+
+      expect(report.sessions.imported).toBe(2);
+      expect(deps.projectRegistry.startSession).toHaveBeenCalledWith(
+        'new-project-id', 'lead-1', 'build', 'dev',
+      );
+      expect(deps.projectRegistry.startSession).toHaveBeenCalledWith(
+        'new-project-id', 'lead-2', 'test', 'qa',
+      );
+    });
+
+    it('skips duplicate sessions', () => {
+      (deps.projectRegistry.getSessions as ReturnType<typeof vi.fn>).mockReturnValue([
+        { leadId: 'lead-1', task: 'build' },
+      ]);
+
+      const bundle = makeBundle({
+        sessions: [
+          { leadId: 'lead-1', task: 'build', role: 'dev' },
+          { leadId: 'lead-2', task: 'test', role: 'qa' },
+        ],
+      });
+
+      const report = importer.import(bundle);
+
+      expect(report.sessions.imported).toBe(1);
+      expect(report.sessions.skipped).toBe(1);
+      expect(deps.projectRegistry.startSession).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // ── Training import ───────────────────────────────────
+
+  describe('training import', () => {
+    it('imports corrections and feedback', () => {
+      const bundle = makeBundle({
+        training: {
+          corrections: [
+            {
+              id: 'corr-1',
+              agentId: 'agent-1',
+              originalAction: 'delete file',
+              correctedAction: 'archive file',
+              context: 'production',
+              tags: ['safety'],
+              timestamp: '2024-01-01T00:00:00Z',
+            },
+          ],
+          feedback: [
+            {
+              id: 'fb-1',
+              agentId: 'agent-2',
+              action: 'code review',
+              rating: 'positive' as const,
+              comment: 'Good',
+              tags: ['quality'],
+              timestamp: '2024-01-01T00:00:00Z',
+            },
+          ],
+        },
+      });
+
+      const report = importer.import(bundle);
+
+      expect(report.training.imported).toBe(2);
+      expect(deps.trainingCapture.captureCorrection).toHaveBeenCalledWith(
+        'new-project-id',
+        expect.objectContaining({
+          agentId: 'agent-1',
+          originalAction: 'delete file',
+          correctedAction: 'archive file',
+        }),
+      );
+      expect(deps.trainingCapture.captureFeedback).toHaveBeenCalledWith(
+        'new-project-id',
+        expect.objectContaining({
+          agentId: 'agent-2',
+          action: 'code review',
+          rating: 'positive',
+        }),
+      );
+    });
+  });
+
+  // ── Dry run ───────────────────────────────────────────
 
   describe('dry run', () => {
     it('does not write when dryRun is true', () => {
-      const knowledgeEntries = [{ key: 'k1', content: 'c1' }];
-      const memoryEntries = [{ key: 'm1', value: 'v1', source: 's1' }];
-      const session = { leadId: 'lead-1', task: 'do stuff' };
-      setupFs({
-        [sourcePath]: 'dir',
-        [`${sourcePath}/knowledge`]: ['core.json'],
-        [`${sourcePath}/knowledge/core.json`]: JSON.stringify(knowledgeEntries),
-        [`${sourcePath}/memory`]: ['pattern.json'],
-        [`${sourcePath}/memory/pattern.json`]: JSON.stringify(memoryEntries),
-        [`${sourcePath}/sessions`]: ['session-1.json'],
-        [`${sourcePath}/sessions/session-1.json`]: JSON.stringify(session),
+      const bundle = makeBundle({
+        agents: [{ agentId: 'a1', role: 'dev', model: 'gpt-4', status: 'active', teamId: 't1', createdAt: '2024-01-01T00:00:00Z' }],
+        knowledge: {
+          core: [{ key: 'k1', content: 'c1', category: 'core', createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z' }],
+          episodic: [],
+          procedural: [],
+          semantic: [],
+        },
+        collectiveMemory: [{ category: 'pattern', key: 'k', value: 'v', source: 's', useCount: 0 }],
+        agentMemory: [{ leadId: 'l1', agentId: 'a1', key: 'k', value: 'v' }],
+        sessions: [{ leadId: 'lead-1', task: 'build' }],
+        training: {
+          corrections: [{ id: 'c1', agentId: 'a1', originalAction: 'x', correctedAction: 'y', tags: [], timestamp: '2024-01-01T00:00:00Z' }],
+          feedback: [],
+        },
       });
 
-      const report = importer.import({ projectId, sourcePath, dryRun: true });
+      const report = importer.import(bundle, { dryRun: true });
 
-      expect(report.knowledge.imported).toBe(1);
-      expect(report.memory.imported).toBe(1);
+      expect(report.success).toBe(true);
+      expect(report.project.created).toBe(false);
+      expect(deps.projectRegistry.create).not.toHaveBeenCalled();
+      expect(deps.knowledgeStore.put).not.toHaveBeenCalled();
+      expect(deps.collectiveMemory.remember).not.toHaveBeenCalled();
+      expect(deps.agentMemory.store).not.toHaveBeenCalled();
+      expect(deps.agentRoster.upsertAgent).not.toHaveBeenCalled();
+      expect(deps.projectRegistry.startSession).not.toHaveBeenCalled();
+      expect(deps.trainingCapture.captureCorrection).not.toHaveBeenCalled();
+    });
+
+    it('returns counts of what would be imported', () => {
+      const bundle = makeBundle({
+        agents: [
+          { agentId: 'a1', role: 'dev', model: 'gpt-4', status: 'active', teamId: 't1', createdAt: '2024-01-01T00:00:00Z' },
+          { agentId: 'a2', role: 'qa', model: 'gpt-4', status: 'active', teamId: 't1', createdAt: '2024-01-01T00:00:00Z' },
+        ],
+        knowledge: {
+          core: [{ key: 'k1', content: 'c1', category: 'core', createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z' }],
+          episodic: [],
+          procedural: [{ key: 'k2', content: 'c2', category: 'procedural', createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z' }],
+          semantic: [],
+        },
+        collectiveMemory: [
+          { category: 'pattern', key: 'k', value: 'v', source: 's', useCount: 0 },
+        ],
+        agentMemory: [
+          { leadId: 'l1', agentId: 'a1', key: 'k', value: 'v' },
+          { leadId: 'l2', agentId: 'a2', key: 'k', value: 'v' },
+          { leadId: 'l3', agentId: 'a3', key: 'k', value: 'v' },
+        ],
+        sessions: [{ leadId: 'lead-1' }],
+        training: {
+          corrections: [{ id: 'c1', agentId: 'a1', originalAction: 'x', correctedAction: 'y', tags: [], timestamp: '2024-01-01T00:00:00Z' }],
+          feedback: [{ id: 'f1', agentId: 'a1', action: 'act', rating: 'positive' as const, tags: [], timestamp: '2024-01-01T00:00:00Z' }],
+        },
+      });
+
+      const report = importer.import(bundle, { dryRun: true });
+
+      expect(report.agents.imported).toBe(2);
+      expect(report.knowledge.imported).toBe(2);
+      expect(report.collectiveMemory.imported).toBe(1);
+      expect(report.agentMemory.imported).toBe(3);
       expect(report.sessions.imported).toBe(1);
-      // Nothing was actually written
-      expect(deps._knowledge.put).not.toHaveBeenCalled();
-      expect(deps._memory.remember).not.toHaveBeenCalled();
-      expect(deps._registry.startSession).not.toHaveBeenCalled();
+      expect(report.training.imported).toBe(2);
     });
   });
 
-  // ── Idempotency ────────────────────────────────────────────────
+  // ── End-to-end ────────────────────────────────────────
 
-  describe('idempotency', () => {
-    it('second import produces same result via upsert', () => {
-      const entries = [{ key: 'rule-1', content: 'Always use TypeScript' }];
-      setupFs({
-        [sourcePath]: 'dir',
-        [`${sourcePath}/knowledge`]: ['core.json'],
-        [`${sourcePath}/knowledge/core.json`]: JSON.stringify(entries),
+  describe('end-to-end', () => {
+    it('full bundle import with all sections populated', () => {
+      const bundle = makeBundle({
+        agents: [
+          { agentId: 'a1', role: 'dev', model: 'gpt-4', status: 'active', teamId: 't1', createdAt: '2024-01-01T00:00:00Z' },
+        ],
+        knowledge: {
+          core: [{ key: 'arch', content: 'microservices', category: 'core', createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z' }],
+          episodic: [{ key: 'ep1', content: 'learned x', category: 'episodic', createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z' }],
+          procedural: [],
+          semantic: [{ key: 'sem1', content: 'terms', category: 'semantic', createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z' }],
+        },
+        collectiveMemory: [
+          { category: 'pattern', key: 'retry', value: 'backoff', source: 'agent-1', useCount: 3 },
+        ],
+        agentMemory: [
+          { leadId: 'lead-1', agentId: 'agent-1', key: 'pref', value: 'dark-mode' },
+        ],
+        sessions: [
+          { leadId: 'lead-1', task: 'build', role: 'dev' },
+        ],
+        training: {
+          corrections: [
+            { id: 'c1', agentId: 'a1', originalAction: 'delete', correctedAction: 'archive', tags: ['safety'], timestamp: '2024-01-01T00:00:00Z' },
+          ],
+          feedback: [
+            { id: 'f1', agentId: 'a1', action: 'review', rating: 'positive' as const, tags: [], timestamp: '2024-01-01T00:00:00Z' },
+          ],
+        },
       });
 
-      const report1 = importer.import({ projectId, sourcePath });
-      const report2 = importer.import({ projectId, sourcePath });
+      const report = importer.import(bundle);
 
-      expect(report1.knowledge.imported).toBe(1);
-      expect(report2.knowledge.imported).toBe(1);
-      // put() is called both times — upsert handles dedup
-      expect(deps._knowledge.put).toHaveBeenCalledTimes(2);
-    });
-  });
-
-  // ── Security: file size limit ─────────────────────────────────
-
-  describe('file size limit', () => {
-    it('skips files exceeding 512KB', () => {
-      const largeContent = 'x'.repeat(600 * 1024); // 600KB
-      mockExistsSync.mockReturnValue(true);
-      mockReaddirSync.mockImplementation((p: string) => {
-        if (p === `${sourcePath}/knowledge`) return ['core.json'];
-        return [];
-      });
-      mockReadFileSync.mockReturnValue(largeContent);
-      mockStatSync.mockImplementation((p: string) => ({
-        isDirectory: () => p === sourcePath,
-        size: p.endsWith('.json') ? 600 * 1024 : 0,
-      }));
-      mockRealpathSync.mockImplementation((p: string) => p);
-
-      const report = importer.import({ projectId, sourcePath });
-
-      expect(report.knowledge.imported).toBe(0);
-      expect(report.knowledge.skipped).toBe(1);
-      expect(report.knowledge.errors[0]).toContain('too large');
-    });
-  });
-
-  // ── Security: role extraction ─────────────────────────────────
-
-  describe('role extraction from subdir name', () => {
-    it('extracts multi-word roles like readability-reviewer correctly', () => {
-      const sharedDir = `${sourcePath}/shared`;
-      const subdir = `${sharedDir}/readability-reviewer-43f9a8a1`;
-
-      mockExistsSync.mockImplementation((p: string) =>
-        [sourcePath, sharedDir, subdir].includes(p),
-      );
-      mockReaddirSync.mockImplementation((p: string) => {
-        if (p === sharedDir) return ['readability-reviewer-43f9a8a1'];
-        if (p === subdir) return ['review.md'];
-        return [];
-      });
-      mockReadFileSync.mockReturnValue('# Review notes');
-      mockStatSync.mockImplementation((p: string) => ({
-        isDirectory: () => p === subdir,
-        size: 20,
-      }));
-      mockRealpathSync.mockImplementation((p: string) => p);
-
-      const report = importer.import({ projectId, sourcePath });
-
-      expect(report.knowledge.imported).toBe(1);
-      expect(deps._knowledge.put).toHaveBeenCalledWith(
-        projectId, 'episodic', 'artifact:readability-reviewer:review', '# Review notes', { source: 'import', role: 'readability-reviewer' },
-      );
+      expect(report.success).toBe(true);
+      expect(report.projectId).toBe('new-project-id');
+      expect(report.project.created).toBe(true);
+      expect(report.agents.imported).toBe(1);
+      expect(report.knowledge.imported).toBe(3);
+      expect(report.collectiveMemory.imported).toBe(1);
+      expect(report.agentMemory.imported).toBe(1);
+      expect(report.sessions.imported).toBe(1);
+      expect(report.training.imported).toBe(2);
     });
   });
 });
