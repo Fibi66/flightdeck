@@ -146,6 +146,53 @@ describe('DECLARE_TASKS validation', () => {
     cmd.handler(agent, '⟦⟦ DECLARE_TASKS {"tasks": [{"taskId": "t1", "role": "developer"}]} ⟧⟧');
     expect(ctx.taskDAG.declareTaskBatch).toHaveBeenCalledWith(agent.id, [{ taskId: 't1', role: 'developer' }], 'proj-1');
   });
+
+  it('rejects bare array with helpful error (issue #126)', () => {
+    const ctx = makeCtx();
+    const agent = makeLeadAgent();
+    const cmd = getDeclareHandler(ctx);
+    cmd.handler(agent, '⟦⟦ DECLARE_TASKS [{"taskId": "t1", "role": "dev"}] ⟧⟧');
+    expect(agent.sendMessage).toHaveBeenCalledWith(
+      expect.stringContaining('expected {tasks: [...]} object, got a bare array'),
+    );
+    expect(ctx.taskDAG.declareTaskBatch).not.toHaveBeenCalled();
+  });
+
+  it('hints about wrong field names: id→taskId, deps→dependsOn (issue #126)', () => {
+    const ctx = makeCtx();
+    const agent = makeLeadAgent();
+    const cmd = getDeclareHandler(ctx);
+    cmd.handler(agent, '⟦⟦ DECLARE_TASKS {"tasks": [{"id": "t1", "role": "dev", "deps": ["t0"]}]} ⟧⟧');
+    expect(agent.sendMessage).toHaveBeenCalledWith(
+      expect.stringContaining('"id" → "taskId"'),
+    );
+    expect(agent.sendMessage).toHaveBeenCalledWith(
+      expect.stringContaining('"deps" → "dependsOn"'),
+    );
+  });
+
+  it('hints about title→description field name', () => {
+    const ctx = makeCtx();
+    const agent = makeLeadAgent();
+    const cmd = getDeclareHandler(ctx);
+    cmd.handler(agent, '⟦⟦ DECLARE_TASKS {"tasks": [{"taskId": "t1", "role": "dev", "title": "do something"}]} ⟧⟧');
+    expect(agent.sendMessage).toHaveBeenCalledWith(
+      expect.stringContaining('"title" → "description"'),
+    );
+    // Still passes Zod since taskId and role are present
+    expect(ctx.taskDAG.declareTaskBatch).toHaveBeenCalled();
+  });
+
+  it('rejects non-lead agent', () => {
+    const ctx = makeCtx();
+    const agent = makeChildAgent('lead-001');
+    const cmd = getDeclareHandler(ctx);
+    cmd.handler(agent, '⟦⟦ DECLARE_TASKS {"tasks": [{"taskId": "t1", "role": "dev"}]} ⟧⟧');
+    expect(agent.sendMessage).toHaveBeenCalledWith(
+      expect.stringContaining('Only the Project Lead'),
+    );
+    expect(ctx.taskDAG.declareTaskBatch).not.toHaveBeenCalled();
+  });
 });
 
 describe('COMPLETE_TASK from non-lead agents (DAG relay)', () => {

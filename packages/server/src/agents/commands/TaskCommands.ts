@@ -46,7 +46,7 @@ function markAgentDelegations(
 
 // ── Regex patterns ────────────────────────────────────────────────────
 
-const DECLARE_TASKS_REGEX = /⟦⟦\s*DECLARE_TASKS\s*(\{.*?\})\s*⟧⟧/s;
+const DECLARE_TASKS_REGEX = /⟦⟦\s*DECLARE_TASKS\s*([\[{].*?[\]}])\s*⟧⟧/s;
 const TASK_STATUS_REGEX = /⟦⟦\s*TASK_STATUS\s*⟧⟧/s;
 const QUERY_TASKS_REGEX = /⟦⟦\s*QUERY_TASKS\s*⟧⟧/s;
 const PAUSE_TASK_REGEX = /⟦⟦\s*PAUSE_TASK\s*(\{.*?\})\s*⟧⟧/s;
@@ -73,6 +73,52 @@ function handleDeclareTasks(ctx: CommandHandlerContext, agent: Agent, data: stri
   const match = data.match(DECLARE_TASKS_REGEX);
   if (!match) return;
   try {
+    // Pre-parse to detect common format mistakes before Zod validation
+    let raw: unknown;
+    try {
+      raw = JSON.parse(match[1]);
+    } catch {
+      agent.sendMessage('[System] DECLARE_TASKS error: invalid JSON payload. Check syntax and try again.');
+      return;
+    }
+
+    // Bare array instead of {tasks: [...]}
+    if (Array.isArray(raw)) {
+      agent.sendMessage(
+        '[System] DECLARE_TASKS error: expected {tasks: [...]} object, got a bare array.\n' +
+        'Wrap your tasks: DECLARE_TASKS {"tasks": [...]}\n' +
+        'Example: DECLARE_TASKS {"tasks": [{"taskId": "t1", "role": "developer", "description": "..."}]}',
+      );
+      return;
+    }
+
+    // Wrong field names with helpful hints
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+      const obj = raw as Record<string, unknown>;
+      const tasks = Array.isArray(obj.tasks) ? obj.tasks : [];
+      const hints: string[] = [];
+      for (const task of tasks) {
+        if (task && typeof task === 'object') {
+          const t = task as Record<string, unknown>;
+          if ('id' in t && !('taskId' in t)) hints.push('"id" → "taskId"');
+          if ('deps' in t && !('dependsOn' in t)) hints.push('"deps" → "dependsOn"');
+          if ('dependencies' in t && !('dependsOn' in t)) hints.push('"dependencies" → "dependsOn"');
+          if ('title' in t && !('description' in t)) hints.push('"title" → "description"');
+          if ('name' in t && !('taskId' in t)) hints.push('"name" → "taskId"');
+          if ('type' in t && !('role' in t)) hints.push('"type" → "role"');
+        }
+      }
+      if (hints.length > 0) {
+        const unique = [...new Set(hints)];
+        agent.sendMessage(
+          `[System] DECLARE_TASKS hint: detected likely wrong field names. Did you mean:\n` +
+          unique.map(h => `  • ${h}`).join('\n') +
+          '\nRequired fields per task: taskId, role. Optional: description, dependsOn, files, priority.',
+        );
+        // Continue to Zod validation — it may still pass if required fields are present
+      }
+    }
+
     const req = parseCommandPayload(agent, match[1], declareTasksSchema, 'DECLARE_TASKS');
     if (!req) return;
     const projectId = ctx.getProjectIdForAgent(agent.id);
