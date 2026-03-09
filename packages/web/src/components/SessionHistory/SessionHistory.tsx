@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { apiFetch } from '../../hooks/useApi';
+import { formatDateTime } from '../../utils/format';
 import {
   ChevronRight,
   Clock,
@@ -32,7 +33,7 @@ export interface SessionDetail {
   hasRetro: boolean;
 }
 
-interface Props {
+interface SessionHistoryProps {
   projectId: string;
   hasActiveLead?: boolean;
 }
@@ -48,12 +49,6 @@ function formatDuration(ms: number | null): string {
   return remMins > 0 ? `${hours}h ${remMins}m` : `${hours}h`;
 }
 
-function formatDate(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) +
-    ' ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-}
-
 const STATUS_CONFIG: Record<string, { icon: typeof CheckCircle2; color: string; label: string }> = {
   completed: { icon: CheckCircle2, color: 'text-green-500', label: 'Completed' },
   active: { icon: AlertCircle, color: 'text-yellow-500', label: 'Active' },
@@ -66,7 +61,7 @@ function StatusDot({ status }: { status: string }) {
   return <Icon size={14} className={config.color} aria-label={config.label} />;
 }
 
-export function SessionHistory({ projectId, hasActiveLead }: Props) {
+export function SessionHistory({ projectId, hasActiveLead }: SessionHistoryProps) {
   const [sessions, setSessions] = useState<SessionDetail[]>([]);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [resumeSession, setResumeSession] = useState<SessionDetail | null>(null);
@@ -87,38 +82,25 @@ export function SessionHistory({ projectId, hasActiveLead }: Props) {
     fetchSessions();
   }, [fetchSessions]);
 
-  if (loading) {
-    return (
-      <div className="space-y-2">
-        <h3 className="text-sm font-medium text-th-text flex items-center gap-1.5">
-          <Clock size={14} />
-          Session History
-        </h3>
-        <div className="text-xs text-th-text-muted">Loading sessions…</div>
-      </div>
-    );
-  }
-
-  if (sessions.length === 0) {
-    return (
-      <div className="space-y-2">
-        <h3 className="text-sm font-medium text-th-text flex items-center gap-1.5">
-          <Clock size={14} />
-          Session History
-        </h3>
-        <div className="text-xs text-th-text-muted">No previous sessions</div>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-2" data-testid="session-history">
       <h3 className="text-sm font-medium text-th-text flex items-center gap-1.5">
         <Clock size={14} />
         Session History
-        <span className="text-th-text-muted font-normal">({sessions.length})</span>
+        {sessions.length > 0 && (
+          <span className="text-th-text-muted font-normal">({sessions.length})</span>
+        )}
       </h3>
 
+      {loading && (
+        <div className="text-xs text-th-text-muted">Loading sessions…</div>
+      )}
+
+      {!loading && sessions.length === 0 && (
+        <div className="text-xs text-th-text-muted">No previous sessions</div>
+      )}
+
+      {!loading && sessions.length > 0 && (
       <div className="space-y-1.5">
         {sessions.map(session => {
           const isExpanded = expandedId === session.id;
@@ -176,8 +158,8 @@ export function SessionHistory({ projectId, hasActiveLead }: Props) {
 
                   {/* Timestamps */}
                   <div className="text-xs text-th-text-muted">
-                    Started: {formatDate(session.startedAt)}
-                    {session.endedAt && ` · Ended: ${formatDate(session.endedAt)}`}
+                    Started: {formatDateTime(session.startedAt)}
+                    {session.endedAt && ` · Ended: ${formatDateTime(session.endedAt)}`}
                     {session.hasRetro && (
                       <span className="ml-2 text-green-500" title="Session retrospective available">
                         ● retro
@@ -202,6 +184,7 @@ export function SessionHistory({ projectId, hasActiveLead }: Props) {
           );
         })}
       </div>
+      )}
 
       {resumeSession && (
         <ResumeSessionDialog

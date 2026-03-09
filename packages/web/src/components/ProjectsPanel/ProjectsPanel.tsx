@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { apiFetch } from '../../hooks/useApi';
 import { formatRelativeTime } from '../../utils/formatRelativeTime';
+import { formatDate } from '../../utils/format';
 import { useToastStore } from '../Toast';
 import { NewProjectModal } from '../LeadDashboard/NewProjectModal';
 import { StatusBadge, projectStatusProps } from '../ui/StatusBadge';
@@ -52,18 +53,6 @@ interface EnrichedProject {
   }>;
   activeLeadId?: string;
   taskProgress?: { done: number; total: number };
-}
-
-function formatDate(iso: string): string {
-  try {
-    return new Date(iso).toLocaleDateString(undefined, {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    });
-  } catch {
-    return iso;
-  }
 }
 
 function StorageBadge({ mode }: { mode: 'user' | 'local' }) {

@@ -14,6 +14,34 @@ export function formatAgentId(role: string | undefined, id: string): string {
 }
 
 /**
+ * Format an ISO date as a short date string (e.g., "Mar 8, 2026").
+ */
+export function formatDate(iso: string): string {
+  try {
+    return new Date(iso).toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  } catch {
+    return iso;
+  }
+}
+
+/**
+ * Format an ISO date as a short date + time string (e.g., "Mar 8 2:30 PM").
+ */
+export function formatDateTime(iso: string): string {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) +
+      ' ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  } catch {
+    return iso;
+  }
+}
+
+/**
  * Format an ISO date string as relative time (e.g., '2 minutes ago').
  * Falls back to the raw string on parse errors.
  */

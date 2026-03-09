@@ -5,7 +5,7 @@ import type { SessionDetail, SessionAgent } from './SessionHistory';
 
 type ResumeMode = 'resume-all' | 'select' | 'fresh';
 
-interface Props {
+interface ResumeSessionDialogProps {
   projectId: string;
   lastSession: SessionDetail;
   onClose: () => void;
@@ -62,7 +62,7 @@ const MODE_OPTIONS: Array<{ value: ResumeMode; icon: typeof Users; label: string
   },
 ];
 
-export function ResumeSessionDialog({ projectId, lastSession, onClose, onResume }: Props) {
+export function ResumeSessionDialog({ projectId, lastSession, onClose, onResume }: ResumeSessionDialogProps) {
   const [mode, setMode] = useState<ResumeMode>('resume-all');
   const [selectedAgents, setSelectedAgents] = useState<Set<string>>(
     () => new Set(lastSession.agents.map(a => a.agentId)),
