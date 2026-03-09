@@ -41,7 +41,7 @@ import {
   X,
 } from 'lucide-react';
 import type { Decision, DagStatus } from '../../types';
-import type { ReplayKeyframe } from '../../hooks/useSessionReplay';
+
 
 // ── Constants ──────────────────────────────────────────────────────
 
@@ -51,8 +51,6 @@ const SEVERITY_BG: Record<AlertSeverity, string> = {
   info: 'bg-blue-500/10 border border-blue-500/20',
 };
 
-const DECISIONS_FEED_LIMIT = 6;
-const PROGRESS_FEED_LIMIT = 8;
 const EMPTY_DECISIONS: Decision[] = [];
 interface ProgressItem {
   id: string;
@@ -195,16 +193,15 @@ export function OverviewPage(_props: Props) {
     [decisions],
   );
 
-  // ── Progress feed (activity + milestone keyframes) ────────────
+  // ── Progress feed (activity only — lead-emitted progress reports) ──
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
-  const [milestoneKeyframes, setMilestoneKeyframes] = useState<ReplayKeyframe[]>([]);
 
   useEffect(() => {
     if (!effectiveId) return;
     const poll = async () => {
       try {
         const data = await apiFetch<ActivityEntry[]>(
-          `/coordination/activity?projectId=${effectiveId}&type=progress&limit=20`,
+          `/coordination/activity?projectId=${effectiveId}&type=progress`,
         );
         if (mountedRef.current) setActivity(Array.isArray(data) ? data : []);
       } catch { /* ignore */ }
@@ -214,50 +211,16 @@ export function OverviewPage(_props: Props) {
     return () => clearInterval(interval);
   }, [effectiveId]);
 
-  // Lightweight keyframes fetch — only milestone/progress types for the feed
-  useEffect(() => {
-    if (!effectiveId) return;
-    const fetchMilestones = async () => {
-      try {
-        const data = await apiFetch<{ keyframes: ReplayKeyframe[] }>(`/replay/${effectiveId}/keyframes`);
-        const kf = (data.keyframes ?? []).filter(
-          (k: ReplayKeyframe) => k.type === 'milestone' || k.type === 'progress',
-        );
-        if (mountedRef.current) setMilestoneKeyframes(kf);
-      } catch { /* ignore */ }
-    };
-    fetchMilestones();
-    const interval = setInterval(fetchMilestones, POLL_INTERVAL_MS * 3);
-    return () => clearInterval(interval);
-  }, [effectiveId]);
-
-  // Merge activity + milestones into unified progress feed
+  // Progress feed — only lead-emitted PROGRESS activity entries
   const progressItems = useMemo((): ProgressItem[] => {
-    const items: ProgressItem[] = [];
-
-    for (const entry of activity) {
-      items.push({
-        id: `activity-${entry.id}`,
-        icon: '📊',
-        text: entry.summary,
-        detail: `${entry.agentRole} · ${formatRelativeTime(entry.timestamp)}`,
-        timestamp: new Date(entry.timestamp).getTime(),
-      });
-    }
-
-    for (const kf of milestoneKeyframes) {
-      items.push({
-        id: `milestone-${kf.timestamp}`,
-        icon: kf.type === 'milestone' ? '🏁' : '📊',
-        text: kf.label || `${kf.type} reached`,
-        detail: formatRelativeTime(kf.timestamp),
-        timestamp: new Date(kf.timestamp).getTime(),
-      });
-    }
-
-    items.sort((a, b) => b.timestamp - a.timestamp);
-    return items;
-  }, [activity, milestoneKeyframes]);
+    return activity.map(entry => ({
+      id: `activity-${entry.id}`,
+      icon: '📊',
+      text: entry.summary,
+      detail: `${entry.agentRole} · ${formatRelativeTime(entry.timestamp)}`,
+      timestamp: new Date(entry.timestamp).getTime(),
+    })).sort((a, b) => b.timestamp - a.timestamp);
+  }, [activity]);
 
   // ── Quick status bar data ─────────────────────────────────────
   const tasksDone = dagStatus?.summary?.done ?? 0;
@@ -446,8 +409,9 @@ export function OverviewPage(_props: Props) {
           {actionableDecisions.length === 0 && decisions.length === 0 ? (
             <p className="text-th-text-muted text-sm px-4 py-6 text-center">No decisions yet</p>
           ) : (
+            <div className="max-h-96 overflow-y-auto">
             <div className="divide-y divide-th-border/30">
-              {(actionableDecisions.length > 0 ? actionableDecisions : decisions).slice(0, DECISIONS_FEED_LIMIT).map(d => (
+              {(actionableDecisions.length > 0 ? actionableDecisions : decisions).map(d => (
                 <DecisionFeedItem
                   key={d.id}
                   decision={d}
@@ -455,13 +419,7 @@ export function OverviewPage(_props: Props) {
                   onClick={() => setSelectedDecision(d)}
                 />
               ))}
-              {(actionableDecisions.length > DECISIONS_FEED_LIMIT || decisions.length > DECISIONS_FEED_LIMIT) && (
-                <div className="px-4 py-2 text-center">
-                  <span className="text-[10px] text-th-text-muted">
-                    +{Math.max(actionableDecisions.length, decisions.length) - DECISIONS_FEED_LIMIT} more
-                  </span>
-                </div>
-              )}
+            </div>
             </div>
           )}
         </section>
@@ -476,8 +434,9 @@ export function OverviewPage(_props: Props) {
           {progressItems.length === 0 ? (
             <p className="text-th-text-muted text-sm px-4 py-6 text-center">No progress events yet</p>
           ) : (
+            <div className="max-h-96 overflow-y-auto">
             <div className="divide-y divide-th-border/30">
-              {progressItems.slice(0, PROGRESS_FEED_LIMIT).map(item => (
+              {progressItems.map(item => (
                 <div key={item.id} className="flex items-start gap-2.5 px-3 py-2">
                   <span className="text-sm shrink-0 mt-0.5">{item.icon}</span>
                   <div className="flex-1 min-w-0">
@@ -486,11 +445,7 @@ export function OverviewPage(_props: Props) {
                   </div>
                 </div>
               ))}
-              {progressItems.length > PROGRESS_FEED_LIMIT && (
-                <div className="px-4 py-2 text-center">
-                  <span className="text-[10px] text-th-text-muted">+{progressItems.length - PROGRESS_FEED_LIMIT} more</span>
-                </div>
-              )}
+            </div>
             </div>
           )}
         </section>
