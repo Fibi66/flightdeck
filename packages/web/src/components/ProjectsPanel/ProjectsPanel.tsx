@@ -280,8 +280,8 @@ function ProjectCard({
                   return (
                   <div key={s.id}
                     className="flex items-center gap-2 text-[11px] cursor-pointer hover:bg-th-bg-hover/30 rounded px-1 -mx-1 transition-colors"
-                    onClick={(e) => { e.stopPropagation(); onViewSession({ leadId: s.leadId, task: s.task, startedAt: s.startedAt, endedAt: s.endedAt }); }}
-                    title="Click to view conversation"
+                    onClick={(e) => { e.stopPropagation(); onViewSession({ leadId: s.leadId, task: s.task, startedAt: s.startedAt, endedAt: s.endedAt, projectId: project.id, status: s.status }); }}
+                    title="Click to view session summary"
                   >
                     <span
                       className={`w-1.5 h-1.5 rounded-full shrink-0 ${
@@ -836,7 +836,14 @@ export function ProjectsPanel() {
     )}
 
     {viewSession && (
-      <SessionViewer session={viewSession} onClose={() => setViewSession(null)} />
+      <SessionViewer
+        session={viewSession}
+        onClose={() => setViewSession(null)}
+        onResume={viewSession.projectId ? () => {
+          setViewSession(null);
+          if (viewSession.projectId) handleResume(viewSession.projectId);
+        } : undefined}
+      />
     )}
     </div>
   );

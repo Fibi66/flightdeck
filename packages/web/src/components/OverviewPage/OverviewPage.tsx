@@ -101,7 +101,6 @@ export function OverviewPage(_props: Props) {
   // ── Session controls state ────────────────────────────────────
   const [stopping, setStopping] = useState(false);
   const [showNewSessionDialog, setShowNewSessionDialog] = useState(false);
-  const [historyOpen, setHistoryOpen] = useState(!hasActiveLead);
 
   // ── Project directory state ──────────────────────────────────
   const currentProject = useMemo(() => {
@@ -141,9 +140,6 @@ export function OverviewPage(_props: Props) {
       setCwdSaving(false);
     }
   }, [effectiveId, cwdValue]);
-
-  // Auto-expand history when session stops, collapse when it starts
-  useEffect(() => { setHistoryOpen(!hasActiveLead); }, [hasActiveLead]);
 
   const handleStopSession = useCallback(async () => {
     if (!effectiveId) return;
@@ -452,24 +448,12 @@ export function OverviewPage(_props: Props) {
         </SectionErrorBoundary>
       </div>
 
-      {/* ── Session History (collapsible, always visible) ──────── */}
+      {/* ── Session History (always visible, scrollable) ──────── */}
       {effectiveId && (
         <div className="mt-2">
-          <button
-            type="button"
-            onClick={() => setHistoryOpen(o => !o)}
-            className="text-sm text-th-text-muted cursor-pointer hover:text-th-text select-none flex items-center gap-1"
-          >
-            <span className={`transition-transform ${historyOpen ? 'rotate-90' : ''}`}>▸</span>
-            Session History
-          </button>
-          {historyOpen && (
-            <SectionErrorBoundary name="Session history">
-            <div className="mt-2">
-              <SessionHistory projectId={effectiveId} hasActiveLead={hasActiveLead} />
-            </div>
-            </SectionErrorBoundary>
-          )}
+          <SectionErrorBoundary name="Session history">
+            <SessionHistory projectId={effectiveId} hasActiveLead={hasActiveLead} />
+          </SectionErrorBoundary>
         </div>
       )}
 
