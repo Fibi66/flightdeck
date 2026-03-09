@@ -331,6 +331,33 @@ export function ProjectsPanel() {
     }
   }, [addToast]);
 
+  // Fetch task progress for each project after loading
+  useEffect(() => {
+    if (projects.length === 0) return;
+    const fetchProgress = async () => {
+      const updates = await Promise.all(
+        projects.map(async (p) => {
+          if (p.taskProgress) return null; // already fetched
+          try {
+            const dag = await apiFetch<{ summary?: Record<string, number> }>(`/projects/${p.id}/dag`);
+            if (!dag?.summary) return null;
+            const total = Object.values(dag.summary).reduce((a, b) => a + b, 0);
+            const done = dag.summary.done ?? 0;
+            return { id: p.id, done, total };
+          } catch { return null; }
+        }),
+      );
+      const valid = updates.filter(Boolean) as { id: string; done: number; total: number }[];
+      if (valid.length > 0) {
+        setProjects(prev => prev.map(p => {
+          const match = valid.find(v => v.id === p.id);
+          return match ? { ...p, taskProgress: { done: match.done, total: match.total } } : p;
+        }));
+      }
+    };
+    fetchProgress();
+  }, [projects.length]);
+
   // Fetch detailed project info when expanding
   const handleToggle = useCallback(
     async (id: string) => {
