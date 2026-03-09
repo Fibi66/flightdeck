@@ -570,6 +570,11 @@ export class AgentManager extends TypedEmitter<AgentManagerEvents> {
     agent.onContextCompacted((info) => {
       logger.info({ module: 'agent', msg: 'Context compacted', percentDrop: info.percentDrop });
       this.emit('agent:context_compacted', { agentId: agent.id, ...info });
+
+      // Re-inject artifact directory path — survives context compression as belt-and-suspenders
+      if (agent.artifactDir) {
+        agent.sendMessage(`[System] Your artifact storage directory: ${agent.artifactDir}`);
+      }
     });
 
     // Wire cost tracking: attribute token usage to the agent's current dagTaskId
