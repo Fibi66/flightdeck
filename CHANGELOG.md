@@ -155,6 +155,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Design tab → Artifacts tab** — Filtered to `.flightdeck/shared/` markdown files with organized project/session storage and symlinks.
 - **StatusPopover** — Clickable health breakdown from project status badges.
 - **Project status accuracy** — Active/Idle/Stopped/Error states derived from live agent states instead of static values.
+- **Clickable decisions/progress** — Recent Decisions and Recent Progress items on HomeDashboard now open detail modals on click.
+
+#### Session Management
+
+- **Session history** — View past sessions with enriched metadata (agent count, duration, status) via `SessionHistory` component.
+- **Selective resume** — 3 resume modes: resume all agents, resume specific agents, or start fresh with the same project context.
+- **Enhanced resume with team respawn** — On resume, previously active agents are re-spawned with their original roles and knowledge.
+
+#### Crew Roster
+
+- **Restructured agent profiles** — Agents grouped by lead in the crew roster. Knowledge and Skills tabs removed from individual agent profiles.
+- **Enriched roster API** — Server endpoints return agent tasks, crew summary stats, and per-agent enrichment data.
+
+#### Project Management
+
+- **Project import** — Import projects from `.flightdeck/` directories including knowledge, memory, and session data via `ProjectImporter`.
+- **Batch operations** — Archive/delete multiple projects at once from ProjectsPanel.
+- **Inline CWD editor** — Edit project working directory paths directly in the project list.
+- **Stop project** — Stop all agents for a project without archiving it.
+- **Project title required** — Import and creation flows require a project title; no more "Imported Project" fallback defaults.
+
+#### Settings
+
+- **Multi-provider CLI config** — Configure 6 CLI providers (Copilot, Claude, Gemini, OpenCode, Cursor, Codex) with per-provider settings, active indicator, and set-active API.
+- **CLI version detection** — Provider status shows installed CLI version. "Claude Code" renamed to "Claude SDK" for accuracy.
+
+#### Artifact Storage
+
+- **Organized storage** — Artifacts stored in structured `project/session/` directories with symlink bridge for backward compatibility.
+- **Copyable path** — Artifacts panel displays the shared directory path with a copy-to-clipboard button.
+- **Context compaction re-injection** — Artifact directory path re-injected into agent context after compaction events.
 
 #### Task Management
 
@@ -174,6 +205,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Token usage chart** — Restored token economics visualization on the project overview.
 - **System prompts** — AI-aware velocity estimation (all agents), quality-over-speed principle (all agents), secure-by-design review principle (critical reviewer).
 - **Project management** — Stop project agents, edit working directory paths, batch archive/delete, active tab default for new projects.
+- **Resume rate limiting** — Project resume endpoint rate-limited via `spawnLimiter` to prevent agent spawn storms.
 
 ### Changed
 
@@ -211,6 +243,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **C-7: DELETE projects not gated** — `DELETE /projects/:id` now requires `status=archived` before deletion. Prevents accidental deletion of active projects.
 - **C-8: CWD path traversal** — Project CWD validated against allowed roots, blocked system paths, and verified as existing directory on both POST and PATCH.
 - **C-9: Symlink bypass** — Artifact storage path validation prevents symlink-based directory traversal.
+- **C-10: ProjectImporter hardening** — File size cap, path validation against traversal, and role extraction sanitization on imported project data.
 
 #### Bug Fixes
 
@@ -232,11 +265,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Stats
 
-- 150+ commits in this session
+- 200+ commits in this session
 - 80+ DAG tasks created and completed
 - 1,471 web tests passing, 4,616 server tests passing
 - 160 acceptance criteria defined (78 P0)
-- 9 critical security issues found and resolved
+- 10 critical security issues found and resolved
 - 13 agents active at peak concurrency
 - 0 TypeScript compilation errors (server + web)
 
