@@ -139,11 +139,16 @@ export class AcpAdapter extends EventEmitter implements AgentAdapter {
     if (opts.sessionId) {
       // Try to resume an existing session (supported by some providers)
       try {
-        const loadResult = await withTimeout(
-          this.connection!.loadSession({ sessionId: opts.sessionId }),
+        await withTimeout(
+          this.connection!.loadSession({
+            sessionId: opts.sessionId,
+            cwd: opts.cwd || process.cwd(),
+            mcpServers: [],
+          }),
           SDK_TIMEOUT_MS, 'loadSession',
         );
-        sessionId = loadResult.sessionId;
+        // LoadSessionResponse has no sessionId — the session ID stays the same on successful load
+        sessionId = opts.sessionId;
       } catch (err) {
         // Intentional fallback: if resume fails for any reason (provider doesn't
         // support it, session expired, network error), start a fresh session.
@@ -480,9 +485,14 @@ export class AcpAdapter extends EventEmitter implements AgentAdapter {
     this.latestPermissionId = null;
 
     if (this.process) {
-      this.process.stdin?.end();
-      this.process.kill();
+      const proc = this.process;
       this.process = null;
+      // Close stdin first so the CLI can flush session state to disk
+      proc.stdin?.end();
+      // Brief grace period before force-killing, so the process can exit naturally
+      setTimeout(() => {
+        try { proc.kill(); } catch { /* already exited */ }
+      }, 500);
     }
     this._isConnected = false;
     this._isPrompting = false;

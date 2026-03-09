@@ -213,7 +213,7 @@ describe('AcpAdapter', () => {
 
     it('resumes existing session when sessionId is provided', async () => {
       setupSuccessfulStart();
-      mockLoadSession.mockResolvedValue({ sessionId: 'resumed-session' });
+      mockLoadSession.mockResolvedValue({});
 
       const adapter = new AcpAdapter();
       const sessionId = await adapter.start({
@@ -221,8 +221,13 @@ describe('AcpAdapter', () => {
         sessionId: 'previous-session-id',
       });
 
-      expect(mockLoadSession).toHaveBeenCalledWith({ sessionId: 'previous-session-id' });
-      expect(sessionId).toBe('resumed-session');
+      expect(mockLoadSession).toHaveBeenCalledWith({
+        sessionId: 'previous-session-id',
+        cwd: DEFAULT_START_OPTS.cwd,
+        mcpServers: [],
+      });
+      // Session ID comes from the request, not the response (LoadSessionResponse has no sessionId)
+      expect(sessionId).toBe('previous-session-id');
     });
 
     it('falls back to new session when resume fails', async () => {
@@ -491,6 +496,7 @@ describe('AcpAdapter', () => {
 
   describe('terminate()', () => {
     it('kills the process and resets state', async () => {
+      vi.useFakeTimers();
       const fakeProc = setupSuccessfulStart();
 
       const adapter = new AcpAdapter();
@@ -500,10 +506,14 @@ describe('AcpAdapter', () => {
 
       adapter.terminate();
 
-      expect(fakeProc.kill).toHaveBeenCalled();
+      // kill() is deferred 500ms to let the CLI flush session state
       expect(adapter.isConnected).toBe(false);
       expect(adapter.isPrompting).toBe(false);
       expect(adapter.promptingStartedAt).toBeNull();
+
+      vi.advanceTimersByTime(500);
+      expect(fakeProc.kill).toHaveBeenCalled();
+      vi.useRealTimers();
     });
 
     it('is safe to call when not started', () => {
@@ -512,13 +522,16 @@ describe('AcpAdapter', () => {
     });
 
     it('is safe to call twice', async () => {
+      vi.useFakeTimers();
       setupSuccessfulStart();
 
       const adapter = new AcpAdapter();
       await adapter.start(DEFAULT_START_OPTS);
 
       adapter.terminate();
+      vi.advanceTimersByTime(500);
       expect(() => adapter.terminate()).not.toThrow();
+      vi.useRealTimers();
     });
   });
 
