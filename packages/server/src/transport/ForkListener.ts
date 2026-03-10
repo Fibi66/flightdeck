@@ -96,8 +96,8 @@ export class ForkListener implements AgentServerListener {
       authTimeoutMs: options?.authTimeoutMs ?? DEFAULTS.authTimeoutMs,
     };
     this.proc = options?.process ?? process;
-    this.portFilePath = `${this.opts.portFileDir}/${this.opts.portFileName}`;
-    this.tokenFilePath = `${this.opts.portFileDir}/${this.opts.tokenFileName}`;
+    this.portFilePath = join(this.opts.portFileDir, this.opts.portFileName);
+    this.tokenFilePath = join(this.opts.portFileDir, this.opts.tokenFileName);
   }
 
   /** Whether the listener is actively accepting connections. */

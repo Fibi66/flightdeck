@@ -16,6 +16,7 @@ import { fork, type ChildProcess } from 'node:child_process';
 import { createConnection, type Socket } from 'node:net';
 import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import { logger } from '../utils/logger.js';
 import {
   type AgentServerTransport,
@@ -77,7 +78,7 @@ function isReadyMessage(msg: unknown): msg is ReadyMessage {
 }
 
 const DEFAULT_STATE_DIR = join(
-  process.env.HOME ?? process.env.USERPROFILE ?? '/tmp',
+  process.env.HOME ?? process.env.USERPROFILE ?? tmpdir(),
   '.flightdeck',
 );
 
