@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { RefreshCw } from 'lucide-react';
 import { apiFetch } from '../../hooks/useApi';
 import type { RecoverySettings } from './types';
 
@@ -41,7 +42,8 @@ export function RecoverySettingsPanel() {
   return (
     <div className="space-y-4" data-testid="recovery-settings">
       <h3 className="text-xs font-medium text-th-text-muted uppercase tracking-wider flex items-center gap-2">
-        🔄 Recovery Settings
+        <RefreshCw className="w-3.5 h-3.5" />
+        Recovery Settings
         {saving && <span className="text-[10px] text-th-text-muted">(saving...)</span>}
       </h3>
 

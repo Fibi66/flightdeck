@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Plus } from 'lucide-react';
+import { Plus, Target, BarChart3 } from 'lucide-react';
 import { apiFetch } from '../../hooks/useApi';
 import { TrustPresetBar } from './TrustPresetBar';
 import { RuleRow } from './RuleRow';
@@ -111,7 +111,8 @@ export function IntentRulesDashboard() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <h3 className="text-xs font-medium text-th-text-muted uppercase tracking-wider flex items-center gap-2">
-          🎯 Intent Rules
+          <Target className="w-3.5 h-3.5" />
+          Intent Rules
         </h3>
         <button
           onClick={() => setCreating(true)}
@@ -156,7 +157,8 @@ export function IntentRulesDashboard() {
       {/* Summary */}
       {rules.length > 0 && (
         <p className="text-[10px] text-th-text-muted">
-          📊 {enabledCount} rules active • {totalMatches} total matches
+          <BarChart3 className="w-3 h-3 inline-block mr-1" />
+          {enabledCount} rules active • {totalMatches} total matches
           {avgEffectiveness != null && ` • ${avgEffectiveness}% effective`}
         </p>
       )}
