@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { Bell } from 'lucide-react';
 import { apiFetch } from '../../hooks/useApi';
 import {
   CHANNEL_DISPLAY, EVENT_LABELS, EVENT_DESCRIPTIONS, PRESET_DEFAULTS, ROUTING_ALL_OFF,
@@ -77,7 +78,8 @@ export function NotificationPreferencesPanel() {
   return (
     <div className="space-y-6" data-testid="notification-preferences">
       <h3 className="text-xs font-medium text-th-text-muted uppercase tracking-wider flex items-center gap-2">
-        🔔 Notification Settings
+        <Bell className="w-3.5 h-3.5" />
+        Notification Settings
       </h3>
 
       {/* Channels section */}
