@@ -4,7 +4,7 @@ import { WebSocketServer as WsServer, WebSocket } from 'ws';
 import type { AgentManager, AgentManagerEvents } from '../agents/AgentManager.js';
 import type { FileLockRegistry } from '../coordination/files/FileLockRegistry.js';
 import type { ActivityLedger } from '../coordination/activity/ActivityLedger.js';
-import type { DecisionLog, Decision, IntentRule } from '../coordination/decisions/DecisionLog.js';
+import type { DecisionLog, Decision } from '../coordination/decisions/DecisionLog.js';
 import type { ChatGroupRegistry, ChatGroup, GroupMessage } from '../comms/ChatGroupRegistry.js';
 import type { ActivityEntry } from '@flightdeck/shared';
 import { getAuthSecret } from '../middleware/auth.js';
@@ -349,15 +349,6 @@ export class WebSocketServer {
       const projectId = decisions[0].projectId ?? this.resolveAgentProjectId(decisions[0].agentId);
       this.broadcastToProject({ type: 'decisions:batch', action: 'dismiss', decisions }, projectId);
     });
-
-    this.track(decisionLog, 'intent:alert', (data: { decision: Decision; rule: IntentRule }) => {
-      const projectId = data.decision.projectId ?? this.resolveAgentProjectId(data.decision.agentId);
-      this.broadcastToProject({
-        type: 'intent:alert',
-        decision: data.decision,
-        rule: { pattern: data.rule.name, action: data.rule.action, label: data.rule.name },
-      }, projectId);
-    });
   }
 
   private wireGroupEvents(chatGroupRegistry: ChatGroupRegistry): void {
@@ -395,7 +386,7 @@ export class WebSocketServer {
     this.track(agentManager, 'agent:crashed', () => {
       this.broadcastAll({ type: 'attention:changed', trigger: 'agent_crashed' });
     });
-    this.track(decisionLog, 'intent:alert', () => {
+    this.track(decisionLog, 'decision', () => {
       this.broadcastAll({ type: 'attention:changed', trigger: 'decision_new' });
     });
     this.track(decisionLog, 'decision:confirmed', () => {

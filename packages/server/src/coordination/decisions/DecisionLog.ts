@@ -1,93 +1,14 @@
 import { EventEmitter } from 'events';
 import { eq, asc, and, inArray, lte } from 'drizzle-orm';
 import type { Database } from '../../db/database.js';
-import type { ConfigStore } from '../../config/ConfigStore.js';
-import { logger } from '../../utils/logger.js';
 import { decisions } from '../../db/schema.js';
 
 import { DECISION_CATEGORIES, type Decision, type DecisionStatus, type DecisionCategory } from '@flightdeck/shared';
 export { DECISION_CATEGORIES, type Decision, type DecisionStatus, type DecisionCategory } from '@flightdeck/shared';
 
-export type IntentAction = 'allow' | 'alert' | 'require-review';
-
-export interface IntentRule {
-  id: string;
-  name: string;
-  enabled: boolean;
-  priority: number;
-  action: IntentAction;
-  match: {
-    categories: string[];
-    roles?: string[];
-  };
-  conditions?: IntentCondition[];
-  metadata: {
-    source: 'manual' | 'learned' | 'preset';
-    matchCount: number;
-    lastMatchedAt: string | null;
-    effectivenessScore: number | null;
-    issuesAfterMatch: number;
-    createdAt: string;
-  };
-}
-
-export type ConditionType = 'file_count' | 'cost_estimate' | 'time_elapsed' | 'context_usage';
-export type ConditionOp = 'lt' | 'gt' | 'between';
-
-export interface IntentCondition {
-  type: ConditionType;
-  operator: ConditionOp;
-  value: number;
-  value2?: number;
-}
-
-export const MIN_MATCHES_FOR_SCORE = 5;
-
-export type TrustPreset = 'conservative' | 'moderate' | 'autonomous';
-
-export const TRUST_PRESETS: Record<TrustPreset, { name: string; description: string; rules: Array<{ category: DecisionCategory; action: IntentAction; roles?: string[] }> }> = {
-  conservative: {
-    name: 'Conservative',
-    description: 'Queue everything for manual approval. Only allow style decisions.',
-    rules: [
-      { category: 'style', action: 'allow' },
-      { category: 'testing', action: 'require-review' },
-      { category: 'dependency', action: 'require-review' },
-      { category: 'tool_access', action: 'require-review' },
-      { category: 'architecture', action: 'require-review' },
-      { category: 'general', action: 'require-review' },
-    ],
-  },
-  moderate: {
-    name: 'Moderate',
-    description: 'Allow style and testing. Alert on dependencies. Review architecture.',
-    rules: [
-      { category: 'style', action: 'allow' },
-      { category: 'testing', action: 'allow' },
-      { category: 'dependency', action: 'alert' },
-      { category: 'tool_access', action: 'allow' },
-      { category: 'architecture', action: 'require-review' },
-      { category: 'general', action: 'allow' },
-    ],
-  },
-  autonomous: {
-    name: 'Autonomous',
-    description: 'Trust the agents. Alert only on architecture and dependency changes.',
-    rules: [
-      { category: 'style', action: 'allow' },
-      { category: 'testing', action: 'allow' },
-      { category: 'dependency', action: 'alert' },
-      { category: 'tool_access', action: 'allow' },
-      { category: 'architecture', action: 'alert' },
-      { category: 'general', action: 'allow' },
-    ],
-  },
-};
-
 export interface BatchResult {
   updated: number;
   results: Decision[];
-  suggestedRule?: { category: DecisionCategory; count: number; prompt: string };
 }
 
 /** Classify a decision by keywords in the title */
@@ -125,7 +46,6 @@ export class DecisionLog extends EventEmitter {
   private systemDecisionIds = new Set<string>();
   private autoApproveTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private static AUTO_APPROVE_MS = 60_000;
-  private intentRules: IntentRule[] = [];
   /** When true, auto-approve timers are paused (user has approval queue open) */
   private timersPaused = false;
   /** Decision IDs whose timers were paused — will be resumed with remaining time */
@@ -133,198 +53,12 @@ export class DecisionLog extends EventEmitter {
   /** Tracks when each timer was started (for calculating remaining time on pause) */
   private timerStartTimes = new Map<string, number>();
 
-  constructor(db: Database, private configStore?: ConfigStore) {
+  constructor(db: Database) {
     super();
     this.db = db;
-    this.loadIntentRules();
   }
 
-  private loadIntentRules(): void {
-    if (this.configStore) {
-      this.intentRules = [...this.configStore.current.intentRules] as IntentRule[];
-      return;
-    }
-    try {
-      const raw = this.db.getSetting('intent_rules');
-      if (raw) {
-        this.intentRules = JSON.parse(raw).map((r: any) => {
-          // Migrate old flat format to new unified format
-          if (r.category && !r.match) {
-            const actionMap: Record<string, IntentAction> = {
-              'auto-approve': 'allow', 'queue': 'require-review', 'alert': 'alert',
-            };
-            return {
-              id: r.id,
-              name: r.description || `${r.action} ${r.category}`,
-              enabled: r.enabled ?? true,
-              priority: r.priority ?? 0,
-              action: actionMap[r.action] ?? 'allow',
-              match: { categories: [r.category], roles: r.roleScopes },
-              conditions: [],
-              metadata: {
-                source: r.source === 'teach_me' ? 'manual' : (r.source ?? 'manual'),
-                matchCount: r.effectiveness?.totalMatches ?? r.approvalCount ?? 0,
-                lastMatchedAt: r.lastMatchedAt ?? null,
-                effectivenessScore: r.effectiveness?.score ?? null,
-                issuesAfterMatch: r.effectiveness?.overriddenByUser ?? 0,
-                createdAt: r.createdAt ?? new Date().toISOString(),
-              },
-            } satisfies IntentRule;
-          }
-          // Already in new format
-          return {
-            ...r,
-            enabled: r.enabled ?? true,
-            action: r.action ?? 'allow',
-          };
-        });
-      }
-    } catch {
-      this.intentRules = [];
-    }
-  }
-
-  private saveIntentRules(): void {
-    if (this.configStore) {
-      this.configStore.writePartial({ intentRules: this.intentRules }).catch(err => {
-        logger.warn({ module: 'decisions', msg: 'Failed to save intent rules', err: (err as Error).message });
-      });
-      return;
-    }
-    this.db.setSetting('intent_rules', JSON.stringify(this.intentRules));
-  }
-
-  // ── Intent Rules CRUD ─────────────────────────────────────────────
-
-  getIntentRules(): IntentRule[] {
-    return [...this.intentRules];
-  }
-
-  addIntentRule(category: DecisionCategory, source: 'manual' | 'learned' | 'preset', options?: {
-    name?: string;
-    roles?: string[];
-    conditions?: IntentCondition[];
-    priority?: number;
-    action?: IntentAction;
-    enabled?: boolean;
-  }): IntentRule {
-    const action = options?.action ?? 'allow';
-    const rule: IntentRule = {
-      id: `rule-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      name: options?.name || `${action} ${category}`,
-      enabled: options?.enabled ?? true,
-      priority: options?.priority ?? 0,
-      action,
-      match: {
-        categories: [category],
-        roles: options?.roles,
-      },
-      conditions: options?.conditions,
-      metadata: {
-        source,
-        matchCount: 0,
-        lastMatchedAt: null,
-        effectivenessScore: null,
-        issuesAfterMatch: 0,
-        createdAt: new Date().toISOString(),
-      },
-    };
-    this.intentRules.push(rule);
-    this.intentRules.sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
-    this.saveIntentRules();
-    return rule;
-  }
-
-  deleteIntentRule(ruleId: string): boolean {
-    const index = this.intentRules.findIndex(r => r.id === ruleId);
-    if (index === -1) return false;
-    this.intentRules.splice(index, 1);
-    this.saveIntentRules();
-    return true;
-  }
-
-  /** Reorder rules — ids array defines the new order (index = priority, lower index = higher priority) */
-  reorderIntentRules(ids: string[]): number {
-    let updated = 0;
-    for (let i = 0; i < ids.length; i++) {
-      const rule = this.intentRules.find(r => r.id === ids[i]);
-      if (rule) {
-        // Higher index in ids = lower priority number (checked later)
-        rule.priority = ids.length - i;
-        updated++;
-      }
-    }
-    this.intentRules.sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
-    this.saveIntentRules();
-    return updated;
-  }
-
-  /** Check if a decision matches an intent rule. Returns the matching rule or undefined. */
-  matchIntentRule(category: DecisionCategory, context?: { agentRole?: string; title?: string; rationale?: string }): IntentRule | undefined {
-    return this.intentRules.find(r => {
-      if (!r.enabled) return false;
-      if (!r.match.categories.includes(category)) return false;
-      // Check role scopes
-      if (r.match.roles && r.match.roles.length > 0 && context?.agentRole) {
-        if (!r.match.roles.some(scope => context.agentRole!.toLowerCase().includes(scope.toLowerCase()))) {
-          return false;
-        }
-      }
-      return true;
-    });
-  }
-
-  /** Record a match for effectiveness tracking */
-  recordMatch(ruleId: string, wasAutoApproved: boolean): void {
-    const rule = this.intentRules.find(r => r.id === ruleId);
-    if (!rule) return;
-    rule.metadata.lastMatchedAt = new Date().toISOString();
-    rule.metadata.matchCount++;
-    if (rule.metadata.matchCount >= MIN_MATCHES_FOR_SCORE) {
-      // Simple score: higher = more effective
-      const effectiveApprovals = rule.metadata.matchCount - rule.metadata.issuesAfterMatch;
-      rule.metadata.effectivenessScore = Math.round(
-        Math.max(0, effectiveApprovals / rule.metadata.matchCount) * 100,
-      );
-    }
-    this.saveIntentRules();
-  }
-
-  /** Record that a user overrode a decision */
-  recordOverride(ruleId: string): void {
-    const rule = this.intentRules.find(r => r.id === ruleId);
-    if (!rule) return;
-    rule.metadata.issuesAfterMatch++;
-    if (rule.metadata.matchCount >= MIN_MATCHES_FOR_SCORE) {
-      const effectiveApprovals = rule.metadata.matchCount - rule.metadata.issuesAfterMatch;
-      rule.metadata.effectivenessScore = Math.round(
-        Math.max(0, effectiveApprovals / rule.metadata.matchCount) * 100,
-      );
-    }
-    this.saveIntentRules();
-  }
-
-  /** Apply a trust preset — replaces all rules with the preset's rules */
-  applyTrustPreset(preset: TrustPreset): IntentRule[] {
-    const config = TRUST_PRESETS[preset];
-    if (!config) throw new Error(`Unknown trust preset: ${preset}`);
-
-    // Remove existing preset rules but keep manual rules
-    this.intentRules = this.intentRules.filter(r => r.metadata.source !== 'preset');
-
-    // Add preset rules
-    const newRules: IntentRule[] = [];
-    for (const ruleDef of config.rules) {
-      const rule = this.addIntentRule(ruleDef.category, 'preset', {
-        name: `${config.name}: ${ruleDef.action} ${ruleDef.category}`,
-        action: ruleDef.action,
-        roles: ruleDef.roles,
-        priority: -1,
-      });
-      newRules.push(rule);
-    }
-    return newRules;
-  }
+  // ── Decision CRUD ─────────────────────────────────────────────
 
   add(agentId: string, agentRole: string, title: string, rationale: string, needsConfirmation = false, leadId?: string, projectId?: string): Decision {
     const id = `dec-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -346,26 +80,6 @@ export class DecisionLog extends EventEmitter {
 
     const decision: Decision = { id, agentId, agentRole, leadId: leadId || null, projectId: projectId || null, title, rationale, needsConfirmation, status: 'recorded', autoApproved: false, confirmedAt: null, timestamp, category };
     this.emit('decision', decision);
-
-    // Check intent rules (only for non-system decisions needing confirmation)
-    if (needsConfirmation && !this.systemDecisionIds.has(id)) {
-      const matchedRule = this.matchIntentRule(category, { agentRole, title, rationale });
-      if (matchedRule) {
-        this.recordMatch(matchedRule.id, matchedRule.action === 'allow');
-        if (matchedRule.action === 'allow') {
-          return this.autoApprove(id) ?? decision;
-        }
-        if (matchedRule.action === 'alert') {
-          // Allow but emit alert — decision gets auto-approved but user is notified
-          this.emit('intent:alert', { decision, rule: matchedRule });
-          return this.autoApprove(id) ?? decision;
-        }
-        // 'require-review': decision stays pending, no auto-approve timer
-        if (matchedRule.action === 'require-review') {
-          return decision;
-        }
-      }
-    }
 
     // Schedule auto-approve after 60s unless it's a system-level decision
     if (!this.systemDecisionIds.has(id)) {
@@ -540,27 +254,8 @@ export class DecisionLog extends EventEmitter {
       if (confirmed) results.push(confirmed);
     }
 
-    // Generate 'Teach Me' suggestion if 3+ decisions share a category
-    const categoryCounts = new Map<DecisionCategory, number>();
-    for (const d of results) {
-      const count = (categoryCounts.get(d.category) ?? 0) + 1;
-      categoryCounts.set(d.category, count);
-    }
-
-    let suggestedRule: BatchResult['suggestedRule'];
-    for (const [category, count] of categoryCounts) {
-      if (count >= 3 && !this.matchIntentRule(category)) {
-        suggestedRule = {
-          category,
-          count,
-          prompt: `You approved ${count} ${category} decisions. Auto-approve these in the future?`,
-        };
-        break;
-      }
-    }
-
     this.emit('decisions:batch_confirmed', results);
-    return { updated: results.length, results, suggestedRule };
+    return { updated: results.length, results };
   }
 
   rejectBatch(ids: string[]): BatchResult {

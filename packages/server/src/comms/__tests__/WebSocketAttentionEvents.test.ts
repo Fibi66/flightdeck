@@ -23,7 +23,7 @@ describe('WebSocket attention events', () => {
     am.on('agent:crashed', () => {
       broadcasts.push({ type: 'attention:changed', trigger: 'agent_crashed' });
     });
-    dl.on('intent:alert', () => {
+    dl.on('decision', () => {
       broadcasts.push({ type: 'attention:changed', trigger: 'decision_new' });
     });
     for (const event of ['decision:confirmed', 'decision:rejected', 'decision:dismissed']) {
@@ -66,8 +66,8 @@ describe('WebSocket attention events', () => {
     });
   });
 
-  it('broadcasts attention:changed on new decision (intent:alert)', () => {
-    decisionLog.emit('intent:alert', { id: 'dec-1' });
+  it('broadcasts attention:changed on new decision', () => {
+    decisionLog.emit('decision', { id: 'dec-1' });
 
     expect(broadcasts).toHaveLength(1);
     expect(broadcasts[0]).toEqual({

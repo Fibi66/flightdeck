@@ -175,7 +175,7 @@ export async function createContainer(opts: ContainerConfig): Promise<ServiceCon
   onShutdown('activityLedger', () => activityLedger.stop());
 
   const roleRegistry = new RoleRegistry(db);
-  const decisionLog = new DecisionLog(db, configStore);
+  const decisionLog = new DecisionLog(db);
   const agentMemory = new AgentMemory(db);
   const chatGroupRegistry = new ChatGroupRegistry(db);
   const taskDAG = new TaskDAG(db);

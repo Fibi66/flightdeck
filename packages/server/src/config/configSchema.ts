@@ -144,24 +144,6 @@ const conflictsSchema = z.object({
   branchDivergenceEnabled: z.boolean().default(true),
 });
 
-// ── Intent Rules section ───────────────────────────────────
-const intentRuleSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  enabled: z.boolean().default(true),
-  priority: z.number().int().default(0),
-  action: z.string(),
-  match: z.object({
-    categories: z.array(z.string()),
-    roles: z.array(z.string()).optional(),
-  }),
-  conditions: z.array(z.object({
-    field: z.string(),
-    operator: z.string(),
-    value: z.unknown(),
-  })).optional(),
-});
-
 // ── Notifications section ──────────────────────────────────
 const notificationChannelSchema = z.object({
   id: z.string(),
@@ -229,7 +211,6 @@ export const flightdeckConfigSchema = z.preprocess(
     oversight: sectionDefault(oversightSchema),
     telegram: sectionDefault(telegramSchema),
     conflicts: sectionDefault(conflictsSchema),
-    intentRules: z.preprocess((val) => val ?? [], z.array(intentRuleSchema)),
     notifications: sectionDefault(notificationsSchema),
     predictions: sectionDefault(predictionsSchema),
     providerSettings: z.preprocess((val) => val ?? {}, z.record(z.string(), providerSettingsSchema)),

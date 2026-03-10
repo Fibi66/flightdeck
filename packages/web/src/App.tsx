@@ -202,11 +202,6 @@ export function App() {
         } else if (e?.action === 'limit_change_requested') {
           if (shouldNotify('info')) addToast('info', `⚙️ Agent limit change requested: ${e.details ?? ''}`);
         }
-      } else if (msg.type === 'intent:alert') {
-        if (shouldNotify('exception')) {
-          const label = msg.rule?.label || msg.decision?.title || 'Intent alert triggered';
-          addToast('info', `⚠️ Alert: ${label}`);
-        }
       }
     };
     window.addEventListener('ws-message', handler);
