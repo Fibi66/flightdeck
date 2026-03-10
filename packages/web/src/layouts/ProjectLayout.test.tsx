@@ -174,7 +174,6 @@ describe('ProjectLayout', () => {
   it('shows all overflow items', () => {
     renderLayout();
     fireEvent.click(screen.getByTestId('overflow-menu'));
-    expect(screen.getByTestId('overflow-item-agents')).toBeInTheDocument();
     expect(screen.getByTestId('overflow-item-analytics')).toBeInTheDocument();
     expect(screen.getByTestId('overflow-item-canvas')).toBeInTheDocument();
   });
@@ -231,9 +230,9 @@ describe('ProjectLayout', () => {
     });
 
     it('restores saved tab on project root navigation', () => {
-      localStorage.setItem('flightdeck-project-tab', JSON.stringify({ 'proj-123': 'agents' }));
+      localStorage.setItem('flightdeck-project-tab', JSON.stringify({ 'proj-123': 'crew' }));
       renderLayout('/projects/proj-123');
-      expect(mockNavigate).toHaveBeenCalledWith('/projects/proj-123/agents', { replace: true });
+      expect(mockNavigate).toHaveBeenCalledWith('/projects/proj-123/crew', { replace: true });
     });
 
     it('handles corrupted JSON gracefully', () => {
@@ -259,7 +258,7 @@ describe('ProjectLayout', () => {
         stored[`proj-old-${i}`] = 'tasks';
       }
       localStorage.setItem('flightdeck-project-tab', JSON.stringify(stored));
-      renderLayout('/projects/proj-123/agents');
+      renderLayout('/projects/proj-123/crew');
       const result = JSON.parse(localStorage.getItem('flightdeck-project-tab') ?? '{}');
       expect(Object.keys(result).length).toBeLessThanOrEqual(51);
     });
