@@ -16,6 +16,7 @@ export interface Keyframe {
   timestamp: string;
   label: string;
   type: 'spawn' | 'agent_exit' | 'delegation' | 'task' | 'milestone' | 'decision' | 'progress' | 'error' | 'commit';
+  agentId?: string;
 }
 
 export interface WorldState {
@@ -189,19 +190,23 @@ export class SessionReplay {
     for (const entry of activities) {
       const type = KEYFRAME_TYPES[entry.actionType];
       if (type) {
+        const details = (entry.details ?? {}) as Record<string, string>;
         // "Created & delegated to X" means a new agent was spawned AND given a task.
         // Emit both a spawn and a delegation keyframe so the frontend counts agents.
         if (type === 'delegation' && entry.summary.startsWith('Created &')) {
+          const spawnedId = details.spawnedAgentId ?? details.agentId ?? entry.agentId;
           keyframes.push({
             timestamp: entry.timestamp,
             label: entry.summary.replace('Created & delegated to', 'Spawned'),
             type: 'spawn',
+            agentId: spawnedId,
           });
         }
         keyframes.push({
           timestamp: entry.timestamp,
           label: entry.summary,
           type,
+          agentId: entry.agentId,
         });
       }
     }

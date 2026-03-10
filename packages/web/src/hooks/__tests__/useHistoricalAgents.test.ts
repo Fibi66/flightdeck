@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { deriveAgentsFromKeyframes } from '../useHistoricalAgents';
 import type { ReplayKeyframe } from '../useSessionReplay';
 
-function kf(type: ReplayKeyframe['type'], label: string, ts = '2024-01-01T00:00:00Z'): ReplayKeyframe {
-  return { type, label, timestamp: ts };
+function kf(type: ReplayKeyframe['type'], label: string, ts = '2024-01-01T00:00:00Z', agentId?: string): ReplayKeyframe {
+  return { type, label, timestamp: ts, ...(agentId ? { agentId } : {}) };
 }
 
 describe('deriveAgentsFromKeyframes', () => {
@@ -67,5 +67,15 @@ describe('deriveAgentsFromKeyframes', () => {
     // First Developer gets marked terminated, second stays idle
     expect(agents[0].status).toBe('terminated');
     expect(agents[1].status).toBe('idle');
+  });
+
+  it('uses real agentId from keyframe when available', () => {
+    const agents = deriveAgentsFromKeyframes([
+      kf('spawn', 'Spawned Developer: code', undefined, 'abc-123-real'),
+      kf('spawn', 'Spawned Architect: design'),
+    ]);
+    expect(agents[0].id).toBe('abc-123-real');
+    // Falls back to kf-N when agentId is missing
+    expect(agents[1].id).toBe('kf-1');
   });
 });

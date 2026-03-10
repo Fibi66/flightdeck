@@ -133,6 +133,7 @@ export function deriveAgentsFromKeyframes(kf: ReplayKeyframe[]): DerivedAgent[] 
 
   // Second pass: create agents from spawns
   const roleExitCounts = new Map(exitedRoles);
+  let fallbackIdx = 0;
   for (const frame of kf) {
     if (frame.type === 'spawn') {
       const roleMatch = frame.label.match(/^Spawned\s+(.+?)(?::\s|$)/);
@@ -145,7 +146,7 @@ export function deriveAgentsFromKeyframes(kf: ReplayKeyframe[]): DerivedAgent[] 
       if (remainingExits > 0) roleExitCounts.set(roleName, remainingExits - 1);
 
       agents.push({
-        id: `kf-${agents.length}`,
+        id: frame.agentId ?? `kf-${fallbackIdx}`,
         status,
         role: { id: roleId, name: roleName, icon: getRoleIcon(roleId) },
         inputTokens: 0,
@@ -158,6 +159,7 @@ export function deriveAgentsFromKeyframes(kf: ReplayKeyframe[]): DerivedAgent[] 
         outputPreview: '',
         autopilot: false,
       });
+      fallbackIdx++;
     }
   }
 

@@ -402,7 +402,7 @@ export function leadRoutes(ctx: AppContext): Router {
         role: a.role,
         status: a.status,
         task: a.task,
-        model: a.model || a.role.model,
+        model: a.model || a.role.model || 'unknown',
         inputTokens: a.inputTokens,
         outputTokens: a.outputTokens,
         contextWindowSize: a.contextWindowSize,
