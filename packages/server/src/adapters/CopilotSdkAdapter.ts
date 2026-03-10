@@ -58,15 +58,18 @@ const TERMINATE_TIMEOUT_MS = 5_000;
 // when the SDK is not installed. At runtime, start() will throw a
 // clear error if the SDK is missing.
 let CopilotClientClass: (new (opts?: CopilotClientOptions) => CopilotClientStub) | null = null;
+let approveAllFn: CopilotPermissionHandler | null = null;
 
 async function loadSdk(): Promise<{
   CopilotClient: typeof CopilotClientClass;
+  approveAll: CopilotPermissionHandler;
 }> {
-  if (CopilotClientClass) return { CopilotClient: CopilotClientClass };
+  if (CopilotClientClass && approveAllFn) return { CopilotClient: CopilotClientClass, approveAll: approveAllFn };
   try {
     const mod = await import('@github/copilot-sdk');
     CopilotClientClass = mod.CopilotClient as unknown as typeof CopilotClientClass;
-    return { CopilotClient: CopilotClientClass };
+    approveAllFn = mod.approveAll as unknown as CopilotPermissionHandler;
+    return { CopilotClient: CopilotClientClass, approveAll: approveAllFn };
   } catch {
     throw new Error(
       'Copilot SDK not installed. Run: npm install @github/copilot-sdk',
@@ -131,7 +134,7 @@ export class CopilotSdkAdapter extends EventEmitter implements AgentAdapter {
   // ── Start / Resume ─────────────────────────────────────────
 
   async start(opts: AdapterStartOptions): Promise<string> {
-    const { CopilotClient } = await withTimeout(loadSdk(), SDK_TIMEOUT_MS, 'loadSdk');
+    const { CopilotClient, approveAll } = await withTimeout(loadSdk(), SDK_TIMEOUT_MS, 'loadSdk');
     if (!CopilotClient) throw new Error('Copilot SDK not available');
 
     this.cwd = opts.cwd ?? process.cwd();
@@ -167,10 +170,9 @@ export class CopilotSdkAdapter extends EventEmitter implements AgentAdapter {
 
     this.client = new CopilotClient(clientOpts);
 
-    // Always auto-approve — oversight is prompt-only, not permission-gated.
-    const permissionHandler: CopilotPermissionHandler = () => {
-      return Promise.resolve('allow' as const);
-    };
+    // Use the SDK's built-in approveAll handler — auto-approves all tool permissions.
+    // A hand-rolled handler can miss edge cases the SDK handles internally.
+    const permissionHandler = approveAll;
 
     // User input handler — called when the agent uses ask_user tool
     const userInputHandler: CopilotUserInputHandler = (request) => {
