@@ -917,7 +917,7 @@ export class AgentManager extends TypedEmitter<AgentManagerEvents> {
   private archiveOrphanedGroups(agentId: string): void {
     const groups = this.chatGroupRegistry.getGroupsForAgent(agentId);
     for (const group of groups) {
-      const allTerminal = group.memberIds.every(mid => {
+      const allTerminal = group.memberIds.every((mid: string) => {
         const a = this.agents.get(mid);
         return !a || isTerminalStatus(a.status);
       });

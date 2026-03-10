@@ -539,7 +539,7 @@ describe('Auto-DAG integration', () => {
         const tasks = dag.getTasks(lead.id);
         const autoTask = tasks.find(t => t.id.startsWith('auto-'));
         expect(autoTask).toBeDefined();
-        const depCount = autoTask!.dependsOn.filter(d => d === 'task-1').length;
+        const depCount = autoTask!.dependsOn.filter((d: string) => d === 'task-1').length;
         expect(depCount).toBe(1);
       });
 
