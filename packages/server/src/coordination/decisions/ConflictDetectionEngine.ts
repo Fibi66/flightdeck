@@ -1,4 +1,5 @@
 import type { Database } from '../../db/database.js';
+import type { ConfigStore } from '../../config/ConfigStore.js';
 import { logger } from '../../utils/logger.js';
 import * as path from 'node:path';
 
@@ -127,7 +128,7 @@ export class ConflictDetectionEngine {
   private conflicts: Map<string, ConflictAlert> = new Map();
   private config: ConflictDetectionConfig;
 
-  constructor(private db: Database) {
+  constructor(private db: Database, private configStore?: ConfigStore) {
     this.config = this.loadConfig();
     const saved = this.loadConflicts();
     for (const c of saved) this.conflicts.set(c.id, c);
@@ -721,6 +722,9 @@ export class ConflictDetectionEngine {
   }
 
   private loadConfig(): ConflictDetectionConfig {
+    if (this.configStore) {
+      return { ...this.configStore.current.conflicts };
+    }
     try {
       const raw = this.db.getSetting(SETTINGS_KEY_CONFIG);
       if (raw) {
@@ -734,6 +738,12 @@ export class ConflictDetectionEngine {
   }
 
   private saveConfig(): void {
+    if (this.configStore) {
+      this.configStore.writePartial({ conflicts: this.config }).catch(err => {
+        logger.warn({ module: 'conflicts', msg: 'Failed to save config', err: (err as Error).message });
+      });
+      return;
+    }
     try {
       this.db.setSetting(SETTINGS_KEY_CONFIG, JSON.stringify(this.config));
     } catch (err) {

@@ -130,6 +130,80 @@ const telegramSchema = z.object({
   rateLimitPerMinute: z.number().int().min(1).max(120).default(20),
 });
 
+// ── Conflicts section ──────────────────────────────────────
+const conflictsSchema = z.object({
+  enabled: z.boolean().default(true),
+  checkIntervalMs: z.number().int().min(5_000).max(600_000).default(60_000),
+  directoryOverlapEnabled: z.boolean().default(true),
+  importAnalysisEnabled: z.boolean().default(true),
+  branchDivergenceEnabled: z.boolean().default(true),
+});
+
+// ── Intent Rules section ───────────────────────────────────
+const intentRuleSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  enabled: z.boolean().default(true),
+  priority: z.number().int().default(0),
+  action: z.string(),
+  match: z.object({
+    categories: z.array(z.string()),
+    roles: z.array(z.string()).optional(),
+  }),
+  conditions: z.array(z.object({
+    field: z.string(),
+    operator: z.string(),
+    value: z.unknown(),
+  })).optional(),
+});
+
+// ── Notifications section ──────────────────────────────────
+const notificationChannelSchema = z.object({
+  id: z.string(),
+  type: z.string(),
+  enabled: z.boolean().default(true),
+  config: z.record(z.string(), z.unknown()).default({}),
+  tiers: z.array(z.string()).default([]),
+  createdAt: z.string().optional(),
+});
+
+const notificationPreferenceSchema = z.object({
+  event: z.string(),
+  tier: z.string(),
+  channels: z.array(z.string()).default([]),
+});
+
+const quietHoursSchema = z.object({
+  enabled: z.boolean().default(false),
+  start: z.string().default('22:00'),
+  end: z.string().default('08:00'),
+  timezone: z.string().default('America/New_York'),
+});
+
+const notificationsSchema = z.object({
+  channels: z.array(notificationChannelSchema).default([]),
+  preferences: z.array(notificationPreferenceSchema).default([]),
+  quietHours: sectionDefault(quietHoursSchema),
+});
+
+// ── Predictions config section ─────────────────────────────
+const predictionTypeConfigSchema = z.object({
+  enabled: z.boolean().default(true),
+  thresholds: z.record(z.string(), z.number()).optional(),
+});
+
+const predictionsSchema = z.object({
+  enabled: z.boolean().default(true),
+  intervalMs: z.number().int().min(10_000).max(3_600_000).default(300_000),
+  types: z.record(z.string(), predictionTypeConfigSchema).default({}),
+});
+
+// ── Per-provider settings section ──────────────────────────
+const providerSettingsSchema = z.object({
+  enabled: z.boolean().default(false),
+  models: z.array(z.string()).default([]),
+});
+
 // ── Top-level config ───────────────────────────────────────
 // Use z.preprocess to coerce undefined sections to {} before validation,
 // so that each section's field-level .default() values are applied.
@@ -148,6 +222,11 @@ export const flightdeckConfigSchema = z.preprocess(
     budget: sectionDefault(budgetSchema),
     provider: sectionDefault(providerSchema),
     telegram: sectionDefault(telegramSchema),
+    conflicts: sectionDefault(conflictsSchema),
+    intentRules: z.preprocess((val) => val ?? [], z.array(intentRuleSchema)),
+    notifications: sectionDefault(notificationsSchema),
+    predictions: sectionDefault(predictionsSchema),
+    providerSettings: z.preprocess((val) => val ?? {}, z.record(z.string(), providerSettingsSchema)),
   }),
 );
 

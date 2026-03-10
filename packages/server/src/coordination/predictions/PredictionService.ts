@@ -1,4 +1,5 @@
 import type { Database } from '../../db/database.js';
+import type { ConfigStore } from '../../config/ConfigStore.js';
 import { logger } from '../../utils/logger.js';
 
 // ── Types ─────────────────────────────────────────────────────────
@@ -121,7 +122,7 @@ export class PredictionService {
   private predictions: Prediction[] = [];
   private config: PredictionConfig;
 
-  constructor(private db: Database) {
+  constructor(private db: Database, private configStore?: ConfigStore) {
     this.predictions = this.loadPredictions();
     this.config = this.loadConfig();
   }
@@ -487,6 +488,9 @@ export class PredictionService {
   }
 
   private loadConfig(): PredictionConfig {
+    if (this.configStore) {
+      return { ...this.configStore.current.predictions } as PredictionConfig;
+    }
     try {
       const raw = this.db.getSetting(SETTINGS_KEY_CONFIG);
       if (raw) {
@@ -505,6 +509,12 @@ export class PredictionService {
   }
 
   private saveConfig(): void {
+    if (this.configStore) {
+      this.configStore.writePartial({ predictions: this.config }).catch(err => {
+        logger.warn({ module: 'predictions', msg: 'Failed to save config', err: (err as Error).message });
+      });
+      return;
+    }
     try {
       this.db.setSetting(SETTINGS_KEY_CONFIG, JSON.stringify(this.config));
     } catch (err) {

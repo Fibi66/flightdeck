@@ -6,7 +6,7 @@ import { parseIntBounded } from '../utils/validation.js';
 
 export function notificationRoutes(ctx: AppContext): Router {
   const { db } = ctx;
-  const service = new NotificationService(db);
+  const service = new NotificationService(db, ctx.configStore);
   const router = Router();
 
   // Wire Telegram delivery: when NotificationService routes an event to a

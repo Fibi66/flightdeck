@@ -56,12 +56,18 @@ export function loadConfig(content: string, previous: FlightdeckConfig | null): 
 
 function computeDiffs(prev: FlightdeckConfig, next: FlightdeckConfig): ConfigDiff[] {
   const diffs: ConfigDiff[] = [];
-  const sections = ['server', 'heartbeat', 'models', 'roles', 'budget'] as const;
+  const sections = ['server', 'heartbeat', 'models', 'roles', 'budget', 'provider', 'telegram', 'conflicts', 'intentRules', 'notifications', 'predictions', 'providerSettings'] as const;
 
   for (const section of sections) {
     const prevSection = prev[section];
     const nextSection = next[section];
-    diffObjects(section, prevSection as any, nextSection as any, diffs);
+    if (Array.isArray(prevSection) || Array.isArray(nextSection)) {
+      if (!deepEqual(prevSection, nextSection)) {
+        diffs.push({ section, field: '*', oldValue: prevSection, newValue: nextSection });
+      }
+    } else {
+      diffObjects(section, prevSection as any, nextSection as any, diffs);
+    }
   }
 
   return diffs;

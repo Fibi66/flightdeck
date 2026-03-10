@@ -28,9 +28,9 @@ export function configRoutes(ctx: AppContext): Router {
     }
     const updated = updateConfig(sanitized);
     agentManager.setMaxConcurrent(updated.maxConcurrentAgents);
-    // Persist maxConcurrentAgents to SQLite so it survives server restart
-    if (sanitized.maxConcurrentAgents !== undefined) {
-      _db.setSetting('maxConcurrentAgents', String(updated.maxConcurrentAgents));
+    // Persist maxConcurrentAgents to YAML config (single source of truth)
+    if (sanitized.maxConcurrentAgents !== undefined && ctx.configStore) {
+      ctx.configStore.writePartial({ server: { maxConcurrentAgents: updated.maxConcurrentAgents } }).catch(() => {});
     }
     res.json(updated);
   });

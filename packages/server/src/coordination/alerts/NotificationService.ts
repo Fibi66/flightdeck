@@ -1,5 +1,6 @@
 import { EventEmitter } from 'events';
 import type { Database } from '../../db/database.js';
+import type { ConfigStore } from '../../config/ConfigStore.js';
 import { logger } from '../../utils/logger.js';
 import crypto from 'node:crypto';
 
@@ -101,7 +102,7 @@ export class NotificationService extends EventEmitter {
   private quietHours: QuietHoursConfig | null = null;
   private log: NotificationLogEntry[] = [];
 
-  constructor(private db: Database) {
+  constructor(private db: Database, private configStore?: ConfigStore) {
     super();
     this.loadAll();
   }
@@ -216,7 +217,15 @@ export class NotificationService extends EventEmitter {
 
   setQuietHours(config: QuietHoursConfig): QuietHoursConfig {
     this.quietHours = { ...config };
-    this.db.setSetting(QUIET_HOURS_KEY, JSON.stringify(this.quietHours));
+    if (this.configStore) {
+      this.configStore.writePartial({
+        notifications: { ...this.configStore.current.notifications, quietHours: this.quietHours },
+      }).catch(err => {
+        logger.warn({ module: 'notifications', msg: 'Failed to save quiet hours', err: (err as Error).message });
+      });
+    } else {
+      this.db.setSetting(QUIET_HOURS_KEY, JSON.stringify(this.quietHours));
+    }
     return this.quietHours;
   }
 
@@ -309,22 +318,30 @@ export class NotificationService extends EventEmitter {
   // ── Persistence ───────────────────────────────────────────────
 
   private loadAll(): void {
-    try {
-      const rawCh = this.db.getSetting(CHANNELS_KEY);
-      if (rawCh) this.channels = JSON.parse(rawCh);
-    } catch { this.channels = []; }
+    if (this.configStore) {
+      this.channels = this.configStore.current.notifications.channels as unknown as NotificationChannel[];
+      this.preferences = this.configStore.current.notifications.preferences as unknown as NotificationPreference[];
+      const qh = this.configStore.current.notifications.quietHours;
+      this.quietHours = qh.enabled ? { ...qh } : null;
+    } else {
+      try {
+        const rawCh = this.db.getSetting(CHANNELS_KEY);
+        if (rawCh) this.channels = JSON.parse(rawCh);
+      } catch { this.channels = []; }
 
-    try {
-      const rawPr = this.db.getSetting(PREFERENCES_KEY);
-      if (rawPr) this.preferences = JSON.parse(rawPr);
-      else this.preferences = [...DEFAULT_PREFERENCES];
-    } catch { this.preferences = [...DEFAULT_PREFERENCES]; }
+      try {
+        const rawPr = this.db.getSetting(PREFERENCES_KEY);
+        if (rawPr) this.preferences = JSON.parse(rawPr);
+        else this.preferences = [...DEFAULT_PREFERENCES];
+      } catch { this.preferences = [...DEFAULT_PREFERENCES]; }
 
-    try {
-      const rawQh = this.db.getSetting(QUIET_HOURS_KEY);
-      if (rawQh) this.quietHours = JSON.parse(rawQh);
-    } catch { this.quietHours = null; }
+      try {
+        const rawQh = this.db.getSetting(QUIET_HOURS_KEY);
+        if (rawQh) this.quietHours = JSON.parse(rawQh);
+      } catch { this.quietHours = null; }
+    }
 
+    // Log is always from DB (runtime audit data)
     try {
       const rawLog = this.db.getSetting(LOG_KEY);
       if (rawLog) this.log = JSON.parse(rawLog);
@@ -332,10 +349,26 @@ export class NotificationService extends EventEmitter {
   }
 
   private saveChannels(): void {
+    if (this.configStore) {
+      this.configStore.writePartial({
+        notifications: { ...this.configStore.current.notifications, channels: this.channels },
+      }).catch(err => {
+        logger.warn({ module: 'notifications', msg: 'Failed to save channels', err: (err as Error).message });
+      });
+      return;
+    }
     this.db.setSetting(CHANNELS_KEY, JSON.stringify(this.channels));
   }
 
   private savePreferences(): void {
+    if (this.configStore) {
+      this.configStore.writePartial({
+        notifications: { ...this.configStore.current.notifications, preferences: this.preferences },
+      }).catch(err => {
+        logger.warn({ module: 'notifications', msg: 'Failed to save preferences', err: (err as Error).message });
+      });
+      return;
+    }
     this.db.setSetting(PREFERENCES_KEY, JSON.stringify(this.preferences));
   }
 

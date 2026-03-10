@@ -10,6 +10,7 @@
 
 import { execSync } from 'node:child_process';
 import type { Database } from '../db/database.js';
+import type { ConfigStore } from '../config/ConfigStore.js';
 import { PROVIDER_PRESETS, type ProviderId } from '../adapters/presets.js';
 
 // ── Types ────────────────────────────────────────────────────────
@@ -57,13 +58,16 @@ const SETTING_PREFIX = 'provider:';
 
 export class ProviderManager {
   private readonly db: Database | undefined;
+  private readonly configStore: ConfigStore | undefined;
   private readonly exec: (cmd: string) => string;
 
   constructor(opts: {
     db?: Database;
+    configStore?: ConfigStore;
     execCommand?: (cmd: string) => string;
   } = {}) {
     this.db = opts.db;
+    this.configStore = opts.configStore;
     this.exec = opts.execCommand ?? ((cmd) => execSync(cmd, { encoding: 'utf8', timeout: 5_000 }).trim());
   }
 
@@ -154,11 +158,20 @@ export class ProviderManager {
   // ── Enabled/Disabled ─────────────────────────────────────
 
   isProviderEnabled(provider: ProviderId): boolean {
+    if (this.configStore) {
+      const settings = this.configStore.current.providerSettings[provider];
+      return settings?.enabled ?? false;
+    }
     if (!this.db) return true;
     return this.db.getSetting(`${SETTING_PREFIX}${provider}:enabled`) !== 'false';
   }
 
   setProviderEnabled(provider: ProviderId, enabled: boolean): void {
+    if (this.configStore) {
+      const current = this.configStore.current.providerSettings[provider] ?? { enabled: false, models: [] };
+      this.configStore.writePartial({ providerSettings: { [provider]: { ...current, enabled } } }).catch(() => {});
+      return;
+    }
     if (!this.db) return;
     this.db.setSetting(`${SETTING_PREFIX}${provider}:enabled`, String(enabled));
   }
@@ -166,6 +179,10 @@ export class ProviderManager {
   // ── Model Preferences ────────────────────────────────────
 
   getModelPreferences(provider: ProviderId): ModelPreferences {
+    if (this.configStore) {
+      const models = this.configStore.current.providerSettings[provider]?.models ?? [];
+      return models.length ? { preferredModels: models } : {};
+    }
     if (!this.db) return {};
     const raw = this.db.getSetting(`${SETTING_PREFIX}${provider}:models`);
     if (!raw) return {};
@@ -173,6 +190,13 @@ export class ProviderManager {
   }
 
   setModelPreferences(provider: ProviderId, prefs: ModelPreferences): void {
+    if (this.configStore) {
+      const current = this.configStore.current.providerSettings[provider] ?? { enabled: false, models: [] };
+      this.configStore.writePartial({
+        providerSettings: { [provider]: { ...current, models: prefs.preferredModels ?? [] } },
+      }).catch(() => {});
+      return;
+    }
     if (!this.db) return;
     this.db.setSetting(`${SETTING_PREFIX}${provider}:models`, JSON.stringify(prefs));
   }
@@ -180,6 +204,9 @@ export class ProviderManager {
   // ── Active Provider ─────────────────────────────────────
 
   getActiveProviderId(): ProviderId {
+    if (this.configStore) {
+      return this.configStore.current.provider.id;
+    }
     if (!this.db) return 'copilot';
     const raw = this.db.getSetting(`${SETTING_PREFIX}active`);
     if (raw && raw in PROVIDER_PRESETS) return raw as ProviderId;
@@ -187,6 +214,10 @@ export class ProviderManager {
   }
 
   setActiveProviderId(provider: ProviderId): void {
+    if (this.configStore) {
+      this.configStore.writePartial({ provider: { ...this.configStore.current.provider, id: provider } }).catch(() => {});
+      return;
+    }
     if (!this.db) return;
     this.db.setSetting(`${SETTING_PREFIX}active`, provider);
   }

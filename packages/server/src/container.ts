@@ -146,17 +146,6 @@ export async function createContainer(opts: ContainerConfig): Promise<ServiceCon
   const db = new Database(config.dbPath);
   onShutdown('db', () => db.close());
 
-  // Restore persisted settings from DB (survives server restart)
-  const persistedMaxAgents = db.getSetting('maxConcurrentAgents');
-  if (persistedMaxAgents) {
-    const parsed = parseInt(persistedMaxAgents, 10);
-    if (!isNaN(parsed) && parsed > 0) {
-      updateConfig({ maxConcurrentAgents: parsed });
-    }
-  }
-  // Re-read config so all services see restored values
-  const effectiveConfig = getConfig();
-
   // ConfigStore: hot-reloadable config from YAML file (Tier 0 — no service deps)
   // Resolution order: FLIGHTDECK_CONFIG env → repo-level file → ~/.flightdeck/config.yaml
   const repoConfigPath = repoRoot ? join(repoRoot, 'flightdeck.config.yaml') : null;
@@ -165,6 +154,14 @@ export async function createContainer(opts: ContainerConfig): Promise<ServiceCon
     || join(homedir(), '.flightdeck', 'config.yaml');
   const configStore = new ConfigStore(configFilePath);
   onShutdown('configStore', () => configStore.stop());
+
+  // Apply maxConcurrentAgents from YAML config (single source of truth)
+  const yamlMaxAgents = configStore.current.server.maxConcurrentAgents;
+  if (yamlMaxAgents) {
+    updateConfig({ maxConcurrentAgents: yamlMaxAgents });
+  }
+  // Re-read config so all services see restored values
+  const effectiveConfig = getConfig();
 
   // ── Tier 1: Core Registries ────────────────────────────
   const lockRegistry = new FileLockRegistry(db);
@@ -178,7 +175,7 @@ export async function createContainer(opts: ContainerConfig): Promise<ServiceCon
   onShutdown('activityLedger', () => activityLedger.stop());
 
   const roleRegistry = new RoleRegistry(db);
-  const decisionLog = new DecisionLog(db);
+  const decisionLog = new DecisionLog(db, configStore);
   const agentMemory = new AgentMemory(db);
   const chatGroupRegistry = new ChatGroupRegistry(db);
   const taskDAG = new TaskDAG(db);

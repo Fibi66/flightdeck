@@ -1,6 +1,8 @@
 import { EventEmitter } from 'events';
 import { eq, asc, and, inArray, lte } from 'drizzle-orm';
 import type { Database } from '../../db/database.js';
+import type { ConfigStore } from '../../config/ConfigStore.js';
+import { logger } from '../../utils/logger.js';
 import { decisions } from '../../db/schema.js';
 
 import { DECISION_CATEGORIES, type Decision, type DecisionStatus, type DecisionCategory } from '@flightdeck/shared';
@@ -131,13 +133,17 @@ export class DecisionLog extends EventEmitter {
   /** Tracks when each timer was started (for calculating remaining time on pause) */
   private timerStartTimes = new Map<string, number>();
 
-  constructor(db: Database) {
+  constructor(db: Database, private configStore?: ConfigStore) {
     super();
     this.db = db;
     this.loadIntentRules();
   }
 
   private loadIntentRules(): void {
+    if (this.configStore) {
+      this.intentRules = [...this.configStore.current.intentRules] as IntentRule[];
+      return;
+    }
     try {
       const raw = this.db.getSetting('intent_rules');
       if (raw) {
@@ -179,6 +185,12 @@ export class DecisionLog extends EventEmitter {
   }
 
   private saveIntentRules(): void {
+    if (this.configStore) {
+      this.configStore.writePartial({ intentRules: this.intentRules }).catch(err => {
+        logger.warn({ module: 'decisions', msg: 'Failed to save intent rules', err: (err as Error).message });
+      });
+      return;
+    }
     this.db.setSetting('intent_rules', JSON.stringify(this.intentRules));
   }
 
