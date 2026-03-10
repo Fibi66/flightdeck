@@ -38,7 +38,7 @@ export interface CopilotSessionConfig {
   systemMessage?: { mode?: 'append'; content?: string } | { mode: 'replace'; content: string };
   tools?: CopilotTool[];
   onPermissionRequest?: CopilotPermissionHandler;
-  onUserInput?: CopilotUserInputHandler;
+  onUserInputRequest?: CopilotUserInputHandler;
   infiniteSessions?: boolean | { enabled: boolean };
 }
 
@@ -47,7 +47,7 @@ export interface CopilotResumeSessionConfig {
   systemMessage?: { mode?: 'append'; content?: string } | { mode: 'replace'; content: string };
   tools?: CopilotTool[];
   onPermissionRequest?: CopilotPermissionHandler;
-  onUserInput?: CopilotUserInputHandler;
+  onUserInputRequest?: CopilotUserInputHandler;
   infiniteSessions?: boolean | { enabled: boolean };
 }
 
@@ -68,12 +68,20 @@ export type CopilotPermissionHandler = (
 
 // ── User Input Handling ─────────────────────────────────────
 
+export interface CopilotUserInputRequest {
+  question: string;
+  choices?: string[];
+  allowFreeform?: boolean;
+}
+
 export interface CopilotUserInputResponse {
-  response: string;
+  answer: string;
+  wasFreeform?: boolean;
 }
 
 export type CopilotUserInputHandler = (
-  request: { question: string },
+  request: CopilotUserInputRequest,
+  invocation: { sessionId: string },
 ) => Promise<CopilotUserInputResponse> | CopilotUserInputResponse;
 
 // ── Tools ───────────────────────────────────────────────────

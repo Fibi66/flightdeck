@@ -98,7 +98,7 @@ export class CopilotSdkAdapter extends EventEmitter implements AgentAdapter {
   private maxTurns?: number;
   private systemPrompt?: string;
   private pendingUserInputs = new Map<string, {
-    resolve: (result: { response: string }) => void;
+    resolve: (result: { answer: string; wasFreeform?: boolean }) => void;
     timeout: ReturnType<typeof setTimeout> | null;
   }>();
   private latestUserInputId: string | null = null;
@@ -183,7 +183,7 @@ export class CopilotSdkAdapter extends EventEmitter implements AgentAdapter {
     const sessionConfig: CopilotSessionConfig = {
       model: this.model,
       onPermissionRequest: permissionHandler,
-      onUserInput: userInputHandler,
+      onUserInputRequest: userInputHandler,
       infiniteSessions: true,
       ...(this.systemPrompt ? {
         systemMessage: { mode: 'append' as const, content: this.systemPrompt },
@@ -571,13 +571,13 @@ export class CopilotSdkAdapter extends EventEmitter implements AgentAdapter {
     this.pendingUserInputs.delete(id);
     this.latestUserInputId = null;
     if (entry.timeout) clearTimeout(entry.timeout);
-    entry.resolve({ response });
+    entry.resolve({ answer: response, wasFreeform: true });
   }
 
   private handleUserInputRequest(
-    request: { question: string },
-  ): Promise<{ response: string }> {
-    return new Promise<{ response: string }>((resolve) => {
+    request: { question: string; choices?: string[]; allowFreeform?: boolean },
+  ): Promise<{ answer: string; wasFreeform?: boolean }> {
+    return new Promise<{ answer: string; wasFreeform?: boolean }>((resolve) => {
       const reqId = `uinput-${Date.now()}-${randomUUID().slice(0, 8)}`;
 
       this.pendingUserInputs.set(reqId, { resolve, timeout: null });
@@ -654,7 +654,7 @@ export class CopilotSdkAdapter extends EventEmitter implements AgentAdapter {
     // Resolve all pending user inputs
     for (const [id, entry] of this.pendingUserInputs) {
       if (entry.timeout) clearTimeout(entry.timeout);
-      entry.resolve({ response: 'Agent terminated.' });
+      entry.resolve({ answer: 'Agent terminated.', wasFreeform: true });
     }
     this.pendingUserInputs.clear();
     this.latestUserInputId = null;
