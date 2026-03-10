@@ -12,6 +12,7 @@ import { execSync } from 'node:child_process';
 import type { Database } from '../db/database.js';
 import type { ConfigStore } from '../config/ConfigStore.js';
 import { PROVIDER_PRESETS, type ProviderId } from '../adapters/presets.js';
+import { logger } from '../utils/logger.js';
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -169,7 +170,7 @@ export class ProviderManager {
   setProviderEnabled(provider: ProviderId, enabled: boolean): void {
     if (this.configStore) {
       const current = this.configStore.current.providerSettings[provider] ?? { enabled: false, models: [] };
-      this.configStore.writePartial({ providerSettings: { [provider]: { ...current, enabled } } }).catch(() => {});
+      this.configStore.writePartial({ providerSettings: { [provider]: { ...current, enabled } } }).catch(err => logger.warn('Failed to persist provider enabled state', { provider, error: err }));
       return;
     }
     if (!this.db) return;
@@ -194,7 +195,7 @@ export class ProviderManager {
       const current = this.configStore.current.providerSettings[provider] ?? { enabled: false, models: [] };
       this.configStore.writePartial({
         providerSettings: { [provider]: { ...current, models: prefs.preferredModels ?? [] } },
-      }).catch(() => {});
+      }).catch(err => logger.warn('Failed to persist model preferences', { provider, error: err }));
       return;
     }
     if (!this.db) return;
@@ -215,7 +216,7 @@ export class ProviderManager {
 
   setActiveProviderId(provider: ProviderId): void {
     if (this.configStore) {
-      this.configStore.writePartial({ provider: { ...this.configStore.current.provider, id: provider } }).catch(() => {});
+      this.configStore.writePartial({ provider: { ...this.configStore.current.provider, id: provider } }).catch(err => logger.warn('Failed to persist active provider', { provider, error: err }));
       return;
     }
     if (!this.db) return;

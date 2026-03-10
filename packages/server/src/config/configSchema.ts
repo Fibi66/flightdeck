@@ -200,7 +200,7 @@ const predictionsSchema = z.object({
 
 // ── Per-provider settings section ──────────────────────────
 const providerSettingsSchema = z.object({
-  enabled: z.boolean().default(false),
+  enabled: z.boolean().default(true),
   models: z.array(z.string()).default([]),
 });
 
