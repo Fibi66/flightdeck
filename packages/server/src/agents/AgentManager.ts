@@ -730,7 +730,7 @@ export class AgentManager extends TypedEmitter<AgentManagerEvents> {
                   return;
                 }
               }
-              const newAgent = this.spawn(agent.role, agent.task, agent.parentId, undefined, agent.model || undefined, agent.cwd, agent.sessionId || undefined, undefined, { projectName: agent.projectName, projectId: agent.projectId });
+              const newAgent = this.spawn(agent.role, agent.task, agent.parentId, undefined, agent.model || undefined, agent.cwd, agent.sessionId || undefined, agent.id, { projectName: agent.projectName, projectId: agent.projectId });
               this.emit('agent:auto_restarted', { agentId: newAgent.id, previousAgentId: agent.id, crashCount: count });
             } catch (err) {
               logger.error({ module: 'agent', msg: 'Auto-restart failed', err: (err as Error).message });
