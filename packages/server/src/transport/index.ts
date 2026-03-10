@@ -29,7 +29,7 @@ export type {
   AgentExitedMessage,
   AgentListMessage,
   AgentInfo,
-  AgentStatus,
+  AgentProcessStatus,
   PongMessage,
   AuthResultMessage,
   ErrorMessage,

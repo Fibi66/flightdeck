@@ -16,7 +16,7 @@
  * Pattern: See SessionResumeManager.ts for the same write-on-mutation approach.
  */
 import { logger } from './utils/logger.js';
-import type { AgentRosterRepository, AgentStatus as RosterStatus } from './db/AgentRosterRepository.js';
+import type { AgentRosterRepository, RosterAgentStatus as RosterStatus } from './db/AgentRosterRepository.js';
 import type { ActiveDelegationRepository } from './db/ActiveDelegationRepository.js';
 import type { ManagedAgent } from './agent-server.js';
 

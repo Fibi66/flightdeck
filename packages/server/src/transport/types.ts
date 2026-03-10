@@ -198,14 +198,14 @@ export interface AgentInfo {
   agentId: string;
   role: string;
   model: string;
-  status: AgentStatus;
+  status: AgentProcessStatus;
   pid: number | null;
   task?: string;
   sessionId?: string;
   spawnedAt: string;
 }
 
-export type AgentStatus = 'starting' | 'running' | 'idle' | 'stopping' | 'exited' | 'crashed';
+export type AgentProcessStatus = 'starting' | 'running' | 'idle' | 'stopping' | 'exited' | 'crashed';
 
 export interface PongMessage {
   type: 'pong';

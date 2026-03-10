@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { Database } from '../db/database.js';
-import { AgentRosterRepository, type AgentStatus } from '../db/AgentRosterRepository.js';
+import { AgentRosterRepository, type RosterAgentStatus } from '../db/AgentRosterRepository.js';
 
 describe('AgentRosterRepository', () => {
   let db: Database;

@@ -88,7 +88,7 @@ import type {
   OrchestratorMessage,
   AgentServerMessage,
   AgentEventType,
-  AgentStatus,
+  AgentProcessStatus,
   MessageScope,
   SpawnAgentMessage,
   SendMessageMessage,
@@ -107,7 +107,7 @@ export interface ManagedAgent {
   role: string;
   model: string;
   adapter: AgentAdapter;
-  status: AgentStatus;
+  status: AgentProcessStatus;
   pid: number | null;
   task?: string;
   sessionId?: string;
@@ -135,7 +135,7 @@ export interface AgentServerPersistence {
   onAgentSpawned?(agentId: string, role: string, model: string): void;
   onAgentTerminated?(agentId: string): void;
   onAgentExited?(agentId: string, exitCode: number): void;
-  onStatusChanged?(agentId: string, status: AgentStatus): void;
+  onStatusChanged?(agentId: string, status: AgentProcessStatus): void;
   onServerStop?(agents: ManagedAgent[]): void;
 }
 

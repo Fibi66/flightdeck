@@ -2,13 +2,13 @@ import { eq, and, isNull } from 'drizzle-orm';
 import type { Database } from './database.js';
 import { agentRoster } from './schema.js';
 
-export type AgentStatus = 'idle' | 'busy' | 'terminated' | 'retired';
+export type RosterAgentStatus = 'idle' | 'busy' | 'terminated' | 'retired';
 
 export interface AgentRecord {
   agentId: string;
   role: string;
   model: string;
-  status: AgentStatus;
+  status: RosterAgentStatus;
   sessionId?: string;
   projectId?: string;
   teamId: string;
@@ -25,7 +25,7 @@ export class AgentRosterRepository {
     agentId: string,
     role: string,
     model: string,
-    status: AgentStatus = 'idle',
+    status: RosterAgentStatus = 'idle',
     sessionId?: string,
     projectId?: string,
     metadata?: Record<string, unknown>,
@@ -86,7 +86,7 @@ export class AgentRosterRepository {
     return this.rowToRecord(row);
   }
 
-  getAllAgents(status?: AgentStatus, teamId?: string): AgentRecord[] {
+  getAllAgents(status?: RosterAgentStatus, teamId?: string): AgentRecord[] {
     const conditions = [];
     if (status) conditions.push(eq(agentRoster.status, status));
     if (teamId) conditions.push(eq(agentRoster.teamId, teamId));
@@ -109,7 +109,7 @@ export class AgentRosterRepository {
     return rows.map((r) => this.rowToRecord(r));
   }
 
-  updateStatus(agentId: string, status: AgentStatus): boolean {
+  updateStatus(agentId: string, status: RosterAgentStatus): boolean {
     const result = this.db.drizzle
       .update(agentRoster)
       .set({ status, updatedAt: new Date().toISOString() })
@@ -139,7 +139,7 @@ export class AgentRosterRepository {
   removeAgent(agentId: string): boolean {
     const result = this.db.drizzle
       .update(agentRoster)
-      .set({ status: 'terminated' as AgentStatus, updatedAt: new Date().toISOString() })
+      .set({ status: 'terminated' as RosterAgentStatus, updatedAt: new Date().toISOString() })
       .where(eq(agentRoster.agentId, agentId))
       .run();
     return result.changes > 0;
@@ -209,7 +209,7 @@ export class AgentRosterRepository {
     const result = this.db.drizzle
       .update(agentRoster)
       .set({
-        status: 'retired' as AgentStatus,
+        status: 'retired' as RosterAgentStatus,
         metadata: JSON.stringify(meta),
         updatedAt: now,
       })
@@ -261,7 +261,7 @@ export class AgentRosterRepository {
       agentId: row.agentId,
       role: row.role,
       model: row.model,
-      status: row.status as AgentStatus,
+      status: row.status as RosterAgentStatus,
       sessionId: row.sessionId ?? undefined,
       projectId: row.projectId ?? undefined,
       teamId: row.teamId,

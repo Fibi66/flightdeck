@@ -19,7 +19,7 @@
  */
 import { EventEmitter } from 'events';
 import type { AgentManager } from './AgentManager.js';
-import type { AgentRosterRepository, AgentStatus as RosterStatus } from '../db/AgentRosterRepository.js';
+import type { AgentRosterRepository, RosterAgentStatus as RosterStatus } from '../db/AgentRosterRepository.js';
 import type { ActiveDelegationRepository, DelegationRecord } from '../db/ActiveDelegationRepository.js';
 import type { RoleRegistry } from './RoleRegistry.js';
 import type { AgentJSON } from './Agent.js';
