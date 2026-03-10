@@ -264,14 +264,7 @@ const PATTERNS: NLPattern[] = [
     description: 'Navigate to the approval queue',
   },
 
-  // ── Create (3) ────────────────────────────────────────────────
-  {
-    id: 'save-playbook',
-    phrases: ['save this as a playbook'],
-    category: 'create',
-    destructive: false,
-    description: 'Save the current crew configuration as a reusable playbook',
-  },
+  // ── Create (2) ────────────────────────────────────────────────
   {
     id: 'create-rule',
     phrases: ['create a rule to'],
@@ -720,12 +713,6 @@ export class NLCommandService {
       }
 
       // ── Create ───────────────────────────────────────────────
-      case 'save-playbook': {
-        steps.push({ action: 'save_playbook', target: 'current' });
-        summary = 'Saving current configuration as a playbook';
-        break;
-      }
-
       case 'create-rule': {
         const topic = entity || 'unknown';
         steps.push({ action: 'create_rule', target: 'intent', params: { description: topic } });
@@ -855,10 +842,6 @@ export class NLCommandService {
         }
 
         // ── Create actions (V1: signal success, actual creation via API) ─
-        case 'save_playbook': {
-          return { success: true, detail: 'Playbook save initiated' };
-        }
-
         case 'create_rule': {
           const description = step.params?.description ?? '';
           return { success: true, detail: `Rule creation initiated: "${description}"` };

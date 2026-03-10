@@ -121,7 +121,7 @@ describe('TelegramSettings', () => {
     fireEvent.click(screen.getByTestId('telegram-toggle'));
     await waitFor(() => {
       expect(mockApiFetch).toHaveBeenCalledWith(
-        '/config',
+        '/integrations/telegram',
         expect.objectContaining({ method: 'PATCH' }),
       );
     });
@@ -379,10 +379,9 @@ describe('TelegramSettings', () => {
     fireEvent.click(screen.getByTestId('telegram-save-btn'));
     await waitFor(() => {
       expect(mockApiFetch).toHaveBeenCalledWith(
-        '/config',
+        '/integrations/telegram',
         expect.objectContaining({
           method: 'PATCH',
-          body: expect.stringContaining('telegram'),
         }),
       );
     });

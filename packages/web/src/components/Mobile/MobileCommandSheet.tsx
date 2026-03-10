@@ -73,7 +73,6 @@ export function MobileCommandSheet({ isOpen, onClose, items }: Props) {
               { icon: '⏸', label: 'Pause all agents' },
               { icon: '▶', label: 'Resume all agents' },
               { icon: '🗣', label: '"Wrap it up"' },
-              { icon: '📸', label: 'Save as playbook' },
             ].map(item => (
               <button
                 key={item.label}

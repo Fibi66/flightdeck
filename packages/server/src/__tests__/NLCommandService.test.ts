@@ -51,9 +51,9 @@ function createService() {
 
 describe('NLCommandService', () => {
   describe('getPatterns', () => {
-    it('returns 30 command patterns', () => {
+    it('returns 29 command patterns', () => {
       const { service } = createService();
-      expect(service.getPatterns()).toHaveLength(30);
+      expect(service.getPatterns()).toHaveLength(29);
     });
 
     it('covers all 4 categories', () => {
