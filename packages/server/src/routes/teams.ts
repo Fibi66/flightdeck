@@ -1,12 +1,9 @@
 /**
  * Team REST API routes.
  *
- * Endpoints for team export, import (stub), listing, and details.
- * Export is fully wired via TeamExporter; import is stubbed pending AS25.
+ * Endpoints for team listing, details, agent profiles, health, and crew management.
  *
  * Routes:
- *   POST /teams/:teamId/export  — export team bundle to directory
- *   POST /teams/import          — import team bundle (stub)
  *   GET  /teams                 — list teams
  *   GET  /teams/:teamId         — team details
  */
@@ -30,100 +27,9 @@ function paramStr(val: string | string[] | undefined): string {
 // ── Routes ──────────────────────────────────────────────────────────
 
 export function teamsRoutes(ctx: AppContext): Router {
-  const { teamExporter, teamImporter, knowledgeStore, trainingCapture, agentRoster, agentManager, projectRegistry } = ctx;
+  const { knowledgeStore, trainingCapture, agentRoster, agentManager, projectRegistry } = ctx;
   const router = Router();
 
-  // ── POST /teams/:teamId/export ──────────────────────────────────
-
-  router.post('/teams/:teamId/export', writeLimiter, (req, res) => {
-    if (!teamExporter) {
-      return res.status(503).json({ error: 'Team exporter not available' });
-    }
-
-    const teamId = Array.isArray(req.params.teamId) ? req.params.teamId[0] : req.params.teamId;
-    if (!teamId || teamId.length === 0) {
-      return res.status(400).json({ error: 'teamId is required' });
-    }
-
-    const { outputPath, agents, categories, includeKnowledge, includeTraining, excludeEpisodic } = req.body ?? {};
-
-    try {
-      if (outputPath && typeof outputPath === 'string') {
-        // Directory export
-        const result = teamExporter.exportToDirectory(teamId, outputPath, {
-          agentIds: agents,
-          categories,
-          includeKnowledge,
-          includeTraining,
-          excludeEpisodic,
-        });
-
-        logger.info({ module: 'teams', msg: 'Crew exported to directory', teamId, outputDir: result.outputDir });
-        res.json({
-          success: true,
-          bundlePath: result.outputDir,
-          manifest: result.bundle.manifest,
-          filesWritten: result.filesWritten?.length ?? 0,
-        });
-      } else {
-        // In-memory export (return bundle as JSON)
-        const bundle = teamExporter.exportBundle(teamId, {
-          agentIds: agents,
-          categories,
-          includeKnowledge,
-          includeTraining,
-          excludeEpisodic,
-        });
-
-        logger.info({ module: 'teams', msg: 'Crew exported as JSON', teamId, stats: bundle.manifest.stats });
-        res.json({
-          success: true,
-          bundle,
-        });
-      }
-    } catch (err: any) {
-      logger.error({ module: 'teams', msg: 'Crew export failed', teamId, err: err.message });
-      res.status(500).json({ error: `Export failed: ${err.message}` });
-    }
-  });
-
-  // ── POST /teams/import ──────────────────────────────────────────
-
-  router.post('/teams/import', writeLimiter, (req, res) => {
-    if (!teamImporter) {
-      return res.status(503).json({ error: 'Team importer not available' });
-    }
-
-    const { bundle, projectId, teamId, agentConflict, knowledgeConflict, dryRun } = req.body ?? {};
-
-    if (!bundle || typeof bundle !== 'object') {
-      return res.status(400).json({ error: 'Request body must include a "bundle" object' });
-    }
-    if (!projectId || typeof projectId !== 'string') {
-      return res.status(400).json({ error: '"projectId" is required' });
-    }
-
-    try {
-      const report = teamImporter.import(bundle, {
-        projectId,
-        teamId,
-        agentConflict: agentConflict ?? 'skip',
-        knowledgeConflict: knowledgeConflict ?? 'prefer_existing',
-        dryRun: dryRun === true,
-      });
-
-      if (!report.success) {
-        logger.warn({ module: 'teams', msg: 'Crew import validation failed', projectId, issues: report.validation.issues.length });
-        return res.status(422).json({ success: false, report });
-      }
-
-      logger.info({ module: 'teams', msg: 'Crew imported', projectId, teamId: report.teamId, dryRun });
-      res.json({ success: true, report });
-    } catch (err: any) {
-      logger.error({ module: 'teams', msg: 'Crew import failed', projectId, err: err.message });
-      res.status(500).json({ error: `Import failed: ${err.message}` });
-    }
-  });
 
   // ── GET /teams ──────────────────────────────────────────────────
 
