@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect, useCallback } from 'react';
 import { useAppStore } from '../../stores/appStore';
 import { useLeadStore } from '../../stores/leadStore';
-import { useSettingsStore, STALE_THRESHOLDS } from '../../stores/settingsStore';
+import { useSettingsStore } from '../../stores/settingsStore';
 import { apiFetch } from '../../hooks/useApi';
 
 // ── Types ───────────────────────────────────────────────────────────
@@ -10,7 +10,7 @@ export type EscalationLevel = 'green' | 'yellow' | 'red';
 
 export interface AttentionItem {
   id: string;
-  kind: 'failed' | 'blocked' | 'stale' | 'decision';
+  kind: 'failed' | 'blocked' | 'decision';
   label: string;
   /** Route to navigate to on click, or callback action */
   action: { type: 'navigate'; to: string } | { type: 'callback'; key: string };
@@ -35,12 +35,11 @@ interface AttentionApiResponse {
   summary: {
     failedCount: number;
     blockedCount: number;
-    staleCount: number;
     decisionCount: number;
     totalCount: number;
   };
   items: Array<{
-    type: 'failed' | 'blocked' | 'stale' | 'decision';
+    type: 'failed' | 'blocked' | 'decision';
     severity: 'critical' | 'warning' | 'info';
     task?: { id: string; title?: string; projectId?: string };
     decision?: { id: string; title: string; projectId?: string };
@@ -55,7 +54,6 @@ const POLL_INTERVAL_MS = 10_000;
 const POLL_INTERVAL_WS_MS = 30_000;  // Slower polling when WS is active
 const REFETCH_DEBOUNCE_MS = 2_000;   // AC-17.5: ≤1 render per 2s window
 const BLOCKED_THRESHOLD_MS = 30 * 60 * 1000;
-const STALE_THRESHOLD_MS = 15 * 60 * 1000;
 
 // ── API Hook ────────────────────────────────────────────────────────
 
@@ -69,8 +67,6 @@ const STALE_THRESHOLD_MS = 15 * 60 * 1000;
 function useAttentionApi(projectId: string | null): AttentionApiResponse | null {
   const [data, setData] = useState<AttentionApiResponse | null>(null);
   const connected = useAppStore((s) => s.connected);
-  const oversightLevel = useSettingsStore((s) => s.oversightLevel);
-  const staleThresholdMs = STALE_THRESHOLDS[oversightLevel];
 
   const fetchAttention = useCallback(async () => {
     try {
@@ -79,14 +75,13 @@ function useAttentionApi(projectId: string | null): AttentionApiResponse | null 
         params.set('scope', 'project');
         params.set('projectId', projectId);
       }
-      params.set('staleThresholdMs', String(staleThresholdMs));
       const result = await apiFetch<AttentionApiResponse>(`/attention?${params}`);
       setData(result);
     } catch {
       // API unavailable — fall back to client-side derivation
       setData(null);
     }
-  }, [projectId, staleThresholdMs]);
+  }, [projectId]);
 
   useEffect(() => {
     if (!connected) return;
@@ -223,18 +218,6 @@ export function useAttentionItems(): AttentionState {
               id: `blocked-${task.id}`,
               kind: 'blocked',
               label: `${task.title || task.id} (blocked ${Math.round((now - blockedSince) / 60_000)}m)`,
-              action: { type: 'navigate', to: `/projects/${projectId}/tasks` },
-            });
-          }
-        }
-        if (task.dagStatus === 'running') {
-          const startedAt = task.startedAt ? new Date(task.startedAt).getTime() : 0;
-          const duration = startedAt ? now - startedAt : 0;
-          if (duration > STALE_THRESHOLD_MS) {
-            items.push({
-              id: `stale-${task.id}`,
-              kind: 'stale',
-              label: `${task.title || task.id} (running ${Math.round(duration / 60_000)}m)`,
               action: { type: 'navigate', to: `/projects/${projectId}/tasks` },
             });
           }

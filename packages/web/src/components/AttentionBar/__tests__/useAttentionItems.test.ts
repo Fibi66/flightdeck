@@ -26,7 +26,6 @@ const mockSettingsState = {
 };
 vi.mock('../../../stores/settingsStore', () => ({
   useSettingsStore: (selector: (s: typeof mockSettingsState) => any) => selector(mockSettingsState),
-  STALE_THRESHOLDS: { detailed: 600000, standard: 900000, minimal: 1800000 },
 }));
 
 const mockApiFetch = vi.fn();
@@ -75,9 +74,8 @@ function makeApiResponse(overrides: Record<string, any> = {}) {
     summary: {
       failedCount: 1,
       blockedCount: 0,
-      staleCount: 1,
       decisionCount: 1,
-      totalCount: 3,
+      totalCount: 2,
     },
     items: [
       {
@@ -85,12 +83,6 @@ function makeApiResponse(overrides: Record<string, any> = {}) {
         severity: 'critical',
         task: { id: 'task-1', title: 'Deploy auth service', projectId: 'proj-1' },
         reason: 'Build failed',
-      },
-      {
-        type: 'stale',
-        severity: 'warning',
-        task: { id: 'task-2', title: 'Run integration tests', projectId: 'proj-1' },
-        durationMs: 1_800_000, // 30 minutes
       },
       {
         type: 'decision',
@@ -146,18 +138,13 @@ describe('useAttentionItems', () => {
       const { result } = renderHook(() => useAttentionItems());
 
       await waitFor(() => {
-        expect(result.current.items.length).toBe(3);
+        expect(result.current.items.length).toBe(2);
       });
 
       const failed = result.current.items.find(i => i.kind === 'failed');
       expect(failed).toBeDefined();
       expect(failed!.label).toBe('Deploy auth service');
       expect(failed!.action).toEqual({ type: 'navigate', to: '/projects/proj-1/tasks' });
-
-      const stale = result.current.items.find(i => i.kind === 'stale');
-      expect(stale).toBeDefined();
-      expect(stale!.label).toContain('Run integration tests');
-      expect(stale!.label).toContain('30m'); // durationMs formatted
 
       const decision = result.current.items.find(i => i.kind === 'decision');
       expect(decision).toBeDefined();
@@ -398,18 +385,6 @@ describe('useAttentionItems', () => {
       expect(mockApiFetch).not.toHaveBeenCalled();
     });
 
-    it('passes staleThresholdMs from Trust Dial settings to API', async () => {
-      mockSettingsState.oversightLevel = 'detailed'; // 10 min threshold
-      mockApiFetch.mockResolvedValue(makeApiResponse());
-      mockAppState.agents = [makeAgent('a1', 'running')];
-
-      renderHook(() => useAttentionItems());
-
-      await waitFor(() => {
-        expect(mockApiFetch).toHaveBeenCalledWith(
-          expect.stringContaining('staleThresholdMs=600000')
-        );
-      });
     });
   });
 });

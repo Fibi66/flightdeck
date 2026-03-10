@@ -36,7 +36,7 @@ const SAMPLE_TASKS: DagTask[] = [
   },
   {
     id: 'task-5', leadId: 'lead-1', projectId: 'proj-a', role: 'tester',
-    title: 'Stale runner', description: 'This task is stale', files: [], dependsOn: [],
+    title: 'Long runner', description: 'This task is long-running', files: [], dependsOn: [],
     dagStatus: 'running', priority: 1, assignedAgentId: 'agent-2',
     createdAt: '2026-01-01T00:00:00Z', startedAt: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
   },
@@ -281,15 +281,6 @@ describe('GET /attention — attention items', () => {
     expect(blockedItem.task.id).toBe('task-2');
   });
 
-  it('includes stale running tasks', async () => {
-    const res = await fetch(`${baseUrl}/attention`);
-    const body = await res.json();
-    const staleItem = body.items.find((i: any) => i.type === 'stale');
-    expect(staleItem).toBeDefined();
-    expect(staleItem.task.id).toBe('task-5');
-    expect(staleItem.durationMs).toBeGreaterThan(15 * 60 * 1000);
-  });
-
   it('includes pending decisions', async () => {
     const res = await fetch(`${baseUrl}/attention`);
     const body = await res.json();
@@ -302,19 +293,10 @@ describe('GET /attention — attention items', () => {
   it('scopes to project when requested', async () => {
     const res = await fetch(`${baseUrl}/attention?scope=project&projectId=proj-b`);
     const body = await res.json();
-    // proj-b has: 1 failed task, 0 blocked, 0 stale running, 0 decisions (dec-1 is proj-a)
+    // proj-b has: 1 failed task, 0 blocked, 0 decisions (dec-1 is proj-a)
     expect(body.summary.failedCount).toBe(1);
     expect(body.summary.blockedCount).toBe(0);
     expect(body.summary.decisionCount).toBe(0);
-  });
-
-  it('respects custom staleThresholdMs', async () => {
-    // Set threshold to 1 hour — task-5 (30 min old) should NOT be stale
-    const res = await fetch(`${baseUrl}/attention?staleThresholdMs=3600000`);
-    const body = await res.json();
-    const staleItem = body.items.find((i: any) => i.type === 'stale');
-    expect(staleItem).toBeUndefined();
-    expect(body.summary.staleCount).toBe(0);
   });
 
   it('returns green escalation when no issues', async () => {

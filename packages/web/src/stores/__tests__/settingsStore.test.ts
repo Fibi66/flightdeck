@@ -1,7 +1,7 @@
 // packages/web/src/stores/__tests__/settingsStore.test.ts
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { useSettingsStore, STALE_THRESHOLDS, ESCALATION_RULES, shouldNotify } from '../settingsStore';
+import { useSettingsStore, ESCALATION_RULES, shouldNotify } from '../settingsStore';
 import type { OversightLevel } from '../settingsStore';
 
 describe('settingsStore — Trust Dial', () => {
@@ -83,14 +83,6 @@ describe('settingsStore — Trust Dial', () => {
   it('minimal mode has no yellow, red requires failure', () => {
     expect(ESCALATION_RULES.minimal.yellowThreshold).toBe(Infinity);
     expect(ESCALATION_RULES.minimal.redRequiresFailure).toBe(true);
-  });
-
-  // ── AC-16.3: Stale thresholds ─────────────────────────────
-
-  it('maps correct stale thresholds per level', () => {
-    expect(STALE_THRESHOLDS.detailed).toBe(10 * 60 * 1000);
-    expect(STALE_THRESHOLDS.standard).toBe(15 * 60 * 1000);
-    expect(STALE_THRESHOLDS.minimal).toBe(30 * 60 * 1000);
   });
 
   // ── AC-16.5: Notification gating by oversight level ────────

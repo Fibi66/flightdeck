@@ -100,13 +100,6 @@ export function timeInStatus(task: DagTask): string {
   return `${Math.floor(diffMs / 86_400_000)}d`;
 }
 
-export const STALE_THRESHOLD_MS = 15 * 60 * 1000; // 15 minutes
-
-export function isStale(task: DagTask): boolean {
-  if (task.dagStatus !== 'running' || !task.startedAt) return false;
-  const elapsed = Date.now() - new Date(task.startedAt.endsWith('Z') ? task.startedAt : task.startedAt.replace(' ', 'T') + 'Z').getTime();
-  return elapsed > STALE_THRESHOLD_MS;
-}
 
 export const COLUMN_TOOLTIPS: Record<DagTaskStatus, string> = {
   pending: 'Tasks waiting for dependencies to complete',

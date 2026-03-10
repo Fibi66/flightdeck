@@ -3,7 +3,7 @@
  *
  * Covers: column rendering, task grouping by status, card display,
  * empty state, hide-empty toggle, column collapse, task sorting,
- * expanded card details, dependency rendering, filter bar, stale indicator,
+ * expanded card details, dependency rendering, filter bar,
  * agent on card face, time-in-status, context menu, failed-never-hidden,
  * auto-collapse done, color semantics, column tooltips, persistent state,
  * Add Task form (submission, validation, errors), context menu API calls,
@@ -183,26 +183,6 @@ describe('KanbanBoard', () => {
       expect(screen.getByTestId('agent-badge')).toBeTruthy();
     });
 
-    it('shows stale badge for long-running tasks (R7)', () => {
-      const staleStartedAt = new Date(Date.now() - 20 * 60 * 1000).toISOString(); // 20 min ago
-      const tasks = [
-        makeTask({ id: 's1', dagStatus: 'running', startedAt: staleStartedAt }),
-      ];
-      render(<KanbanBoard dagStatus={makeDagStatus(tasks)} />);
-
-      expect(screen.getByTestId('stale-badge')).toBeTruthy();
-      expect(screen.getByText('STALE')).toBeTruthy();
-    });
-
-    it('does not show stale badge for recently started tasks', () => {
-      const recentStart = new Date(Date.now() - 5 * 60 * 1000).toISOString(); // 5 min ago
-      const tasks = [
-        makeTask({ id: 'ns1', dagStatus: 'running', startedAt: recentStart }),
-      ];
-      render(<KanbanBoard dagStatus={makeDagStatus(tasks)} />);
-
-      expect(screen.queryByTestId('stale-badge')).toBeNull();
-    });
   });
 
   describe('task sorting', () => {

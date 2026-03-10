@@ -94,12 +94,10 @@ export function tasksRoutes(ctx: AppContext): Router {
    * GET /attention
    *   ?scope=global|project
    *   &projectId=<id>
-   *   &staleThresholdMs=900000  (default 15 min)
    *
    * Aggregates items that need user attention:
    *   - Failed tasks (with failureReason)
    *   - Blocked tasks (duration exceeds threshold)
-   *   - Stale running tasks (running longer than threshold)
    *   - Pending decisions (needsConfirmation && status === 'recorded')
    *
    * Used by: AttentionBar, KanbanBoard Command Center, HomeDashboard
@@ -108,7 +106,6 @@ export function tasksRoutes(ctx: AppContext): Router {
     const taskDAG = agentManager.getTaskDAG();
     const scope = (req.query.scope as string) || 'global';
     const projectId = req.query.projectId as string | undefined;
-    const staleThresholdMs = parseInt(req.query.staleThresholdMs as string, 10) || 15 * 60 * 1000;
 
     // Get tasks scoped appropriately
     let tasks: DagTask[];
@@ -139,28 +136,10 @@ export function tasksRoutes(ctx: AppContext): Router {
         const durationMs = now - new Date(blockedSince).getTime();
         return {
           type: 'blocked' as const,
-          severity: (durationMs > staleThresholdMs ? 'warning' : 'info') as 'warning' | 'info',
+          severity: (durationMs > 30 * 60 * 1000 ? 'warning' : 'info') as 'warning' | 'info',
           task: t,
           durationMs,
           blockedSince,
-        };
-      });
-
-    // Stale running tasks (running longer than threshold)
-    const stale = tasks
-      .filter(t => t.dagStatus === 'running' && t.startedAt)
-      .filter(t => {
-        const elapsed = now - new Date(t.startedAt!).getTime();
-        return elapsed > staleThresholdMs;
-      })
-      .map(t => {
-        const durationMs = now - new Date(t.startedAt!).getTime();
-        return {
-          type: 'stale' as const,
-          severity: (durationMs > staleThresholdMs * 2 ? 'critical' : 'warning') as 'critical' | 'warning',
-          task: t,
-          durationMs,
-          startedAt: t.startedAt!,
         };
       });
 
@@ -191,15 +170,14 @@ export function tasksRoutes(ctx: AppContext): Router {
     const summary = {
       failedCount: failed.length,
       blockedCount: blocked.length,
-      staleCount: stale.length,
       decisionCount: pendingDecisions.length,
-      totalCount: failed.length + blocked.length + stale.length + pendingDecisions.length,
+      totalCount: failed.length + blocked.length + pendingDecisions.length,
     };
 
     // Escalation level: green / yellow / red
     let escalation: 'green' | 'yellow' | 'red' = 'green';
     if (summary.totalCount > 0) escalation = 'yellow';
-    if (failed.length > 0 || stale.some(s => s.severity === 'critical')) escalation = 'red';
+    if (failed.length > 0) escalation = 'red';
 
     return res.json({
       scope,
@@ -208,9 +186,7 @@ export function tasksRoutes(ctx: AppContext): Router {
       summary,
       items: [
         ...failed,
-        ...stale.filter(s => s.severity === 'critical'),
         ...pendingDecisions,
-        ...stale.filter(s => s.severity === 'warning'),
         ...blocked,
       ],
     });

@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlertTriangle, CheckCircle2, XCircle, Clock, MessageSquareWarning, Users, Eye, WifiOff } from 'lucide-react';
+import { CheckCircle2, XCircle, Clock, MessageSquareWarning, Users, Eye, WifiOff } from 'lucide-react';
 import { useAppStore } from '../../stores/appStore';
 import { useSettingsStore, type OversightLevel } from '../../stores/settingsStore';
 import { useAttentionItems, type AttentionItem, type EscalationLevel } from './useAttentionItems';
@@ -48,14 +48,12 @@ const ESCALATION_STYLES: Record<EscalationLevel, {
 const ITEM_ICONS: Record<AttentionItem['kind'], typeof XCircle> = {
   failed: XCircle,
   blocked: Clock,
-  stale: AlertTriangle,
   decision: MessageSquareWarning,
 };
 
 const ITEM_COLORS: Record<AttentionItem['kind'], string> = {
   failed: 'text-red-400',
   blocked: 'text-amber-400',
-  stale: 'text-yellow-400',
   decision: 'text-blue-400',
 };
 

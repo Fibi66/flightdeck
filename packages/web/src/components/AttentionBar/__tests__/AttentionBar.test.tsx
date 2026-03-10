@@ -34,7 +34,6 @@ vi.mock('../../../stores/leadStore', () => ({
 
 vi.mock('../../../stores/settingsStore', () => ({
   useSettingsStore: (sel: any) => sel({ oversightLevel: 'standard' }),
-  STALE_THRESHOLDS: { detailed: 600000, standard: 900000, minimal: 1800000 },
 }));
 
 // Mock apiFetch — defaults to rejecting (triggers fallback to client-side)
@@ -354,7 +353,7 @@ describe('AttentionBar', () => {
       mockApiFetch.mockResolvedValue({
         scope: 'global',
         escalation: 'red',
-        summary: { failedCount: 2, blockedCount: 0, staleCount: 0, decisionCount: 0, totalCount: 2 },
+        summary: { failedCount: 2, blockedCount: 0, decisionCount: 0, totalCount: 2 },
         items: [
           { type: 'failed', severity: 'critical', task: { id: 't1', title: 'Build failed', projectId: 'p1' } },
           { type: 'failed', severity: 'critical', task: { id: 't2', title: 'Test failed', projectId: 'p1' } },
@@ -387,7 +386,7 @@ describe('AttentionBar', () => {
         scope: 'project',
         projectId: 'proj-1',
         escalation: 'green',
-        summary: { failedCount: 0, blockedCount: 0, staleCount: 0, decisionCount: 0, totalCount: 0 },
+        summary: { failedCount: 0, blockedCount: 0, decisionCount: 0, totalCount: 0 },
         items: [],
       });
       mockAppState.agents = [makeAgent('a1', 'running')];

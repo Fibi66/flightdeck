@@ -19,7 +19,7 @@ import { apiFetch } from '../../hooks/useApi';
 import { dagTaskText } from '../../utils/statusColors';
 import { useSettingsStore } from '../../stores/settingsStore';
 import type { DagTask } from '../../types';
-import { truncate, priorityBadge, timeInStatus, isStale, TRUNCATE_LENGTHS } from './kanbanConstants';
+import { truncate, priorityBadge, timeInStatus, TRUNCATE_LENGTHS } from './kanbanConstants';
 
 // ── Task Card Component ─────────────────────────────────────────────
 
@@ -46,7 +46,6 @@ export function TaskCard({ task, allTasks, isDragOverlay, projectId, onTaskUpdat
   const commentInputRef = useRef<HTMLTextAreaElement>(null);
   const title = task.title || task.description || task.id;
   const hasDetails = task.dependsOn.length > 0 || task.files.length > 0 || task.assignedAgentId;
-  const stale = isStale(task);
   const statusTime = timeInStatus(task);
   const isArchived = !!task.archivedAt;
 
@@ -163,7 +162,7 @@ export function TaskCard({ task, allTasks, isDragOverlay, projectId, onTaskUpdat
   return (
     <div
       className={`group/card bg-th-bg rounded-md border ${
-        stale ? 'border-l-2 border-l-amber-400 border-t-th-border border-r-th-border border-b-th-border' : 'border-th-border'
+        'border-th-border'
       } ${isMinimal ? 'p-1.5' : 'p-2.5'} shadow-sm transition-all ${
         isDragOverlay ? 'opacity-80 shadow-lg ring-2 ring-blue-500/30' : 'hover:border-th-text-muted/30 cursor-pointer'
       } ${isArchived ? 'opacity-50' : ''}`}
@@ -191,11 +190,6 @@ export function TaskCard({ task, allTasks, isDragOverlay, projectId, onTaskUpdat
           </span>
         </div>
         <div className="flex items-center gap-1 flex-shrink-0">
-          {stale && (
-            <span className="text-[9px] px-1 py-0.5 rounded bg-amber-500/20 text-amber-400 font-medium" data-testid="stale-badge">
-              STALE
-            </span>
-          )}
           {isArchived && (
             <span className="text-[9px] px-1 py-0.5 rounded bg-th-bg-muted text-th-text-muted font-medium" data-testid="archived-badge">
               ARCHIVED

@@ -5,9 +5,9 @@ export type ThemeMode = 'dark' | 'light' | 'system';
 
 /**
  * Oversight level for the Trust Dial (AC-16.1).
- * - detailed: Yellow@1 exception, stale@10m, all notifications, standard density
- * - standard: Yellow@2, stale@15m, exceptions only (default)
- * - minimal:  Red-only@3+, stale@30m, compact cards, critical only
+ * - detailed: Yellow@1 exception, all notifications, standard density
+ * - standard: Yellow@2, exceptions only (default)
+ * - minimal:  Red-only@3+, compact cards, critical only
  */
 export type OversightLevel = 'detailed' | 'standard' | 'minimal';
 
@@ -198,13 +198,6 @@ export function shouldNotify(severity: NotificationSeverity, level?: OversightLe
   return effective === 'detailed';
 }
 
-// ── Trust Dial threshold mappings (AC-16.2, AC-16.3) ────────────────
-
-export const STALE_THRESHOLDS: Record<OversightLevel, number> = {
-  detailed: 10 * 60 * 1000,  // 10 min
-  standard: 15 * 60 * 1000,  // 15 min
-  minimal:  30 * 60 * 1000,  // 30 min
-};
 
 /** Escalation rules per oversight level (AC-16.2) */
 export const ESCALATION_RULES: Record<OversightLevel, {
