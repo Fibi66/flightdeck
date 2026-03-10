@@ -100,7 +100,7 @@ export function ResumeSessionDialog({ projectId, lastSession, onClose, onResume 
       });
       onResume();
       if (response?.id) {
-        navigate(`/projects/${projectId}`);
+        navigate(`/projects/${projectId}/session`);
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to resume project');

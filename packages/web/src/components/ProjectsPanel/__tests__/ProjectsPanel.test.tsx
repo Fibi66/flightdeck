@@ -325,7 +325,7 @@ describe('ProjectsPanel', () => {
     await waitFor(() => {
       expect(mockApiFetch).toHaveBeenCalledWith('/projects/proj-1/resume', {
         method: 'POST',
-        body: JSON.stringify({}),
+        body: JSON.stringify({ resumeAll: true }),
       });
     });
   });
