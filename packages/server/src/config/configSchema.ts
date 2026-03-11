@@ -226,6 +226,8 @@ export const flightdeckConfigSchema = z.preprocess(
     notifications: sectionDefault(notificationsSchema),
     predictions: sectionDefault(predictionsSchema),
     providerSettings: z.preprocess((val) => val ?? {}, z.record(z.string(), providerSettingsSchema)),
+    /** Ordered provider preference list — first = most preferred */
+    providerRanking: z.preprocess((val) => val ?? [], z.array(z.string())).default([]),
   }),
 );
 

@@ -222,4 +222,37 @@ export class ProviderManager {
     if (!this.db) return;
     this.db.setSetting(`${SETTING_PREFIX}active`, provider);
   }
+
+  // ── Provider Ranking ───────────────────────────────────────
+
+  /**
+   * Get the user's preferred provider ordering.
+   * Returns all provider IDs in preference order (most preferred first).
+   * Missing providers are appended at the end in default order.
+   */
+  getProviderRanking(): ProviderId[] {
+    const allIds = Object.keys(PROVIDER_PRESETS) as ProviderId[];
+    let stored: string[] = [];
+    if (this.configStore) {
+      stored = this.configStore.current.providerRanking ?? [];
+    } else if (this.db) {
+      const raw = this.db.getSetting(`${SETTING_PREFIX}ranking`);
+      if (raw) { try { stored = JSON.parse(raw); } catch { /* ignore */ } }
+    }
+    // Filter to valid IDs, then append any missing in default order
+    const ranked = stored.filter((id): id is ProviderId => id in PROVIDER_PRESETS);
+    const missing = allIds.filter(id => !ranked.includes(id));
+    return [...ranked, ...missing];
+  }
+
+  setProviderRanking(ranking: ProviderId[]): void {
+    if (this.configStore) {
+      this.configStore.writePartial({ providerRanking: ranking }).catch(err =>
+        logger.warn({ msg: 'Failed to persist provider ranking', error: err }),
+      );
+      return;
+    }
+    if (!this.db) return;
+    this.db.setSetting(`${SETTING_PREFIX}ranking`, JSON.stringify(ranking));
+  }
 }

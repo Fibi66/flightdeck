@@ -334,17 +334,21 @@ export class AgentManager extends TypedEmitter<AgentManagerEvents> {
 
   /**
    * Generate dynamic provider list for lead prompt based on installed/enabled state.
-   * Returns only providers the user has enabled and that are installed.
+   * Returns only providers the user has enabled, ordered by user preference ranking.
    */
   private generateProviderList(): string {
     const lines: string[] = [];
-    const allProviders = Object.keys(PROVIDER_PRESETS) as ProviderId[];
+    // Use user's ranking order if available, otherwise default order
+    const orderedProviders = this.providerManager
+      ? this.providerManager.getProviderRanking()
+      : Object.keys(PROVIDER_PRESETS) as ProviderId[];
 
-    for (const id of allProviders) {
+    for (const id of orderedProviders) {
       const preset = PROVIDER_PRESETS[id];
+      if (!preset) continue;
       const enabled = this.providerManager
         ? this.providerManager.isProviderEnabled(id)
-        : true; // default to true if ProviderManager not available
+        : true;
       if (!enabled) continue;
 
       const installed = this.providerManager
@@ -357,7 +361,7 @@ export class AgentManager extends TypedEmitter<AgentManagerEvents> {
     if (lines.length === 0) {
       return 'No providers are enabled. Ask the user to enable providers in Settings.';
     }
-    return lines.join('\n');
+    return lines.join('\n') + '\nProviders are listed in the user\'s preferred order. Prefer earlier providers when no specific provider is needed.';
   }
 
   /**

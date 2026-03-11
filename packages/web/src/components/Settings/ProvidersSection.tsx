@@ -6,7 +6,7 @@
  * required environment variables, and default CLI arguments.
  */
 import { useState, useEffect, useCallback } from 'react';
-import { Cpu, Loader2, Zap, ExternalLink, ChevronDown, ChevronRight, Star, Terminal, Key, Settings2 } from 'lucide-react';
+import { Cpu, Loader2, Zap, ExternalLink, ChevronDown, ChevronRight, Star, Terminal, Key, Settings2, ArrowUp, ArrowDown } from 'lucide-react';
 import { apiFetch } from '../../hooks/useApi';
 import { StatusBadge, providerStatusProps } from '../ui/StatusBadge';
 import { EmptyState } from '../ui/EmptyState';
@@ -114,13 +114,21 @@ function PreviewBadge() {
 function ProviderCard({
   provider,
   isActive,
+  rank,
+  totalCount,
   onToggle,
   onSetActive,
+  onMoveUp,
+  onMoveDown,
 }: {
   provider: ProviderStatus;
   isActive: boolean;
+  rank: number;
+  totalCount: number;
   onToggle: (id: string, enabled: boolean) => void;
   onSetActive: (id: string) => void;
+  onMoveUp: (id: string) => void;
+  onMoveDown: (id: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -169,6 +177,7 @@ function ProviderCard({
         </span>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
+            <span className="text-[10px] font-mono text-th-text-muted w-4 text-center">{rank}</span>
             <span className="text-sm font-medium text-th-text-alt">{provider.name}</span>
             {PROVIDER_PREVIEW[provider.id] && <PreviewBadge />}
             <StatusBadge {...providerStatusProps(provider)} />
@@ -183,6 +192,27 @@ function ProviderCard({
               ? `${authLabel}${provider.version ? ` · ${provider.version}` : ''}`
               : 'CLI not found on PATH'}
           </div>
+        </div>
+        {/* Rank up/down */}
+        <div className="flex flex-col gap-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+          <button
+            onClick={() => onMoveUp(provider.id)}
+            disabled={rank <= 1}
+            className="p-0.5 text-th-text-muted hover:text-th-text-alt disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+            aria-label={`Move ${provider.name} up`}
+            title="Move up"
+          >
+            <ArrowUp className="w-3 h-3" />
+          </button>
+          <button
+            onClick={() => onMoveDown(provider.id)}
+            disabled={rank >= totalCount}
+            className="p-0.5 text-th-text-muted hover:text-th-text-alt disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+            aria-label={`Move ${provider.name} down`}
+            title="Move down"
+          >
+            <ArrowDown className="w-3 h-3" />
+          </button>
         </div>
         {/* Enable/disable toggle */}
         <button
@@ -339,6 +369,7 @@ function ProviderCard({
 
 export function ProvidersSection({ activeProviderId }: { activeProviderId?: string }) {
   const [providers, setProviders] = useState<ProviderStatus[]>([]);
+  const [ranking, setRanking] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeId, setActiveId] = useState(activeProviderId ?? 'copilot');
@@ -348,11 +379,24 @@ export function ProvidersSection({ activeProviderId }: { activeProviderId?: stri
   }, [activeProviderId]);
 
   useEffect(() => {
-    apiFetch<ProviderStatus[]>('/settings/providers')
-      .then(setProviders)
+    Promise.all([
+      apiFetch<ProviderStatus[]>('/settings/providers'),
+      apiFetch<{ ranking: string[] }>('/settings/provider-ranking'),
+    ])
+      .then(([provs, { ranking: r }]) => {
+        setProviders(provs);
+        setRanking(r);
+      })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
+
+  // Sort providers by ranking
+  const sortedProviders = [...providers].sort((a, b) => {
+    const ai = ranking.indexOf(a.id);
+    const bi = ranking.indexOf(b.id);
+    return (ai === -1 ? Infinity : ai) - (bi === -1 ? Infinity : bi);
+  });
 
   const handleToggle = useCallback(async (id: string, enabled: boolean) => {
     setProviders((prev) =>
@@ -383,6 +427,38 @@ export function ProvidersSection({ activeProviderId }: { activeProviderId?: stri
     }
   }, [activeId]);
 
+  const handleMoveUp = useCallback(async (id: string) => {
+    const idx = ranking.indexOf(id);
+    if (idx <= 0) return;
+    const newRanking = [...ranking];
+    [newRanking[idx - 1], newRanking[idx]] = [newRanking[idx], newRanking[idx - 1]];
+    setRanking(newRanking);
+    try {
+      await apiFetch('/settings/provider-ranking', {
+        method: 'PUT',
+        body: JSON.stringify({ ranking: newRanking }),
+      });
+    } catch {
+      setRanking(ranking);
+    }
+  }, [ranking]);
+
+  const handleMoveDown = useCallback(async (id: string) => {
+    const idx = ranking.indexOf(id);
+    if (idx < 0 || idx >= ranking.length - 1) return;
+    const newRanking = [...ranking];
+    [newRanking[idx], newRanking[idx + 1]] = [newRanking[idx + 1], newRanking[idx]];
+    setRanking(newRanking);
+    try {
+      await apiFetch('/settings/provider-ranking', {
+        method: 'PUT',
+        body: JSON.stringify({ ranking: newRanking }),
+      });
+    } catch {
+      setRanking(ranking);
+    }
+  }, [ranking]);
+
   const installedCount = providers.filter((p) => p.installed).length;
 
   return (
@@ -390,6 +466,9 @@ export function ProvidersSection({ activeProviderId }: { activeProviderId?: stri
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-xs font-medium text-th-text-muted uppercase tracking-wider flex items-center gap-2">
           <Cpu className="w-3.5 h-3.5" /> CLI Providers
+          <span className="text-[10px] font-normal normal-case tracking-normal text-th-text-muted/60">
+            — ordered by preference
+          </span>
         </h3>
         {!loading && (
           <span className="text-[10px] text-th-text-muted">
@@ -411,7 +490,7 @@ export function ProvidersSection({ activeProviderId }: { activeProviderId?: stri
         </div>
       )}
 
-      {!loading && !error && providers.length === 0 && (
+      {!loading && !error && sortedProviders.length === 0 && (
         <EmptyState
           icon={<Cpu className="w-10 h-10 opacity-50" />}
           title="No providers configured"
@@ -420,15 +499,19 @@ export function ProvidersSection({ activeProviderId }: { activeProviderId?: stri
         />
       )}
 
-      {!loading && !error && providers.length > 0 && (
+      {!loading && !error && sortedProviders.length > 0 && (
         <div className="space-y-2" data-testid="providers-list">
-          {providers.map((provider) => (
+          {sortedProviders.map((provider, idx) => (
             <ProviderCard
               key={provider.id}
               provider={provider}
               isActive={provider.id === activeId}
+              rank={idx + 1}
+              totalCount={sortedProviders.length}
               onToggle={handleToggle}
               onSetActive={handleSetActive}
+              onMoveUp={handleMoveUp}
+              onMoveDown={handleMoveDown}
             />
           ))}
         </div>
