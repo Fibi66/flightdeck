@@ -99,6 +99,12 @@ export function FocusPanel({ agentId, onClose }: FocusPanelProps) {
         {activeTab === 'overview' && agent && (
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-2">
+              {agent.provider && (
+                <div className="text-[11px]">
+                  <span className="text-th-text-muted">Provider:</span>{' '}
+                  <span className="text-blue-400">{agent.provider}</span>
+                </div>
+              )}
               <div className="text-[11px]">
                 <span className="text-th-text-muted">Model:</span>{' '}
                 <span className="text-th-text-alt">{agent.model ?? 'default'}</span>

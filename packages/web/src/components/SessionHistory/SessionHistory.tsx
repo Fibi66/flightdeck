@@ -151,9 +151,10 @@ export function SessionHistory({ projectId, hasActiveLead }: SessionHistoryProps
                         <span
                           key={a.agentId}
                           className="text-xs px-1.5 py-0.5 rounded bg-th-bg-muted/50 text-th-text-muted"
-                          title={`${a.role} — ${a.model}${a.sessionId ? ' (resumable)' : ''}`}
+                          title={`${a.role}${a.provider ? ` — ${a.provider}` : ''} — ${a.model}${a.sessionId ? ' (resumable)' : ''}`}
                         >
                           {a.role}
+                          {a.provider && <span className="text-[10px] bg-blue-500/15 text-blue-400 px-1 py-px rounded ml-0.5">{a.provider}</span>}
                           <span className="opacity-60 ml-0.5">({a.model})</span>
                         </span>
                       ))}

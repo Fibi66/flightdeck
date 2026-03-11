@@ -212,7 +212,7 @@ function CrewGroup({ leadId, agents, summary, defaultExpanded = true, onSelectAg
               )}
             </div>
             <div className="flex items-center gap-3 text-[10px] text-th-text-muted mt-0.5">
-              {lead && <span>🎖️ Lead: {lead.agentId.slice(0, 8)} · {lead.model}</span>}
+              {lead && <span>🎖️ Lead: {lead.agentId.slice(0, 8)}{lead.provider ? ` · ${lead.provider}` : ''} · {lead.model}</span>}
               {latestActivity && <span>{formatRelativeTime(latestActivity)}</span>}
             </div>
           </div>
@@ -363,6 +363,9 @@ function AgentRow({ agent, isLead, isSelected, onSelect, onRemove, crewAgents }:
           <div className="flex items-center gap-2">
             <span className="text-xs capitalize">{agent.role}</span>
             <code className="text-[10px] text-th-text-muted">{agent.agentId.slice(0, 8)}</code>
+            {agent.provider && (
+              <span className="text-[10px] bg-blue-500/15 text-blue-400 px-1 py-px rounded">{agent.provider}</span>
+            )}
             <span className="text-[10px] text-th-text-muted">{agent.model}</span>
           </div>
           {agent.lastTaskSummary && (
@@ -370,11 +373,6 @@ function AgentRow({ agent, isLead, isSelected, onSelect, onRemove, crewAgents }:
           )}
         </div>
         <StatusBadge {...agentStatusProps(agent.status, agent.liveStatus)} />
-        {agent.provider && (
-          <span className="px-1 py-0.5 rounded text-[10px] bg-th-bg-alt text-th-text-muted border border-th-border capitalize shrink-0">
-            {agent.provider}
-          </span>
-        )}
         {canRemove && onRemove && (
           <button
             onClick={handleRemove}

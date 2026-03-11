@@ -44,6 +44,7 @@ interface RosterAgent {
   agentId: string;
   role: string;
   model: string;
+  provider?: string;
   status: AgentStatus;
   liveStatus: LiveStatus;
   teamId: string;
@@ -70,6 +71,7 @@ interface AgentProfile {
   agentId: string;
   role: string;
   model: string;
+  provider?: string;
   status: AgentStatus;
   liveStatus: LiveStatus;
   teamId: string;
@@ -263,6 +265,7 @@ function ProfilePanel({ agentId, teamId, onClose }: {
         {activeTab === 'overview' && (
           <div className="space-y-3 text-sm">
             <div className="grid grid-cols-2 gap-3">
+              {profile.provider && <div><span className="text-th-text-alt">Provider:</span> <span className="text-blue-400">{profile.provider}</span></div>}
               <div><span className="text-th-text-alt">Model:</span> <span className="text-th-text">{profile.model}</span></div>
               <div><span className="text-th-text-alt">Project:</span> <span className="text-th-text">{profile.projectId ?? '—'}</span></div>
               <div><span className="text-th-text-alt">Knowledge:</span> <span className="text-th-text">{profile.knowledgeCount} entries</span></div>
@@ -313,6 +316,7 @@ function ProfilePanel({ agentId, teamId, onClose }: {
         {activeTab === 'settings' && (
           <div className="space-y-3 text-sm">
             <div className="grid grid-cols-2 gap-3">
+              {profile.provider && <div><span className="text-th-text-alt">Provider:</span> <span className="text-blue-400">{profile.provider}</span></div>}
               <div><span className="text-th-text-alt">Model:</span> <span className="text-th-text">{profile.model}</span></div>
             </div>
           </div>

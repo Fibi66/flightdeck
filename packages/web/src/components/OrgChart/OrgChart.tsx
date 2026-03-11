@@ -50,7 +50,12 @@ function AgentNode({ agent }: { agent: AgentInfo }) {
       {agent.role?.icon && <span className="mr-1">{agent.role.icon}</span>}
       <span className="text-sm font-medium text-th-text">{roleName}</span>
       <div className="text-xs font-mono" style={{ color: idColor(agent.id) }}>{shortId}</div>
-      {modelLabel && <div className="text-xs text-th-text-muted mt-0.5">{modelLabel}</div>}
+      {(agent.provider || modelLabel) && (
+        <div className="text-xs text-th-text-muted mt-0.5">
+          {agent.provider && <span className="text-[10px] bg-blue-500/15 text-blue-400 px-1 py-px rounded mr-1">{agent.provider}</span>}
+          {modelLabel}
+        </div>
+      )}
       <div className={`text-[10px] mt-1 px-1.5 py-0.5 rounded-full inline-block ${s.badge}`}>
         {agent.status}
       </div>

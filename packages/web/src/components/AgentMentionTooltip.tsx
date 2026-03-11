@@ -8,6 +8,7 @@ export interface MentionAgent {
   status?: string;
   task?: string;
   model?: string;
+  provider?: string;
 }
 
 /**
@@ -102,6 +103,12 @@ export function AgentMentionTooltip({
                 <span className={`inline-block w-1.5 h-1.5 rounded-full ${statusDot}`} />
                 {agent.status ?? 'unknown'}
               </span>
+              {agent.provider && (
+                <>
+                  <span className="text-th-border">·</span>
+                  <span className="text-blue-400 truncate">{agent.provider}</span>
+                </>
+              )}
               {agent.model && (
                 <>
                   <span className="text-th-border">·</span>

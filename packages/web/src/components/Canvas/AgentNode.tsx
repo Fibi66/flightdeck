@@ -73,8 +73,9 @@ function AgentNodeInner({ data }: NodeProps & { data: CanvasNodeData }) {
           <span className="text-[10px] text-th-text-muted font-mono">({shortId})</span>
         </div>
 
-        {/* Model */}
+        {/* Provider + Model */}
         <p className="text-[10px] text-th-text-muted mb-1.5 truncate">
+          {agent.provider && <span className="text-blue-400 mr-1">{agent.provider}</span>}
           {agent.model ?? 'default model'}
         </p>
 
