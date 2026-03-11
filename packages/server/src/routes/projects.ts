@@ -146,7 +146,13 @@ export function projectsRoutes(ctx: AppContext): Router {
           const meta = a.metadata ?? {};
           return meta.parentId === session.leadId;
         })
-        .map(a => ({ role: a.role, model: a.model || 'unknown', agentId: a.agentId, sessionId: a.sessionId || null }));
+        .map(a => ({
+          role: a.role,
+          model: a.model || 'unknown',
+          agentId: a.agentId,
+          sessionId: a.sessionId || null,
+          lastTaskSummary: a.lastTaskSummary || null,
+        }));
 
       // Task summary from DAG
       const tasks = taskDAG.getTasks(session.leadId);

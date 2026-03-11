@@ -20,6 +20,7 @@ export interface SessionAgent {
   model: string;
   agentId: string;
   sessionId: string | null;
+  lastTaskSummary?: string | null;
 }
 
 export interface SessionDetail {
