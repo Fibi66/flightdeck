@@ -625,6 +625,13 @@ export class AgentManager extends TypedEmitter<AgentManagerEvents> {
     });
 
     agent.onUserInputRequest((request) => {
+      // Only root leads (no parent) can ask the user — other agents get an auto-response
+      if (agent.parentId) {
+        agent.resolveUserInput('User is not available. Use your best judgement.');
+        logger.info({ module: 'agent-manager', msg: 'Auto-resolved user input (non-lead agent)', agentId: agent.id, role: agent.role.id });
+        return;
+      }
+
       this.emit('agent:user_input_request', { agentId: agent.id, request });
 
       // In autonomous mode, auto-respond after 2 minutes so agent isn't blocked
