@@ -248,7 +248,7 @@ export function SettingsPanel({ api }: Props) {
       </section>
 
       {/* Providers (includes CLI configuration per provider) */}
-      <ProvidersSection activeProviderId={config?.provider} />
+      <ProvidersSection />
 
       {/* Telegram Integration */}
       <section className="bg-surface-raised border border-th-border rounded-lg p-4 mb-6">

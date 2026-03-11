@@ -7,7 +7,7 @@
  * Drag-and-drop reordering via @dnd-kit/sortable.
  */
 import { useState, useEffect, useCallback } from 'react';
-import { Cpu, Loader2, Zap, ExternalLink, ChevronDown, ChevronRight, Star, Terminal, Key, Settings2, GripVertical } from 'lucide-react';
+import { Cpu, Loader2, Zap, ExternalLink, ChevronDown, ChevronRight, Terminal, Key, Settings2, GripVertical } from 'lucide-react';
 import { DndContext, closestCenter, PointerSensor, KeyboardSensor, useSensor, useSensors } from '@dnd-kit/core';
 import type { DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove, sortableKeyboardCoordinates } from '@dnd-kit/sortable';
@@ -118,16 +118,12 @@ function PreviewBadge() {
 
 function ProviderCard({
   provider,
-  isActive,
   rank,
   onToggle,
-  onSetActive,
 }: {
   provider: ProviderStatus;
-  isActive: boolean;
   rank: number;
   onToggle: (id: string, enabled: boolean) => void;
-  onSetActive: (id: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -177,7 +173,7 @@ function ProviderCard({
       ref={setNodeRef}
       style={style}
       className={`bg-surface-raised border rounded-lg overflow-hidden transition-colors hover:border-th-border-hover ${
-        isActive ? 'border-accent/50 ring-1 ring-accent/20' : 'border-th-border'
+        provider.enabled ? 'border-th-border' : 'border-th-border opacity-60'
       }`}
       data-testid={`provider-card-${provider.id}`}
     >
@@ -209,11 +205,6 @@ function ProviderCard({
             <span className="text-sm font-medium text-th-text-alt">{provider.name}</span>
             {PROVIDER_PREVIEW[provider.id] && <PreviewBadge />}
             <StatusBadge {...providerStatusProps(provider)} />
-            {isActive && (
-              <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-accent bg-accent/10 px-1.5 py-0.5 rounded-full">
-                <Star className="w-2.5 h-2.5" /> Active
-              </span>
-            )}
           </div>
           <div className="text-xs text-th-text-muted">
             {provider.installed
@@ -341,17 +332,6 @@ function ProviderCard({
               </button>
             )}
 
-            {/* Set as Active */}
-            {provider.installed && provider.enabled && !isActive && (
-              <button
-                onClick={() => onSetActive(provider.id)}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-yellow-500/10 text-yellow-500 hover:bg-yellow-500/20 rounded-md transition-colors"
-                data-testid={`set-active-${provider.id}`}
-              >
-                <Star size={12} /> Set as Active
-              </button>
-            )}
-
             {testResult && (
               <span
                 className={`text-xs ${testResult.success ? 'text-green-400' : 'text-red-400'}`}
@@ -374,16 +354,11 @@ function ProviderCard({
 
 // ── ProvidersSection ────────────────────────────────────────────────
 
-export function ProvidersSection({ activeProviderId }: { activeProviderId?: string }) {
+export function ProvidersSection() {
   const [providers, setProviders] = useState<ProviderStatus[]>([]);
   const [ranking, setRanking] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeId, setActiveId] = useState(activeProviderId ?? 'copilot');
-
-  useEffect(() => {
-    if (activeProviderId) setActiveId(activeProviderId);
-  }, [activeProviderId]);
 
   useEffect(() => {
     Promise.all([
@@ -420,19 +395,6 @@ export function ProvidersSection({ activeProviderId }: { activeProviderId?: stri
       );
     }
   }, []);
-
-  const handleSetActive = useCallback(async (id: string) => {
-    const prevId = activeId;
-    setActiveId(id);
-    try {
-      await apiFetch('/settings/provider', {
-        method: 'PUT',
-        body: JSON.stringify({ id }),
-      });
-    } catch {
-      setActiveId(prevId);
-    }
-  }, [activeId]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -511,10 +473,8 @@ export function ProvidersSection({ activeProviderId }: { activeProviderId?: stri
                 <ProviderCard
                   key={provider.id}
                   provider={provider}
-                  isActive={provider.id === activeId}
                   rank={idx + 1}
                   onToggle={handleToggle}
-                  onSetActive={handleSetActive}
                 />
               ))}
             </div>
