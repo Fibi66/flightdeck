@@ -17,13 +17,18 @@ interface ModelsListResponse {
 
 /** Human-readable display names for model IDs */
 const MODEL_NAMES: Record<string, string> = {
-  'claude-opus-4.6': 'Claude Opus 4.6',
-  'claude-opus-4.5': 'Claude Opus 4.5',
-  'claude-sonnet-4.6': 'Claude Sonnet 4.6',
-  'claude-sonnet-4.5': 'Claude Sonnet 4.5',
-  'claude-sonnet-4': 'Claude Sonnet 4',
-  'claude-haiku-4.5': 'Claude Haiku 4.5',
+  'claude-opus-4.6': 'Opus 4.6',
+  'claude-opus-4.5': 'Opus 4.5',
+  'claude-sonnet-4.6': 'Sonnet 4.6',
+  'claude-sonnet-4.5': 'Sonnet 4.5',
+  'claude-sonnet-4': 'Sonnet 4',
+  'claude-haiku-4.5': 'Haiku 4.5',
   'gemini-3-pro-preview': 'Gemini 3 Pro',
+  'gemini-3-flash-preview': 'Gemini 3 Flash',
+  'gemini-2.5-pro': 'Gemini 2.5 Pro',
+  'gemini-2.5-flash': 'Gemini 2.5 Flash',
+  'gemini-2.5-flash-lite': 'Gemini 2.5 Flash Lite',
+  'gpt-5.4': 'GPT-5.4',
   'gpt-5.3-codex': 'GPT-5.3 Codex',
   'gpt-5.2-codex': 'GPT-5.2 Codex',
   'gpt-5.2': 'GPT-5.2',
@@ -80,6 +85,33 @@ function isModelNativeToProvider(modelId: string, provider: string): boolean {
   if (provider === 'codex' || provider === 'cursor') return modelId.startsWith('gpt-');
   return false;
 }
+
+/** Get the provider family for a model ID. */
+function getModelProvider(modelId: string): string {
+  if (modelId.startsWith('claude-')) return 'Anthropic';
+  if (modelId.startsWith('gemini-')) return 'Google';
+  if (modelId.startsWith('gpt-')) return 'OpenAI';
+  return 'Other';
+}
+
+/** Group models by provider, preserving order within groups. */
+function groupModelsByProvider(models: string[]): { provider: string; models: string[] }[] {
+  const groups = new Map<string, string[]>();
+  for (const m of models) {
+    const p = getModelProvider(m);
+    if (!groups.has(p)) groups.set(p, []);
+    groups.get(p)!.push(m);
+  }
+  return Array.from(groups.entries()).map(([provider, models]) => ({ provider, models }));
+}
+
+/** Provider colors for group labels */
+const PROVIDER_COLORS: Record<string, string> = {
+  Anthropic: 'text-orange-400',
+  Google: 'text-blue-400',
+  OpenAI: 'text-green-400',
+  Other: 'text-th-text-muted',
+};
 
 interface Props {
   /** Project ID — if provided, loads/saves config for this project */
@@ -231,37 +263,47 @@ export function ModelConfigPanel({ projectId, value, onChange, compact }: Props)
 
       {error && <div className="px-1 text-red-400 text-[10px]">{error}</div>}
 
-      {/* Role → Model grid */}
+      {/* Role → Model grid, grouped by provider */}
       <div className="space-y-1.5">
         {CONFIG_ROLES.map((roleId) => {
           const allowedModels = config[roleId] ?? defaults[roleId] ?? [];
+          const modelGroups = groupModelsByProvider(allModels);
           return (
             <div key={roleId} className="px-1">
               <div className="text-th-text-alt font-medium mb-0.5">
                 {ROLE_NAMES[roleId] || roleId}
               </div>
-              <div className="flex flex-wrap gap-1">
-                {allModels.map((modelId) => {
-                  const isSelected = allowedModels.includes(modelId);
-                  const isNative = isModelNativeToProvider(modelId, activeProvider);
-                  return (
-                    <button
-                      key={modelId}
-                      onClick={() => toggleModel(roleId, modelId)}
-                      className={`px-1.5 py-0.5 rounded text-[10px] border transition-colors ${
-                        isSelected
-                          ? 'bg-yellow-600/20 border-yellow-500/50 text-yellow-600 dark:text-yellow-200'
-                          : 'bg-th-bg border-th-border text-th-text-muted hover:border-th-border-hover opacity-50'
-                      }`}
-                      title={`${MODEL_NAMES[modelId] || modelId}${isNative ? '' : ' (cross-provider)'}`}
-                    >
-                      {compact
-                        ? modelId.replace('claude-', '').replace('gemini-3-pro-preview', 'gemini-3').replace('gpt-', 'g')
-                        : MODEL_NAMES[modelId] || modelId}
-                      {!isNative && <span className="ml-0.5 opacity-60">↔</span>}
-                    </button>
-                  );
-                })}
+              <div className="space-y-1">
+                {modelGroups.map((group) => (
+                  <div key={group.provider} className="flex items-start gap-1.5">
+                    <span className={`text-[9px] font-medium w-[52px] shrink-0 pt-0.5 ${PROVIDER_COLORS[group.provider] ?? 'text-th-text-muted'}`}>
+                      {group.provider}
+                    </span>
+                    <div className="flex flex-wrap gap-1">
+                      {group.models.map((modelId) => {
+                        const isSelected = allowedModels.includes(modelId);
+                        const isNative = isModelNativeToProvider(modelId, activeProvider);
+                        return (
+                          <button
+                            key={modelId}
+                            onClick={() => toggleModel(roleId, modelId)}
+                            className={`px-1.5 py-0.5 rounded text-[10px] border transition-colors ${
+                              isSelected
+                                ? 'bg-yellow-600/20 border-yellow-500/50 text-yellow-600 dark:text-yellow-200'
+                                : 'bg-th-bg border-th-border text-th-text-muted hover:border-th-border-hover opacity-50'
+                            }`}
+                            title={`${MODEL_NAMES[modelId] || modelId}${isNative ? '' : ' (cross-provider)'}`}
+                          >
+                            {compact
+                              ? modelId.replace('claude-', '').replace(/^gemini-/, 'g-').replace('gpt-', 'g')
+                              : MODEL_NAMES[modelId] || modelId}
+                            {!isNative && <span className="ml-0.5 opacity-60">↔</span>}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           );
