@@ -71,9 +71,10 @@ export function SessionHistory({ projectId, hasActiveLead }: SessionHistoryProps
     }
   }, [projectId]);
 
+  // Refetch when hasActiveLead changes (new session started or ended)
   useEffect(() => {
     fetchSessions();
-  }, [fetchSessions]);
+  }, [fetchSessions, hasActiveLead]);
 
   return (
     <div className="space-y-2" data-testid="session-history">
