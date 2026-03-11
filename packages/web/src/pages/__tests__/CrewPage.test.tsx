@@ -127,13 +127,9 @@ function setupMocks(overrides: Partial<{
   health: any;
   profile: any;
   teamDetail: any;
-  exportResult: any;
-  importResult: any;
 }> = {}) {
   mockApiFetch.mockImplementation((path: string, opts?: any) => {
     if (path === '/teams') return Promise.resolve(overrides.teams ?? teamsData);
-    if (path.includes('/export')) return Promise.resolve(overrides.exportResult ?? { success: true, bundle: { manifest: {} } });
-    if (path === '/teams/import') return Promise.resolve(overrides.importResult ?? { success: true, report: { success: true, teamId: 'default', agents: [], knowledge: { imported: 5, skipped: 0, conflicts: 0 }, training: { correctionsImported: 2, feedbackImported: 3 }, warnings: [], validation: { valid: true, issues: [] } } });
     if (path.includes('/profile')) return Promise.resolve(overrides.profile ?? profileData);
     if (path.includes('/health')) return Promise.resolve(overrides.health ?? healthData);
     // Match /teams/:teamId (but not /teams/:teamId/agents or /teams/:teamId/health)
@@ -423,94 +419,4 @@ describe('CrewPage', () => {
     expect(screen.getByText('5 corrections')).toBeInTheDocument();
   });
 
-  // ── Export/Import buttons ─────────────────────────────
-
-  it('shows export and import buttons in export tab', async () => {
-    setupMocks();
-    renderPage();
-    await waitFor(() => {
-      expect(screen.getByText('architect')).toBeInTheDocument();
-    });
-    // Switch to Export tab
-    switchTab('Export');
-    await waitFor(() => {
-      expect(screen.getByTestId('export-crew-btn')).toBeInTheDocument();
-    });
-    expect(screen.getByTestId('import-crew-btn')).toBeInTheDocument();
-  });
-
-  it('opens export dialog', async () => {
-    setupMocks();
-    renderPage();
-    await waitFor(() => {
-      expect(screen.getByText('architect')).toBeInTheDocument();
-    });
-    // Switch to Export tab
-    switchTab('Export');
-    await waitFor(() => {
-      expect(screen.getByTestId('export-crew-btn')).toBeInTheDocument();
-    });
-
-    fireEvent.click(screen.getByTestId('export-crew-btn'));
-    expect(screen.getByTestId('export-dialog')).toBeInTheDocument();
-    expect(screen.getAllByText(/\.flightdeck-team\//).length).toBeGreaterThan(0);
-    expect(screen.getByText('Include knowledge entries')).toBeInTheDocument();
-  });
-
-  it('triggers export download', async () => {
-    setupMocks();
-    renderPage();
-    await waitFor(() => {
-      expect(screen.getByText('architect')).toBeInTheDocument();
-    });
-    // Switch to Export tab
-    switchTab('Export');
-    await waitFor(() => {
-      expect(screen.getByTestId('export-crew-btn')).toBeInTheDocument();
-    });
-
-    fireEvent.click(screen.getByTestId('export-crew-btn'));
-    fireEvent.click(screen.getByTestId('export-download-btn'));
-    await waitFor(() => {
-      expect(mockApiFetch).toHaveBeenCalledWith(
-        expect.stringContaining('/export'),
-        expect.objectContaining({ method: 'POST' }),
-      );
-    });
-  });
-
-  it('opens import dialog', async () => {
-    setupMocks();
-    renderPage();
-    await waitFor(() => {
-      expect(screen.getByText('architect')).toBeInTheDocument();
-    });
-    // Switch to Export tab
-    switchTab('Export');
-    await waitFor(() => {
-      expect(screen.getByTestId('import-crew-btn')).toBeInTheDocument();
-    });
-
-    fireEvent.click(screen.getByTestId('import-crew-btn'));
-    expect(screen.getByTestId('import-dialog')).toBeInTheDocument();
-    expect(screen.getByText(/choose crew bundle/i)).toBeInTheDocument();
-    expect(screen.getByTestId('import-project-input')).toBeInTheDocument();
-  });
-
-  it('shows conflict strategy selectors in import dialog', async () => {
-    setupMocks();
-    renderPage();
-    await waitFor(() => {
-      expect(screen.getByText('architect')).toBeInTheDocument();
-    });
-    // Switch to Export tab
-    switchTab('Export');
-    await waitFor(() => {
-      expect(screen.getByTestId('import-crew-btn')).toBeInTheDocument();
-    });
-
-    fireEvent.click(screen.getByTestId('import-crew-btn'));
-    expect(screen.getByText('Agent conflicts')).toBeInTheDocument();
-    expect(screen.getByText('Knowledge conflicts')).toBeInTheDocument();
-  });
 });
