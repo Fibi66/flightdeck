@@ -82,10 +82,10 @@ describe('Provider Presets', () => {
   });
 
   describe('Codex preset', () => {
-    it('uses codex binary with --acp', () => {
+    it('uses codex-acp binary', () => {
       const preset = PROVIDER_PRESETS.codex;
-      expect(preset.binary).toBe('codex');
-      expect(preset.args).toEqual(['--acp']);
+      expect(preset.binary).toBe('codex-acp');
+      expect(preset.args).toEqual([]);
       expect(preset.supportsResume).toBe(false);
       expect(preset.requiredEnvVars).toContain('OPENAI_API_KEY');
     });

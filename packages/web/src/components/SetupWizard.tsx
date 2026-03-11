@@ -41,7 +41,7 @@ const PROVIDER_DOCS: Record<string, string> = {
   gemini: 'https://geminicli.com/docs/get-started/installation/',
   opencode: 'https://opencode.ai/docs/',
   cursor: 'https://www.cursor.com/',
-  codex: 'https://developers.openai.com/codex/quickstart?setup=cli',
+  codex: 'https://github.com/zed-industries/codex-acp#installation',
 };
 
 // ── Component ───────────────────────────────────────────────────────

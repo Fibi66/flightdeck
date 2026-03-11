@@ -251,6 +251,25 @@ describe('AdapterFactory', () => {
       );
       expect(opts.cliCommand).toBe('claude-agent-acp');
     });
+
+    it('resolves codex preset with codex-acp binary and empty args', () => {
+      const opts = buildStartOptions(
+        { ...baseConfig, provider: 'codex' },
+        { cwd: '/test' },
+      );
+      expect(opts.cliCommand).toBe('codex-acp');
+      expect(opts.baseArgs).toEqual([]);
+    });
+
+    it('uses -c model=X for codex instead of --model', () => {
+      const opts = buildStartOptions(
+        { ...baseConfig, provider: 'codex', model: 'gpt-5' },
+        { cwd: '/test' },
+      );
+      expect(opts.cliArgs).toContain('-c');
+      expect(opts.cliArgs).toContain('model=gpt-5');
+      expect(opts.cliArgs).not.toContain('--model');
+    });
   });
 
   // ── Integration: Factory + Start Options ──────────────────

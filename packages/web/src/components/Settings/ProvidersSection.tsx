@@ -54,7 +54,7 @@ const PROVIDER_DOCS: Record<string, string> = {
   gemini: 'https://geminicli.com/docs/get-started/installation/',
   opencode: 'https://opencode.ai/docs/',
   cursor: 'https://docs.cursor.com',
-  codex: 'https://developers.openai.com/codex/quickstart?setup=cli',
+  codex: 'https://github.com/zed-industries/codex-acp#installation',
 };
 
 /** Default CLI arguments per provider (mirrors server presets.ts). */
@@ -63,7 +63,7 @@ const PROVIDER_DEFAULT_ARGS: Record<string, string[]> = {
   claude: [],
   gemini: ['--experimental-acp'],
   cursor: ['acp'],
-  codex: ['--acp'],
+  codex: [],
   opencode: ['acp'],
 };
 

@@ -121,8 +121,18 @@ export function buildStartOptions(
   const cliArgs = [
     ...(config.cliArgs ?? []),
     ...(agentOpts.agentFlag ? [`--agent=${agentOpts.agentFlag}`] : []),
-    ...(resolution ? ['--model', resolution.model] : []),
   ];
+
+  // Model args: codex-acp uses `-c model=X`, others use `--model X` (or preset.modelFlag)
+  if (resolution) {
+    if (providerId === 'codex') {
+      cliArgs.push('-c', `model=${resolution.model}`);
+    } else if (preset?.modelFlag) {
+      cliArgs.push(preset.modelFlag, resolution.model);
+    } else {
+      cliArgs.push('--model', resolution.model);
+    }
+  }
 
   return {
     cliCommand: binary,

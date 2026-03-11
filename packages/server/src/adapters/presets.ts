@@ -90,13 +90,12 @@ export const PROVIDER_PRESETS: Record<ProviderId, ProviderPreset> = {
 
   codex: {
     id: 'codex',
-    name: 'Codex CLI',
-    binary: 'codex',
-    args: ['--acp'],
+    name: 'Codex (ACP)',
+    binary: 'codex-acp',
+    args: [],
     requiredEnvVars: ['OPENAI_API_KEY'],
     transport: 'stdio',
     supportsResume: false,
-    modelFlag: '--model',
     defaultModel: 'gpt-5',
   },
 
