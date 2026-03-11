@@ -38,6 +38,7 @@ import { KnowledgeInjector } from './knowledge/KnowledgeInjector.js';
 import { SessionKnowledgeExtractor } from './knowledge/SessionKnowledgeExtractor.js';
 import { CollectiveMemory } from './coordination/knowledge/CollectiveMemory.js';
 import { SkillsLoader } from './knowledge/SkillsLoader.js';
+import { ProviderManager } from './providers/ProviderManager.js';
 
 
 // ── Imports: Tier 2 (Stateless Services) ───────────────────
@@ -207,6 +208,7 @@ export async function createContainer(opts: ContainerConfig): Promise<ServiceCon
   const complexityMonitor = new ComplexityMonitor(repoRoot);
   const dependencyScanner = new DependencyScanner(repoRoot);
   const webhookManager = new WebhookManager();
+  const providerManager = new ProviderManager({ db, configStore });
 
   // ── Tier 3: Composed Services ──────────────────────────
   const taskDecomposer = new TaskDecomposer(taskTemplateRegistry);
@@ -242,6 +244,7 @@ export async function createContainer(opts: ContainerConfig): Promise<ServiceCon
   agentManager.setSessionKnowledgeExtractor(sessionKnowledgeExtractor);
   agentManager.setCollectiveMemory(collectiveMemory);
   agentManager.setConfigStore(configStore);
+  agentManager.setProviderManager(providerManager);
   const skillsLoader = new SkillsLoader(join(repoRoot, '.github/skills'));
   skillsLoader.loadAll();
   skillsLoader.startWatching();
@@ -373,6 +376,7 @@ export async function createContainer(opts: ContainerConfig): Promise<ServiceCon
     collectiveMemory,
     agentRoster: agentRosterRepository,
     integrationRouter,
+    providerManager,
     configStore,
 
     // Lifecycle

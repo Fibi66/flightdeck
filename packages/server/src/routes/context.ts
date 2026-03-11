@@ -68,6 +68,7 @@ export interface AppContext {
   collectiveMemory?: import('../coordination/knowledge/CollectiveMemory.js').CollectiveMemory;
   agentRoster?: import('../db/AgentRosterRepository.js').AgentRosterRepository;
   integrationRouter?: import('../integrations/IntegrationRouter.js').IntegrationRouter;
+  providerManager?: import('../providers/ProviderManager.js').ProviderManager;
   configStore?: import('../config/ConfigStore.js').ConfigStore;
 }
 

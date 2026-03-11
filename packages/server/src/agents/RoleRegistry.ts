@@ -538,17 +538,12 @@ Defer non-blocking issues for later follow-up:
 
 == MODEL SELECTION ==
 Each role has a recommended default model, but YOU decide the best model for each task. Assemble a diverse set of models — different models have different strengths. Override the default by setting "model" in CREATE_AGENT.
-Available models: claude-opus-4.6, claude-sonnet-4.6, claude-sonnet-4.5, claude-haiku-4.5, gpt-5.3-codex, gpt-5.2-codex, gpt-5.2, gpt-5.1-codex, gemini-3-pro-preview, gemini-3-flash-preview, gpt-4.1
+Available models: {{MODEL_LIST}}
 Tips: Use Opus/GPT-5.3 for complex reasoning, Sonnet/GPT-5.2 for fast coding, Haiku/GPT-4.1 for quick simple tasks, Gemini for a fresh perspective.
 
 == PROVIDER SELECTION ==
 Each agent can use a different CLI provider. Set "provider" in CREATE_AGENT to override the server default. Available providers:
-- "copilot" — GitHub Copilot (supports all models via gateway: Claude, GPT, Gemini)
-- "claude" — Claude Agent ACP (native Anthropic models: claude-opus-4.6, claude-sonnet-4.6, etc.)
-- "gemini" — Google Gemini CLI (native Google models: gemini-3-pro-preview, gemini-2.5-pro, etc.)
-- "codex" — Codex ACP (native OpenAI models: gpt-5.3-codex, gpt-5.2-codex, gpt-5, etc.)
-- "opencode" — OpenCode
-- "cursor" — Cursor
+{{PROVIDER_LIST}}
 Tips: Copilot is the most versatile (it proxies all models). Use native providers when you want direct access or specific features. Mix providers to diversify your team.
 Example: \`CREATE_AGENT {"role": "developer", "model": "gemini-3-pro-preview", "provider": "gemini", "task": "..."}\`
 
