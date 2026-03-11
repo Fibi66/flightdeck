@@ -42,6 +42,7 @@ import type { TabItem } from '../ui/Tabs';
 import { useEffectiveProjectId } from '../../hooks/useEffectiveProjectId';
 import { AgentChatPanel } from '../AgentChatPanel';
 import { useAppStore } from '../../stores/appStore';
+import { AgentDetailModal } from '../AgentDetailModal';
 
 // ── Types (shared with CrewRoster) ─────────────────────────
 
@@ -212,7 +213,6 @@ function CrewGroup({ leadId, agents, summary, defaultExpanded = true, onSelectAg
             </div>
             <div className="flex items-center gap-3 text-[10px] text-th-text-muted mt-0.5">
               {lead && <span>🎖️ Lead: {lead.agentId.slice(0, 8)} · {lead.model}</span>}
-              {summary?.sessionCount ? <span>📋 {summary.sessionCount} session{summary.sessionCount !== 1 ? 's' : ''}</span> : null}
               {latestActivity && <span>{formatRelativeTime(latestActivity)}</span>}
             </div>
           </div>
@@ -720,7 +720,10 @@ export function UnifiedCrewPage({ scope = 'global' }: UnifiedCrewPageProps) {
         });
         setAgents(filtered);
       } else {
-        setAgents(allAgents);
+        // Global scope: only show active agents
+        const activeStatuses = new Set(['running', 'idle', 'creating']);
+        const active = allAgents.filter(a => a.liveStatus && activeStatuses.has(a.liveStatus));
+        setAgents(active);
       }
     } catch (err: any) {
       setError(err.message ?? 'Failed to fetch crew roster');
@@ -821,10 +824,10 @@ export function UnifiedCrewPage({ scope = 'global' }: UnifiedCrewPageProps) {
         <div className="flex items-center gap-3">
           <Users className="w-6 h-6 text-th-accent" />
           <h1 className="text-xl font-bold text-th-text">
-            {scope === 'project' ? 'Crew' : 'All Crews'}
+            {scope === 'project' ? 'Crew' : 'Agents'}
           </h1>
           <span className="text-sm text-th-text-muted">
-            {crewGroups.length} crew{crewGroups.length !== 1 ? 's' : ''} · {filtered.length} agent{filtered.length !== 1 ? 's' : ''}
+            {filtered.length} agent{filtered.length !== 1 ? 's' : ''}
           </span>
         </div>
         <div className="flex items-center gap-2">
@@ -839,21 +842,23 @@ export function UnifiedCrewPage({ scope = 'global' }: UnifiedCrewPageProps) {
       <div className="flex flex-wrap items-center gap-3 mt-4 shrink-0">
         <div className="relative flex-1 min-w-[200px] max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-th-text-alt" />
-          <input type="text" placeholder="Search crews, agents, tasks..." value={search} onChange={e => setSearch(e.target.value)}
+          <input type="text" placeholder="Search agents..." value={search} onChange={e => setSearch(e.target.value)}
             className="w-full pl-9 pr-3 py-2 text-sm rounded bg-th-bg-alt border border-th-border text-th-text placeholder:text-th-text-alt" />
         </div>
-        <div className="flex gap-1">
-          {(['all', 'idle', 'running', 'terminated', 'failed'] as const).map(s => (
-            <button key={s} onClick={() => setStatusFilter(s)}
-              className={`px-3 py-1.5 text-xs rounded capitalize transition-colors ${
-                statusFilter === s
-                  ? 'bg-th-accent/20 text-th-accent border border-th-accent/30'
-                  : 'bg-th-bg-alt text-th-text-alt border border-th-border hover:bg-th-border'
-              }`}>
-              {s}
-            </button>
-          ))}
-        </div>
+        {scope === 'project' && (
+          <div className="flex gap-1">
+            {(['all', 'idle', 'running', 'terminated', 'failed'] as const).map(s => (
+              <button key={s} onClick={() => setStatusFilter(s)}
+                className={`px-3 py-1.5 text-xs rounded capitalize transition-colors ${
+                  statusFilter === s
+                    ? 'bg-th-accent/20 text-th-accent border border-th-accent/30'
+                    : 'bg-th-bg-alt text-th-text-alt border border-th-border hover:bg-th-border'
+                }`}>
+                {s}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Content: Grouped List + Profile */}
@@ -863,8 +868,8 @@ export function UnifiedCrewPage({ scope = 'global' }: UnifiedCrewPageProps) {
           {agents.length === 0 && !loading && (
             <div className="text-center py-12 text-th-text-alt text-sm bg-surface-raised rounded-lg border border-th-border">
               <span className="text-4xl block mb-2">🤖</span>
-              <p className="font-medium text-th-text">No agents yet</p>
-              <p className="text-th-text-muted mt-1">Start a session to spawn your first crew.</p>
+              <p className="font-medium text-th-text">{scope === 'global' ? 'No active agents' : 'No agents yet'}</p>
+              <p className="text-th-text-muted mt-1">{scope === 'global' ? 'All agents are idle or terminated.' : 'Start a session to spawn your first crew.'}</p>
             </div>
           )}
 
@@ -900,28 +905,34 @@ export function UnifiedCrewPage({ scope = 'global' }: UnifiedCrewPageProps) {
           ))}
         </div>
 
-        {/* Profile Panel — mobile: full-screen slide-over; desktop: side panel */}
-        <div
-          className={`
-            fixed inset-0 z-40 bg-th-bg transform transition-transform duration-150 ease-out
-            md:static md:inset-auto md:z-auto md:bg-transparent md:transform-none md:transition-none
-            ${selectedAgent ? 'translate-x-0' : 'translate-x-full'}
-            ${selectedAgent ? 'md:w-[40%] md:min-w-[360px] md:max-w-[480px]' : 'md:w-0 md:hidden'}
-            md:self-start md:sticky md:top-0 md:max-h-full
-          `}
-        >
-          {selectedAgent && (
-            <div className="h-full overflow-y-auto">
-              <button
-                onClick={() => setSelectedAgent(null)}
-                className="flex items-center gap-1.5 px-4 py-2 text-xs text-th-text-alt hover:text-th-text transition-colors md:hidden"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" />Back
-              </button>
-              <ProfilePanel agentId={selectedAgent} teamId={selectedAgentTeamId} onClose={() => setSelectedAgent(null)} />
-            </div>
-          )}
-        </div>
+        {/* Agent Detail — global: centered modal; project: side panel */}
+        {scope === 'global' ? (
+          selectedAgent && (
+            <AgentDetailModal agentId={selectedAgent} onClose={() => setSelectedAgent(null)} />
+          )
+        ) : (
+          <div
+            className={`
+              fixed inset-0 z-40 bg-th-bg transform transition-transform duration-150 ease-out
+              md:static md:inset-auto md:z-auto md:bg-transparent md:transform-none md:transition-none
+              ${selectedAgent ? 'translate-x-0' : 'translate-x-full'}
+              ${selectedAgent ? 'md:w-[40%] md:min-w-[360px] md:max-w-[480px]' : 'md:w-0 md:hidden'}
+              md:self-start md:sticky md:top-0 md:max-h-full
+            `}
+          >
+            {selectedAgent && (
+              <div className="h-full overflow-y-auto">
+                <button
+                  onClick={() => setSelectedAgent(null)}
+                  className="flex items-center gap-1.5 px-4 py-2 text-xs text-th-text-alt hover:text-th-text transition-colors md:hidden"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />Back
+                </button>
+                <ProfilePanel agentId={selectedAgent} teamId={selectedAgentTeamId} onClose={() => setSelectedAgent(null)} />
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Health Strip (collapsed at bottom) */}
