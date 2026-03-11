@@ -249,7 +249,7 @@ export class AgentRosterRepository {
       status: row.status as RosterAgentStatus,
       sessionId: row.sessionId ?? undefined,
       projectId: row.projectId ?? undefined,
-      provider: row.provider ?? 'copilot',
+      provider: row.provider ?? undefined,
       teamId: row.teamId,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
