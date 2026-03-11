@@ -18,7 +18,6 @@ export function NewProjectModal({ onClose }: NewProjectModalProps) {
   const [newProjectTask, setNewProjectTask] = useState('');
   const [newProjectModel, setNewProjectModel] = useState('');
   const [newProjectCwd, setNewProjectCwd] = useState('');
-  const [resumeSessionId, setResumeSessionId] = useState('');
   const [showFolderPicker, setShowFolderPicker] = useState(false);
   const [availableRoles, setAvailableRoles] = useState<RoleInfo[]>([]);
   const [selectedRoles, setSelectedRoles] = useState<Set<string>>(new Set());
@@ -46,7 +45,7 @@ export function NewProjectModal({ onClose }: NewProjectModalProps) {
       }
       const data = await apiFetch<{ id?: string; projectId?: string }>('/lead/start', {
         method: 'POST',
-        body: JSON.stringify({ name: newProjectName.trim(), task: fullTask, model: newProjectModel || undefined, cwd: newProjectCwd.trim() || undefined, sessionId: resumeSessionId.trim() || undefined }),
+        body: JSON.stringify({ name: newProjectName.trim(), task: fullTask, model: newProjectModel || undefined, cwd: newProjectCwd.trim() || undefined }),
       });
       if (data.id) {
         useLeadStore.getState().addProject(data.id);
@@ -67,7 +66,7 @@ export function NewProjectModal({ onClose }: NewProjectModalProps) {
     } finally {
       setStarting(false);
     }
-  }, [newProjectName, newProjectTask, newProjectModel, newProjectCwd, resumeSessionId, selectedRoles, newProjectModelConfig, onClose]);
+  }, [newProjectName, newProjectTask, newProjectModel, newProjectCwd, selectedRoles, newProjectModelConfig, onClose]);
 
   return (
     <>
@@ -156,16 +155,6 @@ export function NewProjectModal({ onClose }: NewProjectModalProps) {
                   </button>
                 </div>
               </div>
-              <div>
-                <label className="block text-xs text-th-text-muted mb-1 font-medium">Resume Session <span className="text-th-text-muted">(optional — paste a session ID to continue previous work)</span></label>
-                <input
-                  type="text"
-                  value={resumeSessionId}
-                  onChange={(e) => setResumeSessionId(e.target.value)}
-                  placeholder="session-id-from-previous-lead"
-                  className="w-full bg-th-bg border border-th-border rounded-md px-3 py-2 text-sm font-mono text-th-text-alt focus:outline-none focus:border-blue-500"
-                />
-              </div>
             </div>
             {/* Initial Crew Selection */}
             {availableRoles.length > 0 && (
@@ -235,7 +224,7 @@ export function NewProjectModal({ onClose }: NewProjectModalProps) {
               className="px-5 py-2 bg-yellow-600 hover:bg-yellow-500 disabled:bg-th-bg-hover disabled:text-th-text-muted text-black text-sm font-semibold rounded-md flex items-center gap-1.5 transition-colors"
             >
               {starting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Crown className="w-4 h-4" />}
-              {starting ? 'Starting...' : resumeSessionId.trim() ? 'Resume Project' : 'Create Project'}
+              {starting ? 'Starting...' : 'Create Project'}
             </button>
           </div>
         </div>
