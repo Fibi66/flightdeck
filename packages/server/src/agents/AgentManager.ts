@@ -847,21 +847,6 @@ export class AgentManager extends TypedEmitter<AgentManagerEvents> {
     return agent;
   }
 
-  /** Archive groups where all members are in terminal status */
-  private archiveOrphanedGroups(agentId: string): void {
-    const groups = this.chatGroupRegistry.getGroupsForAgent(agentId);
-    for (const group of groups) {
-      const allTerminal = group.memberIds.every((mid: string) => {
-        const a = this.agents.get(mid);
-        return !a || isTerminalStatus(a.status);
-      });
-      if (allTerminal) {
-        this.chatGroupRegistry.archiveGroup(group.name, group.leadId);
-        logger.info({ module: 'comms', msg: 'Auto-archived group — all members terminated', groupName: group.name });
-      }
-    }
-  }
-
   async terminate(id: string, visited: Set<string> = new Set()): Promise<boolean> {
     if (visited.has(id)) return false;
     visited.add(id);
@@ -938,9 +923,6 @@ export class AgentManager extends TypedEmitter<AgentManagerEvents> {
           });
         });
     }
-
-    // Auto-archive groups where all members are now in terminal status
-    this.archiveOrphanedGroups(id);
 
     // Clean up heartbeat tracking
     this.heartbeat.trackRemoved(id);
