@@ -46,6 +46,19 @@ import { AgentDetailModal } from '../AgentDetailModal';
 
 // ── Types (shared with CrewRoster) ─────────────────────────
 
+const AVAILABLE_MODELS = [
+  'claude-opus-4.6',
+  'claude-sonnet-4.6',
+  'claude-sonnet-4.5',
+  'claude-haiku-4.5',
+  'gpt-5.3-codex',
+  'gpt-5.2-codex',
+  'gpt-5.2',
+  'gpt-5.1-codex',
+  'gemini-3-pro-preview',
+  'gpt-4.1',
+];
+
 type RosterStatus = 'idle' | 'running' | 'terminated' | 'failed';
 type LiveStatus = 'creating' | 'running' | 'idle' | 'completed' | 'failed' | 'terminated' | null;
 type ProfileTab = 'overview' | 'chat' | 'settings';
@@ -588,10 +601,37 @@ function ProfilePanel({ agentId, teamId, onClose }: { agentId: string; teamId: s
         )}
         {activeTab === 'settings' && (
           <div className="space-y-3 text-sm">
-            <div className="grid grid-cols-2 gap-3">
-              <div><span className="text-th-text-alt">Model:</span> <span className="text-th-text">{profile.model}</span></div>
-              {profile.live?.provider && <div><span className="text-th-text-alt">CLI Provider:</span> <span className="text-th-text capitalize">{profile.live.provider}</span></div>}
-              {profile.live?.backend && <div><span className="text-th-text-alt">Backend:</span> <span className="text-th-text">{profile.live.backend}</span></div>}
+            <div className="space-y-3">
+              <div>
+                <label className="text-th-text-alt text-xs block mb-1">Model</label>
+                {isAlive ? (
+                  <select
+                    value={profile.live?.model || profile.model}
+                    onChange={async (e) => {
+                      try {
+                        await apiFetch(`/agents/${agentId}`, { method: 'PATCH', body: JSON.stringify({ model: e.target.value }) });
+                        setProfile(p => p ? { ...p, model: e.target.value, live: p.live ? { ...p.live, model: e.target.value } : p.live } : p);
+                        addToast('success', 'Model updated');
+                      } catch (err: any) {
+                        addToast('error', `Failed to update model: ${err.message}`);
+                      }
+                    }}
+                    className="w-full text-sm bg-th-bg-alt border border-th-border text-th-text rounded px-2 py-1.5 focus:outline-none focus:border-accent cursor-pointer"
+                  >
+                    {(() => {
+                      const current = profile.live?.model || profile.model;
+                      const options = AVAILABLE_MODELS.includes(current) ? AVAILABLE_MODELS : [current, ...AVAILABLE_MODELS];
+                      return options.map(m => <option key={m} value={m}>{m}</option>);
+                    })()}
+                  </select>
+                ) : (
+                  <span className="text-th-text">{profile.model}</span>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                {profile.live?.provider && <div><span className="text-th-text-alt">CLI Provider:</span> <span className="text-th-text capitalize">{profile.live.provider}</span></div>}
+                {profile.live?.backend && <div><span className="text-th-text-alt">Backend:</span> <span className="text-th-text">{profile.live.backend}</span></div>}
+              </div>
             </div>
           </div>
         )}
