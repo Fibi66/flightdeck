@@ -232,11 +232,14 @@ export function ProjectLayout() {
     } catch { /* Gracefully ignore corrupt localStorage */ }
   }, [id, activeTab]);
 
-  // Restore last tab on initial navigation to project root (bare /projects/:id only)
-  const isProjectRoot = Boolean(id) &&
-    location.pathname === `/projects/${id}`;
+  // Restore last tab when navigating to project root or overview (default landing)
+  const isDefaultLanding = Boolean(id) && (
+    location.pathname === `/projects/${id}` ||
+    location.pathname === `/projects/${id}/` ||
+    location.pathname === `/projects/${id}/overview`
+  );
   useEffect(() => {
-    if (!id || !isProjectRoot) return;
+    if (!id || !isDefaultLanding) return;
     try {
       const stored = JSON.parse(localStorage.getItem(TAB_STORAGE_KEY) ?? '{}');
       const lastTab = stored[id];
@@ -244,7 +247,7 @@ export function ProjectLayout() {
         navigate(`/projects/${id}/${lastTab}`, { replace: true });
       }
     } catch { /* Gracefully ignore corrupt localStorage */ }
-  }, [id, isProjectRoot, navigate]);
+  }, [id, isDefaultLanding, navigate]);
 
   // B-11: Keyboard shortcuts — Alt+1-5 for primary tabs
   useEffect(() => {
