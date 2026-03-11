@@ -50,6 +50,11 @@ export function AgentCard({ agent, api }: Props) {
               <span className={`text-xs ${agentStatusText(agent.status)}`}>
                 {agent.status}
               </span>
+              {agent.status === 'failed' && agent.exitError && (
+                <span className="text-[10px] text-red-400 truncate max-w-[200px]" title={agent.exitError}>
+                  {agent.exitError}
+                </span>
+              )}
               {agent.sessionId && (
                 <button
                   className="text-[10px] font-mono text-th-text-muted bg-th-bg-alt/60 px-1 rounded hover:bg-th-bg-alt transition-colors"

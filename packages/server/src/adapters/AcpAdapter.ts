@@ -11,7 +11,7 @@
 import { EventEmitter } from 'events';
 import { spawn, execFileSync, ChildProcess } from 'child_process';
 import { Readable, Writable } from 'stream';
-import type * as acp from '@agentclientprotocol/sdk';
+import * as acp from '@agentclientprotocol/sdk';
 import { logger } from '../utils/logger.js';
 import type {
   AgentAdapter,
@@ -28,10 +28,6 @@ import type {
 /** Timeout for graceful process shutdown before force-killing */
 const TERMINATE_TIMEOUT_MS = 5000;
 
-// ── Lazy SDK Loading ────────────────────────────────────────────────
-// The ACP SDK is loaded dynamically so the adapter module can be imported
-// without triggering SDK loading. The SDK is loaded on first start().
-
 /** Wraps a promise with a timeout. Rejects with a descriptive error if exceeded. */
 function withTimeout<T>(promise: Promise<T>, ms: number, operation: string): Promise<T> {
   return Promise.race([
@@ -43,20 +39,6 @@ function withTimeout<T>(promise: Promise<T>, ms: number, operation: string): Pro
 }
 
 const SDK_TIMEOUT_MS = 30_000;
-
-let acpSdk: typeof import('@agentclientprotocol/sdk') | null = null;
-
-async function loadAcpSdk(): Promise<typeof import('@agentclientprotocol/sdk')> {
-  if (acpSdk) return acpSdk;
-  try {
-    acpSdk = await import('@agentclientprotocol/sdk');
-    return acpSdk;
-  } catch {
-    throw new Error(
-      'ACP SDK not installed. Run: npm install @agentclientprotocol/sdk',
-    );
-  }
-}
 
 /** Extract displayable text from ACP content (single item, array, or string) */
 function extractContentText(content: unknown): string | undefined {
@@ -191,7 +173,6 @@ export class AcpAdapter extends EventEmitter implements AgentAdapter {
   }
 
   private async spawnAndConnect(opts: AdapterStartOptions): Promise<void> {
-    const sdk = await loadAcpSdk();
     this.validateCliCommand(opts.cliCommand);
 
     const args = [...(opts.baseArgs || ['--acp', '--stdio']), ...(opts.cliArgs || [])];
@@ -231,7 +212,7 @@ export class AcpAdapter extends EventEmitter implements AgentAdapter {
 
     const output = Writable.toWeb(this.process.stdin) as WritableStream<Uint8Array>;
     const input = Readable.toWeb(this.process.stdout) as ReadableStream<Uint8Array>;
-    const stream = sdk.ndJsonStream(output, input);
+    const stream = acp.ndJsonStream(output, input);
 
     const client: acp.Client = {
       requestPermission: async (params) => {
@@ -318,10 +299,10 @@ export class AcpAdapter extends EventEmitter implements AgentAdapter {
       },
     };
 
-    this.connection = new sdk.ClientSideConnection((_agent) => client, stream);
+    this.connection = new acp.ClientSideConnection((_agent) => client, stream);
 
     const initResult = await this.connection.initialize({
-      protocolVersion: sdk.PROTOCOL_VERSION,
+      protocolVersion: acp.PROTOCOL_VERSION,
       clientCapabilities: {},
     });
     this.agentCapabilities = initResult.agentCapabilities ?? null;

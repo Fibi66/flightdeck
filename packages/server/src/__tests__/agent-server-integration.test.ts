@@ -108,7 +108,6 @@ describe('Agent Server Integration — full lifecycle', () => {
     server = new AgentServer({
       listener,
       runtimeDir,
-      orphanTimeoutMs: 60_000,
     });
     server.start();
 

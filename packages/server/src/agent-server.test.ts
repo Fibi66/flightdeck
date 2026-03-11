@@ -2,7 +2,7 @@
  * AgentServer tests.
  *
  * Tests cover: lifecycle, message dispatch, spawn/terminate/prompt,
- * event relay, orphan timer, PID file, subscribe/replay, mass failure,
+ * event relay, PID file, subscribe/replay, mass failure,
  * error handling, and connection management.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -154,7 +154,6 @@ describe('AgentServer', () => {
     server = new AgentServer({
       listener,
       runtimeDir,
-      orphanTimeoutMs: 5000,
     });
   });
 
@@ -592,47 +591,6 @@ describe('AgentServer', () => {
   });
 
   // ── Orphan Timer ──────────────────────────────────────────────
-
-  describe('orphan timer', () => {
-    it('starts orphan timer on start', () => {
-      server.start();
-      expect(server.started).toBe(true);
-    });
-
-    it('triggers stop after orphan timeout with no connection', async () => {
-      server.start();
-      expect(server.stopped).toBe(false);
-
-      await vi.advanceTimersByTimeAsync(5000);
-      expect(server.stopped).toBe(true);
-    });
-
-    it('clears orphan timer when connection arrives', async () => {
-      server.start();
-
-      // Connection arrives before timeout
-      listener.simulateConnection(conn);
-
-      await vi.advanceTimersByTimeAsync(5000);
-      expect(server.stopped).toBe(false); // Timer was cleared
-    });
-
-    it('restarts orphan timer on disconnect', async () => {
-      server.start();
-      listener.simulateConnection(conn);
-
-      // Disconnect triggers new timer
-      conn.simulateDisconnect('test');
-
-      // Wait less than timeout — still alive
-      await vi.advanceTimersByTimeAsync(3000);
-      expect(server.stopped).toBe(false);
-
-      // Wait remaining time — now stops
-      await vi.advanceTimersByTimeAsync(2000);
-      expect(server.stopped).toBe(true);
-    });
-  });
 
   // ── Error Handling ────────────────────────────────────────────
 

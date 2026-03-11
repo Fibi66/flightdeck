@@ -126,6 +126,8 @@ export interface AgentInfo {
   provider?: string;
   /** Adapter backend type (e.g. 'acp') */
   backend?: string;
+  /** Error message if agent failed to start or crashed */
+  exitError?: string;
 }
 
 export interface ServerConfig {

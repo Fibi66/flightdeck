@@ -109,7 +109,7 @@ export function agentServerRoutes(ctx: AppContext): Router {
         }
       }
 
-      // Disconnect the client; the server will self-terminate via orphan timeout
+      // Disconnect the client
       await agentServerClient.disconnect();
 
       logger.info({ module: 'agent-server', msg: 'Agent server stopped via UI', terminatedCount: running.length });

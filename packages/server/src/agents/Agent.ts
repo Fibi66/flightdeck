@@ -66,6 +66,8 @@ export interface AgentJSON {
   provider?: string;
   /** Adapter backend type (e.g. 'acp') */
   backend?: string;
+  /** Error message if agent failed to start or crashed */
+  exitError?: string;
 }
 
 export class Agent {
@@ -751,6 +753,7 @@ When you discover something important about the codebase, a pattern, a gotcha, o
       isSystemAgent: this.isSystemAgent || undefined,
       provider: this.provider,
       backend: this.backend,
+      exitError: this.exitError,
     };
   }
 }

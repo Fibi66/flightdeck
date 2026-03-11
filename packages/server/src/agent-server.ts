@@ -120,7 +120,6 @@ export interface ManagedAgent {
 export interface AgentServerOptions {
   listener: AgentServerListener;
   adapterConfig?: Partial<AdapterConfig>;
-  orphanTimeoutMs?: number;
   runtimeDir?: string;
   eventBufferOpts?: { maxEventsPerAgent?: number; maxTotalEvents?: number; maxEventAgeMs?: number };
   massFailureOpts?: { threshold?: number; windowMs?: number; cooldownMs?: number };
@@ -139,7 +138,6 @@ export interface AgentServerPersistence {
 
 // ── Constants ───────────────────────────────────────────────────────
 
-const DEFAULT_ORPHAN_TIMEOUT_MS = 12 * 60 * 60 * 1000; // 12 hours
 const PID_FILENAME = 'agent-server.pid';
 const DEFAULT_PROJECT_ID = 'default';
 const DEFAULT_TEAM_ID = 'default';
@@ -183,7 +181,6 @@ class ScopeMismatchError extends Error {
 export class AgentServer {
   private readonly listener: AgentServerListener;
   private readonly adapterConfig: Partial<AdapterConfig>;
-  private readonly orphanTimeoutMs: number;
   private readonly runtimeDir: string;
   private readonly agents = new Map<string, ManagedAgent>();
   /** Secondary index: "projectId:teamId" → Set of agentIds. */
@@ -195,7 +192,6 @@ export class AgentServer {
   private connection: TransportConnection | null = null;
   /** Scope declared by the current connection (set at first scoped message). */
   private connectionScope: MessageScope | null = null;
-  private orphanTimer: ReturnType<typeof setTimeout> | null = null;
   private listenerCleanup: (() => void) | null = null;
   private massFailureCleanup: (() => void) | null = null;
   private _started = false;
@@ -204,7 +200,6 @@ export class AgentServer {
   constructor(opts: AgentServerOptions) {
     this.listener = opts.listener;
     this.adapterConfig = opts.adapterConfig ?? {};
-    this.orphanTimeoutMs = opts.orphanTimeoutMs ?? DEFAULT_ORPHAN_TIMEOUT_MS;
     this.runtimeDir = opts.runtimeDir ?? process.cwd();
     this.eventBuffer = new EventBuffer(opts.eventBufferOpts);
     this.massFailure = new MassFailureDetector(opts.massFailureOpts);
@@ -239,7 +234,6 @@ export class AgentServer {
     this.writePidFile();
     this.listenerCleanup = this.listener.onConnection((conn) => this.handleConnection(conn));
     this.listener.listen();
-    this.startOrphanTimer();
 
     this.massFailureCleanup = this.massFailure.onMassFailure((data) => {
       const eventId = EventBuffer.generateEventId();
@@ -257,7 +251,6 @@ export class AgentServer {
     if (this._stopped) return;
     this._stopped = true;
 
-    this.clearOrphanTimer();
     this.massFailureCleanup?.();
     this.massFailure.dispose();
 
@@ -299,7 +292,6 @@ export class AgentServer {
 
     this.connection = conn;
     this.connectionScope = null; // Scope is set on first scoped message
-    this.clearOrphanTimer();
     this.eventBuffer.stopBuffering();
 
     conn.onMessage((msg) => this.dispatchMessage(msg, conn));
@@ -308,7 +300,6 @@ export class AgentServer {
         this.connection = null;
         this.connectionScope = null;
         this.eventBuffer.startBuffering();
-        this.startOrphanTimer();
       }
     });
   }
@@ -633,22 +624,6 @@ export class AgentServer {
     if (!this.connectionScope) return true; // No scope bound yet — allow all
     return agent.projectId === this.connectionScope.projectId
       && agent.teamId === this.connectionScope.teamId;
-  }
-
-  // ── Orphan Timer ──────────────────────────────────────────────
-
-  private startOrphanTimer(): void {
-    this.clearOrphanTimer();
-    this.orphanTimer = setTimeout(() => {
-      this.stop({ reason: 'orphan timeout' });
-    }, this.orphanTimeoutMs);
-  }
-
-  private clearOrphanTimer(): void {
-    if (this.orphanTimer) {
-      clearTimeout(this.orphanTimer);
-      this.orphanTimer = null;
-    }
   }
 
   // ── PID File ──────────────────────────────────────────────────
