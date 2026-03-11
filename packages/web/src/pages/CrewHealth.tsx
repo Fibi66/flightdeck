@@ -52,6 +52,7 @@ function statusColor(status: string): string {
     case 'running': return 'bg-green-400';
     case 'idle': return 'bg-blue-400';
     case 'terminated': return 'bg-red-400';
+    case 'failed': return 'bg-orange-400';
     default: return 'bg-yellow-400';
   }
 }
@@ -61,6 +62,7 @@ function statusLabel(status: string): string {
     case 'running': return 'Running';
     case 'idle': return 'Idle';
     case 'terminated': return 'Terminated';
+    case 'failed': return 'Failed';
     default: return status;
   }
 }

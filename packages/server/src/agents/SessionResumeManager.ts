@@ -51,8 +51,8 @@ function toRosterStatus(agentStatus: string): RosterStatus | null {
     case 'running': return 'running';
     case 'idle': return 'idle';
     case 'completed':
-    case 'failed':
     case 'terminated': return 'terminated';
+    case 'failed': return 'failed';
     case 'creating': return null; // transient — don't persist yet
     default: return null;
   }

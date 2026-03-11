@@ -2,7 +2,7 @@ import { eq, and, isNull } from 'drizzle-orm';
 import type { Database } from './database.js';
 import { agentRoster } from './schema.js';
 
-export type RosterAgentStatus = 'idle' | 'running' | 'terminated';
+export type RosterAgentStatus = 'idle' | 'running' | 'terminated' | 'failed';
 
 export interface AgentRecord {
   agentId: string;
@@ -228,7 +228,7 @@ export class AgentRosterRepository {
 
   getStatusCounts(teamId?: string): Record<string, number> {
     const agents = this.getAllAgents(undefined, teamId);
-    const counts: Record<string, number> = { idle: 0, running: 0, terminated: 0 };
+    const counts: Record<string, number> = { idle: 0, running: 0, terminated: 0, failed: 0 };
     for (const a of agents) {
       counts[a.status] = (counts[a.status] ?? 0) + 1;
     }

@@ -45,7 +45,7 @@ import { useAppStore } from '../../stores/appStore';
 
 // ── Types (shared with CrewRoster) ─────────────────────────
 
-type RosterStatus = 'idle' | 'running' | 'terminated';
+type RosterStatus = 'idle' | 'running' | 'terminated' | 'failed';
 type LiveStatus = 'creating' | 'running' | 'idle' | 'completed' | 'failed' | 'terminated' | null;
 type ProfileTab = 'overview' | 'chat' | 'settings';
 
@@ -314,7 +314,7 @@ function AgentRow({ agent, isLead, isSelected, onSelect, onRemove, crewAgents }:
 
   // Only show remove button for terminated agents that aren't leads with children
   const canRemove = !hasChildren &&
-                    agent.status === 'terminated' &&
+                    (agent.status === 'terminated' || agent.status === 'failed') &&
                     (!agent.liveStatus || agent.liveStatus === 'terminated' || agent.liveStatus === 'failed' || agent.liveStatus === 'completed');
 
   const handleRemove = async (e: React.MouseEvent) => {
@@ -823,7 +823,7 @@ export function UnifiedCrewPage({ scope = 'global' }: UnifiedCrewPageProps) {
             className="w-full pl-9 pr-3 py-2 text-sm rounded bg-th-bg-alt border border-th-border text-th-text placeholder:text-th-text-alt" />
         </div>
         <div className="flex gap-1">
-          {(['all', 'idle', 'running', 'terminated'] as const).map(s => (
+          {(['all', 'idle', 'running', 'terminated', 'failed'] as const).map(s => (
             <button key={s} onClick={() => setStatusFilter(s)}
               className={`px-3 py-1.5 text-xs rounded capitalize transition-colors ${
                 statusFilter === s
