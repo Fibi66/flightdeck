@@ -5,6 +5,7 @@ import type { FileLock } from './FleetOverview';
 import { Square, RefreshCw, Terminal, Zap, Check, Play } from 'lucide-react';
 import { EmptyState } from '../Shared';
 import { formatTokens } from '../../utils/format';
+import { AVAILABLE_MODELS } from '../../constants/models';
 
 function shortModelName(model?: string): string {
   if (!model) return '';
@@ -16,19 +17,6 @@ function shortModelName(model?: string): string {
   if (m.includes('gpt')) return m.replace('gpt-', 'GPT-').replace('-codex', ' Codex');
   return model;
 }
-
-const AVAILABLE_MODELS = [
-  'claude-opus-4.6',
-  'claude-sonnet-4.6',
-  'claude-sonnet-4.5',
-  'claude-haiku-4.5',
-  'gpt-5.3-codex',
-  'gpt-5.2-codex',
-  'gpt-5.2',
-  'gpt-5.1-codex',
-  'gemini-3-pro-preview',
-  'gpt-4.1',
-];
 
 /** Flatten agents into a depth-first hierarchy. Parents first, children indented below. */
 function flattenHierarchy(agents: AgentInfo[]): { agent: AgentInfo; depth: number; isLastChild: boolean }[] {

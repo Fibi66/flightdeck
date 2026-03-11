@@ -25,21 +25,9 @@ import { formatRelativeTime } from '../../utils/formatRelativeTime';
 import { formatTokens } from '../../utils/format';
 import { Tabs } from '../ui/Tabs';
 import type { TabItem } from '../ui/Tabs';
+import { AVAILABLE_MODELS } from '../../constants/models';
 
 // ── Types ─────────────────────────────────────────────────
-
-const AVAILABLE_MODELS = [
-  'claude-opus-4.6',
-  'claude-sonnet-4.6',
-  'claude-sonnet-4.5',
-  'claude-haiku-4.5',
-  'gpt-5.3-codex',
-  'gpt-5.2-codex',
-  'gpt-5.2',
-  'gpt-5.1-codex',
-  'gemini-3-pro-preview',
-  'gpt-4.1',
-];
 
 type RosterStatus = 'idle' | 'running' | 'terminated' | 'failed';
 type LiveStatus = 'creating' | 'running' | 'idle' | 'completed' | 'failed' | 'terminated' | null;

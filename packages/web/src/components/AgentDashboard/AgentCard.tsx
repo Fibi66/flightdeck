@@ -6,25 +6,13 @@ import { AgentIdBadge } from '../../utils/markdown';
 import { agentStatusText } from '../../utils/statusColors';
 import { formatTokens } from '../../utils/format';
 import { DiffBadge } from '../DiffPreview';
+import { AVAILABLE_MODELS } from '../../constants/models';
 
 interface Props {
   agent: AgentInfo;
   api: any;
   ws: any;
 }
-
-const AVAILABLE_MODELS = [
-  'claude-opus-4.6',
-  'claude-sonnet-4.6',
-  'claude-sonnet-4.5',
-  'claude-haiku-4.5',
-  'gpt-5.3-codex',
-  'gpt-5.2-codex',
-  'gpt-5.2',
-  'gpt-5.1-codex',
-  'gemini-3-pro-preview',
-  'gpt-4.1',
-];
 
 export function AgentCard({ agent, api }: Props) {
   const setSelectedAgent = useAppStore((s) => s.setSelectedAgent);
