@@ -209,6 +209,7 @@ export function teamsRoutes(ctx: AppContext): Router {
         sessionId: liveJson.sessionId ?? null,
         provider: liveJson.provider ?? null,
         backend: liveJson.backend ?? null,
+        exitError: liveJson.exitError ?? null,
       } : null,
     });
   });

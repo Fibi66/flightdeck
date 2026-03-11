@@ -66,6 +66,7 @@ interface AgentProfile {
     sessionId: string | null;
     provider: string | null;
     backend: string | null;
+    exitError: string | null;
   } | null;
 }
 
@@ -560,6 +561,15 @@ function ProfilePanel({ agentId, teamId, onClose }: { agentId: string; teamId: s
               <div>
                 <span className="text-th-text-alt">Last Task:</span>
                 <p className="text-th-text mt-1">{profile.lastTaskSummary}</p>
+              </div>
+            )}
+            {profile.live?.exitError && (
+              <div className="mt-3 p-3 rounded bg-red-500/10 border border-red-500/20">
+                <div className="flex items-center gap-2 text-red-400 text-xs font-medium mb-1">
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                  Exit Error
+                </div>
+                <pre className="text-xs font-mono text-red-400 whitespace-pre-wrap break-words">{profile.live.exitError}</pre>
               </div>
             )}
             {profile.live && (
