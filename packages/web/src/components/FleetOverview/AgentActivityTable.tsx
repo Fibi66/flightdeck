@@ -145,19 +145,19 @@ export function AgentActivityTable({ agents, locks, api, onSelectAgent }: Props)
 
   return (
     <div className="border border-th-border rounded-lg bg-surface-raised overflow-hidden">
-      <table className="w-full text-sm">
+      <table className="w-full text-sm table-fixed">
         <thead>
           <tr className="border-b border-th-border text-th-text-muted text-xs uppercase tracking-wider">
-            <th className="text-left px-3 py-2">Agent</th>
-            <th className="text-left px-3 py-2">Status</th>
-            <th className="text-left px-3 py-2 hidden md:table-cell">Provider / Model</th>
-            <th className="text-left px-3 py-2 hidden md:table-cell">Task</th>
-            <th className="text-left px-3 py-2">Current Activity</th>
-            <th className="text-left px-3 py-2 hidden lg:table-cell">Progress</th>
-            <th className="text-left px-3 py-2 hidden xl:table-cell">Tokens</th>
-            <th className="text-left px-3 py-2 hidden lg:table-cell">Locks</th>
-            <th className="text-left px-3 py-2 hidden sm:table-cell">Uptime</th>
-            <th className="text-right px-3 py-2">Actions</th>
+            <th className="text-left px-3 py-2 w-[14%]">Agent</th>
+            <th className="text-left px-3 py-2 w-[7%]">Status</th>
+            <th className="text-left px-3 py-2 hidden md:table-cell w-[12%]">Provider / Model</th>
+            <th className="text-left px-3 py-2 hidden md:table-cell w-[14%]">Task</th>
+            <th className="text-left px-3 py-2 w-[16%]">Current Activity</th>
+            <th className="text-left px-3 py-2 hidden lg:table-cell w-[8%]">Progress</th>
+            <th className="text-left px-3 py-2 hidden xl:table-cell w-[10%]">Tokens</th>
+            <th className="text-left px-3 py-2 hidden lg:table-cell w-[9%]">Locks</th>
+            <th className="text-left px-3 py-2 hidden sm:table-cell w-[5%]">Uptime</th>
+            <th className="text-right px-3 py-2 w-[5%]">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -186,7 +186,7 @@ export function AgentActivityTable({ agents, locks, api, onSelectAgent }: Props)
                     <div className="min-w-0">
                       <button
                         onClick={() => handleSelect(agent.id)}
-                        className="font-medium text-th-text-alt text-xs hover:text-accent transition-colors text-left truncate block max-w-[160px]"
+                        className="font-medium text-th-text-alt text-xs hover:text-accent transition-colors text-left truncate block"
                         title={`${agent.role.name} (${agent.id.slice(0, 8)}) — click to open chat`}
                       >
                         {agent.role.name} <span className="text-th-text-muted font-mono">({agent.id.slice(0, 8)})</span>
@@ -251,9 +251,9 @@ export function AgentActivityTable({ agents, locks, api, onSelectAgent }: Props)
                 </td>
 
                 {/* Task */}
-                <td className="px-3 py-2.5 hidden md:table-cell">
+                <td className="px-3 py-2.5 hidden md:table-cell overflow-hidden">
                   {agent.task ? (
-                    <div className="max-w-[180px]">
+                    <div>
                       <div className="text-xs text-th-text-alt truncate" title={agent.task}>
                         {agent.task}
                       </div>
@@ -264,8 +264,8 @@ export function AgentActivityTable({ agents, locks, api, onSelectAgent }: Props)
                 </td>
 
                 {/* Current Activity */}
-                <td className="px-3 py-2.5">
-                  <div className="max-w-[250px]">
+                <td className="px-3 py-2.5 overflow-hidden">
+                  <div>
                     <div className="text-xs text-th-text-alt truncate" title={activity.text}>
                       {activity.text}
                     </div>
@@ -331,7 +331,7 @@ export function AgentActivityTable({ agents, locks, api, onSelectAgent }: Props)
                       {agentLocks.map((l) => (
                         <div
                           key={l.filePath}
-                          className="text-[10px] text-th-text-muted font-mono truncate max-w-[150px]"
+                          className="text-[10px] text-th-text-muted font-mono truncate"
                           title={l.filePath}
                         >
                           {l.filePath.split('/').pop()}
