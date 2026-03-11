@@ -87,7 +87,12 @@ export function AnalysisPage() {
             if (frame.type === 'milestone' || frame.type === 'task') { completed++; inProgress = Math.max(0, inProgress - 1); }
 
             const progress = (fPoints.length + 1) / kf.length;
-            cPoints.push({ time: t, cumulativeCost: realTokens * progress });
+            cPoints.push({
+              time: t,
+              cumulativeCost: realTokens * progress,
+              cumulativeInput: totalInput * progress,
+              cumulativeOutput: totalOutput * progress,
+            });
             fPoints.push({ time: t, created: taskTotal, inProgress, completed });
           }
 

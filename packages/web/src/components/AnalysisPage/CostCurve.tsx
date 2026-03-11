@@ -6,7 +6,9 @@ import { AxisBottom, AxisLeft } from '@visx/axis';
 
 export interface CostPoint {
   time: number;
-  cumulativeCost: number; // actually cumulative tokens (kept for interface compat)
+  cumulativeCost: number;      // total tokens (kept for backward compat)
+  cumulativeInput?: number;    // cumulative input tokens
+  cumulativeOutput?: number;   // cumulative output tokens
 }
 
 interface CostCurveProps {
@@ -16,12 +18,18 @@ interface CostCurveProps {
 }
 
 const MARGIN = { top: 12, right: 12, bottom: 28, left: 40 };
+const INPUT_COLOR = '#60a5fa';   // blue-400
+const OUTPUT_COLOR = 'rgb(var(--chart-success))';
 
 export function CostCurve({ data, width = 260, height = 180 }: CostCurveProps) {
-  // SVG sits below the card header (~32px for padding + title)
-  const svgH = height - 32;
+  // SVG sits below the card header (~44px for padding + title + legend)
+  const svgH = height - 44;
   const innerW = width - MARGIN.left - MARGIN.right;
   const innerH = svgH - MARGIN.top - MARGIN.bottom;
+
+  const hasBreakdown = data.some(
+    (d) => d.cumulativeInput != null && d.cumulativeOutput != null,
+  );
 
   const { xScale, yScale } = useMemo(() => {
     if (data.length === 0) {
@@ -63,8 +71,6 @@ export function CostCurve({ data, width = 260, height = 180 }: CostCurveProps) {
     );
   }
 
-  const areaColor = 'rgb(var(--chart-success))';
-
   const formatTokenAxis = (v: number | { valueOf(): number }) => {
     const n = typeof v === 'number' ? v : v.valueOf();
     if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -77,23 +83,76 @@ export function CostCurve({ data, width = 260, height = 180 }: CostCurveProps) {
       <h3 className="text-[11px] font-medium text-th-text-muted uppercase tracking-wider mb-1">
         Token Usage
       </h3>
+      {hasBreakdown && (
+        <div className="flex items-center gap-3 mb-1">
+          <span className="flex items-center gap-1 text-[10px] text-th-text-muted">
+            <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: INPUT_COLOR }} />
+            Input
+          </span>
+          <span className="flex items-center gap-1 text-[10px] text-th-text-muted">
+            <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: OUTPUT_COLOR }} />
+            Output
+          </span>
+        </div>
+      )}
       <svg width={width} height={svgH}>
         <Group left={MARGIN.left} top={MARGIN.top}>
-          <AreaClosed
-            data={data}
-            x={(d) => xScale(new Date(d.time)) ?? 0}
-            y={(d) => yScale(d.cumulativeCost) ?? 0}
-            yScale={yScale}
-            fill={areaColor}
-            fillOpacity={0.15}
-          />
-          <LinePath
-            data={data}
-            x={(d) => xScale(new Date(d.time)) ?? 0}
-            y={(d) => yScale(d.cumulativeCost) ?? 0}
-            stroke={areaColor}
-            strokeWidth={1.5}
-          />
+          {hasBreakdown ? (
+            <>
+              {/* Stacked areas: output on top of input */}
+              <AreaClosed
+                data={data}
+                x={(d) => xScale(new Date(d.time)) ?? 0}
+                y={(d) => yScale(d.cumulativeCost) ?? 0}
+                yScale={yScale}
+                fill={OUTPUT_COLOR}
+                fillOpacity={0.2}
+              />
+              <AreaClosed
+                data={data}
+                x={(d) => xScale(new Date(d.time)) ?? 0}
+                y={(d) => yScale(d.cumulativeInput ?? 0) ?? 0}
+                yScale={yScale}
+                fill={INPUT_COLOR}
+                fillOpacity={0.25}
+              />
+              {/* Total outline */}
+              <LinePath
+                data={data}
+                x={(d) => xScale(new Date(d.time)) ?? 0}
+                y={(d) => yScale(d.cumulativeCost) ?? 0}
+                stroke={OUTPUT_COLOR}
+                strokeWidth={1}
+                strokeOpacity={0.5}
+              />
+              {/* Input boundary line */}
+              <LinePath
+                data={data}
+                x={(d) => xScale(new Date(d.time)) ?? 0}
+                y={(d) => yScale(d.cumulativeInput ?? 0) ?? 0}
+                stroke={INPUT_COLOR}
+                strokeWidth={1.5}
+              />
+            </>
+          ) : (
+            <>
+              <AreaClosed
+                data={data}
+                x={(d) => xScale(new Date(d.time)) ?? 0}
+                y={(d) => yScale(d.cumulativeCost) ?? 0}
+                yScale={yScale}
+                fill={OUTPUT_COLOR}
+                fillOpacity={0.15}
+              />
+              <LinePath
+                data={data}
+                x={(d) => xScale(new Date(d.time)) ?? 0}
+                y={(d) => yScale(d.cumulativeCost) ?? 0}
+                stroke={OUTPUT_COLOR}
+                strokeWidth={1.5}
+              />
+            </>
+          )}
           <AxisBottom
             top={innerH}
             scale={xScale}
