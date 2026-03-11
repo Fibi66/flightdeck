@@ -15,7 +15,7 @@ import { useAppStore } from '../../stores/appStore';
 import { useLeadStore } from '../../stores/leadStore';
 import { apiFetch } from '../../hooks/useApi';
 import { useProjects } from '../../hooks/useProjects';
-import { useEffectiveProjectId } from '../../hooks/useEffectiveProjectId';
+import { useProjectId } from '../../contexts/ProjectContext';
 import { formatDateTime } from '../../utils/format';
 import { formatRelativeTime } from '../../utils/formatRelativeTime';
 import { POLL_INTERVAL_MS } from '../../constants/timing';
@@ -73,7 +73,7 @@ interface Props {
 export function OverviewPage(_props: Props) {
   const agents = useAppStore((s) => s.agents);
   const { projects } = useProjects();
-  const effectiveId = useEffectiveProjectId();
+  const effectiveId = useProjectId();
 
   const projectName = useMemo(() => {
     if (!effectiveId) return '';
