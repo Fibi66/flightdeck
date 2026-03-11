@@ -65,8 +65,8 @@ export function AgentDetailModal({ agentId, onClose }: AgentDetailModalProps) {
                 {agent.status}
               </span>
             </div>
-            <div className="flex items-center gap-3 mt-0.5 text-xs text-th-text-muted font-mono">
-              <span>{agent.id.slice(0, 8)}</span>
+            <div className="flex items-center gap-3 mt-0.5 text-xs text-th-text-muted font-mono flex-wrap">
+              <span title={agent.id}>{agent.id.slice(0, 8)}</span>
               {agent.provider && (
                 <span className="bg-blue-500/15 text-blue-400 px-1.5 rounded">{agent.provider}</span>
               )}
@@ -75,11 +75,11 @@ export function AgentDetailModal({ agentId, onClose }: AgentDetailModalProps) {
               )}
               {agent.sessionId && (
                 <button
-                  className="bg-th-bg-muted/50 px-1.5 rounded hover:bg-th-bg-muted transition-colors"
-                  title={`Session: ${agent.sessionId} — click to copy`}
+                  className="bg-th-bg-muted/50 px-1.5 rounded hover:bg-th-bg-muted transition-colors text-[10px] truncate max-w-[260px]"
+                  title={`Click to copy session ID: ${agent.sessionId}`}
                   onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(agent.sessionId!); }}
                 >
-                  sess:{agent.sessionId.slice(0, 8)}
+                  sess:{agent.sessionId}
                 </button>
               )}
             </div>
@@ -96,7 +96,7 @@ export function AgentDetailModal({ agentId, onClose }: AgentDetailModalProps) {
               <button
                 onClick={() => {
                   if (confirm('Stop this agent?')) {
-                    fetch(`/api/agents/${agent.id}`, { method: 'DELETE' });
+                    apiFetch(`/agents/${agent.id}`, { method: 'DELETE' });
                     onClose();
                   }
                 }}

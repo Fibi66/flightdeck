@@ -90,7 +90,7 @@ function AgentCard({ agent }: { agent: AgentInfo }) {
   const handleStop = async () => {
     setActionLoading('stop');
     try {
-      await apiFetch(`/agents/${agent.id}/terminate`, { method: 'POST' });
+      await apiFetch(`/agents/${agent.id}`, { method: 'DELETE' });
       addToast('success', `Terminated ${agent.role.name}`);
       setConfirmStop(false);
     } catch (err: any) {
