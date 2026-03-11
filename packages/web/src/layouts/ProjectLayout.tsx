@@ -232,14 +232,20 @@ export function ProjectLayout() {
     } catch { /* Gracefully ignore corrupt localStorage */ }
   }, [id, activeTab]);
 
-  // Restore last tab when navigating to project root or overview (default landing)
-  const isDefaultLanding = Boolean(id) && (
-    location.pathname === `/projects/${id}` ||
-    location.pathname === `/projects/${id}/` ||
-    location.pathname === `/projects/${id}/overview`
-  );
+  // Restore last tab once when first entering a project (not on every overview visit)
+  const restoredForRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!id || !isDefaultLanding) return;
+    if (!id || restoredForRef.current === id) return;
+    const isDefaultLanding =
+      location.pathname === `/projects/${id}` ||
+      location.pathname === `/projects/${id}/` ||
+      location.pathname === `/projects/${id}/overview`;
+    if (!isDefaultLanding) {
+      // User navigated directly to a specific tab — mark as restored
+      restoredForRef.current = id;
+      return;
+    }
+    restoredForRef.current = id;
     try {
       const stored = JSON.parse(localStorage.getItem(TAB_STORAGE_KEY) ?? '{}');
       const lastTab = stored[id];
@@ -247,7 +253,7 @@ export function ProjectLayout() {
         navigate(`/projects/${id}/${lastTab}`, { replace: true });
       }
     } catch { /* Gracefully ignore corrupt localStorage */ }
-  }, [id, isDefaultLanding, navigate]);
+  }, [id, location.pathname, navigate]);
 
   // B-11: Keyboard shortcuts — Alt+1-5 for primary tabs
   useEffect(() => {
