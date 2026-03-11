@@ -36,6 +36,7 @@ import { getRoleIcon } from '../../utils/getRoleIcon';
 import { sessionStatusDot } from '../../utils/statusColors';
 import { useToastStore } from '../Toast';
 import { formatRelativeTime } from '../../utils/formatRelativeTime';
+import { formatTokens } from '../../utils/format';
 import { StatusBadge, agentStatusProps, connectionStatusProps } from '../ui/StatusBadge';
 import { Tabs } from '../ui/Tabs';
 import type { TabItem } from '../ui/Tabs';
@@ -77,6 +78,12 @@ interface RosterAgent {
   createdAt: string;
   updatedAt: string;
   provider: string | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  contextWindowSize: number | null;
+  contextWindowUsed: number | null;
+  task: string | null;
+  outputPreview: string | null;
 }
 
 interface AgentProfile {
@@ -393,6 +400,23 @@ function AgentRow({ agent, isLead, isSelected, onSelect, onRemove, crewAgents }:
           </div>
           {agent.lastTaskSummary && (
             <div className="text-[10px] text-th-text-muted truncate">{agent.lastTaskSummary}</div>
+          )}
+          {agent.task && (
+            <div className="text-[10px] text-th-text-alt truncate">📋 {agent.task}</div>
+          )}
+          {(agent.inputTokens || agent.outputTokens) ? (
+            <div className="flex items-center gap-2 text-[10px] text-th-text-muted">
+              <span>↓{formatTokens(agent.inputTokens)}</span>
+              <span>↑{formatTokens(agent.outputTokens)}</span>
+              {agent.contextWindowSize && agent.contextWindowUsed ? (
+                <span className={agent.contextWindowUsed / agent.contextWindowSize > 0.85 ? 'text-red-400' : agent.contextWindowUsed / agent.contextWindowSize > 0.6 ? 'text-yellow-400' : ''}>
+                  ctx {Math.round((agent.contextWindowUsed / agent.contextWindowSize) * 100)}%
+                </span>
+              ) : null}
+            </div>
+          ) : null}
+          {agent.outputPreview && (
+            <div className="text-[10px] text-th-text-muted font-mono truncate opacity-60">{agent.outputPreview.trim().split('\n').pop()}</div>
           )}
         </div>
         <StatusBadge {...agentStatusProps(agent.status, agent.liveStatus)} />

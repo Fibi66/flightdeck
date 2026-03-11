@@ -135,6 +135,7 @@ export function teamsRoutes(ctx: AppContext): Router {
       const allLive = agentManager.getAll();
       const enriched = agents.map(a => {
         const live = allLive.find(l => l.id === a.agentId);
+        const liveJson = live?.toJSON();
         return {
           agentId: a.agentId,
           role: a.role,
@@ -149,6 +150,12 @@ export function teamsRoutes(ctx: AppContext): Router {
           createdAt: a.createdAt,
           updatedAt: a.updatedAt,
           provider: live?.provider ?? null,
+          inputTokens: liveJson?.inputTokens ?? null,
+          outputTokens: liveJson?.outputTokens ?? null,
+          contextWindowSize: liveJson?.contextWindowSize ?? null,
+          contextWindowUsed: liveJson?.contextWindowUsed ?? null,
+          task: liveJson?.task ?? null,
+          outputPreview: liveJson?.outputPreview?.slice(-200) ?? null,
         };
       });
 
