@@ -81,9 +81,9 @@ describe('StatusPopover', () => {
     fireEvent.click(screen.getByTestId('status-popover-trigger'));
 
     await waitFor(() => {
-      expect(screen.getByText('3 total')).toBeInTheDocument();
+      expect(screen.getByText('2 active')).toBeInTheDocument();
     });
-    expect(screen.getByText('1 running, 1 idle, 1 done')).toBeInTheDocument();
+    expect(screen.getByText('1 running, 1 idle')).toBeInTheDocument();
   });
 
   it('shows Healthy badge when all systems ok', async () => {

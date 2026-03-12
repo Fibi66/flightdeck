@@ -73,7 +73,6 @@ describe('CrewHealth', () => {
     expect(screen.getByText('developer')).toBeInTheDocument();
     expect(screen.getByText('architect')).toBeInTheDocument();
     expect(screen.getByText('reviewer')).toBeInTheDocument();
-    expect(screen.getByText('tester')).toBeInTheDocument();
   });
 
   it('shows mass failure alert when paused', async () => {

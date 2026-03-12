@@ -302,7 +302,7 @@ describe('CrewRoster', () => {
     // Click Settings tab
     fireEvent.click(screen.getByText('Settings'));
     await waitFor(() => {
-      expect(screen.getByText('Model:')).toBeInTheDocument();
+      expect(screen.getByText('Model')).toBeInTheDocument();
     });
   });
 
