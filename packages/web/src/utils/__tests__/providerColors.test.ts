@@ -68,4 +68,9 @@ describe('getProviderColors', () => {
     expect(colors).toHaveProperty('text');
     expect(colors).toHaveProperty('border');
   });
+
+  it('uses border-l- prefix for left-only specificity', () => {
+    const colors = getProviderColors('copilot');
+    expect(colors.border).toBe('border-l-purple-500');
+  });
 });
