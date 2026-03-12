@@ -40,8 +40,17 @@ function withTimeout<T>(promise: Promise<T>, ms: number, operation: string): Pro
 
 const SDK_TIMEOUT_MS = 30_000;
 
-/** Maximum time a single prompt can run before being timed out (10 minutes, configurable). */
+/**
+ * Maximum time a single prompt can run before being timed out (10 minutes).
+ * Defense-in-depth: AlertEngine.checkLongRunningPrompts() fires a separate
+ * 'long_running_prompt' alert at 30 minutes for any agent (including leads)
+ * that is still prompting — this catches cases where the timeout fails or
+ * the adapter is stuck in a non-prompt state.
+ */
 const PROMPT_TIMEOUT_MS = 10 * 60 * 1000;
+
+/** Maximum number of buffered system notes before oldest entries are dropped. */
+const MAX_SYSTEM_NOTE_BUFFER = 50;
 
 /** Extract displayable text from ACP content (single item, array, or string) */
 function extractContentText(content: unknown): string | undefined {
@@ -463,6 +472,9 @@ export class AcpAdapter extends EventEmitter implements AgentAdapter {
 
   /** Buffer a system note for delivery after the current prompt completes. */
   appendSystemNote(note: string): void {
+    if (this.systemNoteBuffer.length >= MAX_SYSTEM_NOTE_BUFFER) {
+      this.systemNoteBuffer.shift();
+    }
     this.systemNoteBuffer.push(note);
   }
 

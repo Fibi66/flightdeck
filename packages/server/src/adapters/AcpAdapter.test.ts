@@ -1045,6 +1045,18 @@ describe('AcpAdapter', () => {
       await adapter.terminate();
       expect(adapter.flushSystemNotes()).toBeNull();
     });
+
+    it('caps buffer at 50 entries, dropping oldest', () => {
+      const adapter = new AcpAdapter();
+      for (let i = 0; i < 60; i++) {
+        adapter.appendSystemNote(`note-${i}`);
+      }
+      const merged = adapter.flushSystemNotes()!;
+      const lines = merged.split('\n');
+      expect(lines).toHaveLength(50);
+      expect(lines[0]).toBe('note-10');
+      expect(lines[49]).toBe('note-59');
+    });
   });
 
   // ── 10. Prompt timeout ──────────────────────────────────────────

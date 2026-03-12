@@ -107,6 +107,9 @@ export class MockAdapter extends EventEmitter implements AgentAdapter {
 
   /** Buffer a system note for delivery after the current prompt completes. */
   appendSystemNote(note: string): void {
+    if (this.systemNoteBuffer.length >= 50) {
+      this.systemNoteBuffer.shift();
+    }
     this.systemNoteBuffer.push(note);
   }
 
