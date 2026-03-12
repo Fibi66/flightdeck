@@ -707,7 +707,7 @@ describe('GET /api/browse — security', () => {
       const leadAgent = createLeadAgent({ projectName: 'Test Project' });
       const secretaryAgent = createMockAgent({
         id: 'secretary-001',
-        role: { id: 'secretary', name: 'Secretary', model: 'gpt-4.1' },
+        role: { id: 'secretary', name: 'Secretary', model: 'gpt-5.1-codex-mini' },
         parentId: 'lead-001',
         isSystemAgent: true,
       });
