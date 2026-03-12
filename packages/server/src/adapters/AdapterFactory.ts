@@ -115,10 +115,10 @@ export function buildStartOptions(
   const cloudEnv = cloudProviderToEnv(config.cloudProvider);
   const rawEnv = { ...cloudEnv, ...preset?.env, ...config.envOverride };
 
-  // Gemini: deliver system prompt via GEMINI_SYSTEM_MD env var
-  if (providerId === 'gemini' && agentOpts.systemPrompt) {
-    rawEnv['GEMINI_SYSTEM_MD'] = agentOpts.systemPrompt;
-  }
+  // NOTE: Gemini system prompt delivery is handled by the RoleFileWriter which
+  // writes .gemini/agents/flightdeck-<role>.md before the process spawns.
+  // GEMINI_SYSTEM_MD env var is NOT used here — it expects a file path (not raw
+  // prompt text) and overrides the core system prompt, which is not what we want.
 
   const env = Object.fromEntries(
     Object.entries(rawEnv).filter(([, v]) => v),

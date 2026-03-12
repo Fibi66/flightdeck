@@ -214,13 +214,13 @@ describe('AdapterFactory', () => {
       expect(opts.env).toBeUndefined();
     });
 
-    it('sets GEMINI_SYSTEM_MD env var for gemini provider with system prompt', () => {
+    it('does not set GEMINI_SYSTEM_MD env var (system prompt delivered via role files)', () => {
       const { options: opts } = buildStartOptions(
         { ...baseConfig, provider: 'gemini' },
         { cwd: '/test', systemPrompt: 'You are a helpful agent.' },
       );
-      expect(opts.env?.GEMINI_SYSTEM_MD).toBe('You are a helpful agent.');
-      // Must NOT use the wrong env var (GEMINI_WRITE_SYSTEM_MD exports the default, not sets custom)
+      // System prompt is now delivered by RoleFileWriter (.gemini/agents/*.md)
+      expect(opts.env?.GEMINI_SYSTEM_MD).toBeUndefined();
       expect(opts.env?.GEMINI_WRITE_SYSTEM_MD).toBeUndefined();
     });
 

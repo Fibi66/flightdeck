@@ -16,6 +16,16 @@ vi.mock('../agents/agentFiles.js', () => ({
   agentFlagForRole: (roleId: string) => roleId,
 }));
 
+// ── Mock RoleFileWriter ──────────────────────────────────────────
+const mockWriteRoleFiles = vi.fn().mockResolvedValue(['/test/.github/agents/flightdeck-developer.agent.md']);
+
+vi.mock('../adapters/RoleFileWriter.js', () => ({
+  createRoleFileWriter: vi.fn(() => ({
+    writeRoleFiles: mockWriteRoleFiles,
+  })),
+  listRoleFileWriterProviders: vi.fn(() => ['copilot', 'gemini', 'claude', 'cursor', 'codex', 'opencode']),
+}));
+
 // ── Mock AdapterFactory ───────────────────────────────────────
 const mockStart = vi.fn();
 const mockOn = vi.fn();
@@ -52,6 +62,7 @@ vi.mock('../adapters/AdapterFactory.js', () => ({
 
 // Import AFTER mocking
 import { startAcp } from '../agents/AgentAcpBridge.js';
+import { createRoleFileWriter } from '../adapters/RoleFileWriter.js';
 import { logger } from '../utils/logger.js';
 import type { ServerConfig } from '../config.js';
 
@@ -60,7 +71,7 @@ import type { ServerConfig } from '../config.js';
 function createFakeAgent(overrides: Record<string, any> = {}) {
   return {
     id: 'agent-12345678-abcd',
-    role: { id: 'lead', name: 'Project Lead', model: undefined, systemPrompt: '' },
+    role: { id: 'lead', name: 'Project Lead', description: 'Leads the project', model: undefined, systemPrompt: 'You are a lead.' },
     autopilot: true,
     model: undefined,
     resumeSessionId: undefined,
@@ -202,5 +213,60 @@ describe('AgentAcpBridge — startAcp', () => {
     });
 
     expect(mockTerminate).toHaveBeenCalled();
+  });
+
+  it('writes role files before spawning the adapter', async () => {
+    const agent = createFakeAgent({
+      role: { id: 'developer', name: 'Developer', description: 'Writes code', systemPrompt: 'You are a developer.' },
+    });
+    mockStart.mockResolvedValue('session-456');
+
+    await startAcp(agent, fakeConfig);
+
+    expect(createRoleFileWriter).toHaveBeenCalledWith('copilot');
+    expect(mockWriteRoleFiles).toHaveBeenCalledWith(
+      [{ role: 'developer', description: 'Writes code', instructions: 'You are a developer.' }],
+      '/test/project',
+    );
+
+    // Role files should be written BEFORE conn.start()
+    const writeOrder = mockWriteRoleFiles.mock.invocationCallOrder[0];
+    const startOrder = mockStart.mock.invocationCallOrder[0];
+    expect(writeOrder).toBeLessThan(startOrder);
+  });
+
+  it('writes role files for gemini provider', async () => {
+    const agent = createFakeAgent({
+      provider: 'gemini',
+      role: { id: 'architect', name: 'Architect', description: 'System design', systemPrompt: 'You are an architect.' },
+    });
+    mockStart.mockResolvedValue('session-789');
+
+    await startAcp(agent, { ...fakeConfig, provider: 'gemini' });
+
+    expect(createRoleFileWriter).toHaveBeenCalledWith('gemini');
+    expect(mockWriteRoleFiles).toHaveBeenCalledWith(
+      [{ role: 'architect', description: 'System design', instructions: 'You are an architect.' }],
+      '/test/project',
+    );
+  });
+
+  it('continues startup if role file writing fails', async () => {
+    const agent = createFakeAgent();
+    mockWriteRoleFiles.mockRejectedValueOnce(new Error('EACCES: permission denied'));
+    mockStart.mockResolvedValue('session-ok');
+
+    await startAcp(agent, fakeConfig);
+
+    // Should log a warning but NOT fail
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        module: 'agent-bridge',
+        msg: expect.stringContaining('Role file write failed'),
+      }),
+    );
+
+    // Adapter start should still have been called
+    expect(mockStart).toHaveBeenCalled();
   });
 });
