@@ -178,7 +178,7 @@ export function OverviewPage(_props: Props) {
     mountedRef.current = true;
     const poll = async () => {
       try {
-        const data = await apiFetch<Decision[]>(`/lead/${effectiveId}/decisions`);
+        const data = await apiFetch<Decision[]>(`/decisions?projectId=${effectiveId}`);
         if (mountedRef.current) setDecisions(Array.isArray(data) ? data : []);
       } catch { /* API may not be ready */ }
     };
@@ -200,7 +200,7 @@ export function OverviewPage(_props: Props) {
     const poll = async () => {
       try {
         const data = await apiFetch<ActivityEntry[]>(
-          `/coordination/activity?projectId=${effectiveId}&type=progress`,
+          `/coordination/activity?projectId=${effectiveId}&type=progress_update`,
         );
         if (mountedRef.current) setActivity(Array.isArray(data) ? data : []);
       } catch { /* ignore */ }
