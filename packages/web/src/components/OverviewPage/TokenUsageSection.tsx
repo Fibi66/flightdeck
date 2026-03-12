@@ -169,7 +169,7 @@ function AgentBreakdown({
           return (
             <div key={cost.agentId} className="flex items-center gap-1.5 text-xs">
               <span className="w-4 text-center shrink-0">{roleIcon}</span>
-              <span className="text-th-text-alt w-16 truncate shrink-0" title={`${roleName} (${cost.agentId.slice(0, 8)})`}>
+              <span className="text-th-text-alt w-16 truncate shrink-0" title={`${roleName} (${shortAgentId(cost.agentId)})`}>
                 {roleName}
               </span>
               <div className="flex-1 min-w-0 h-1.5 bg-th-bg-alt rounded-full overflow-hidden">

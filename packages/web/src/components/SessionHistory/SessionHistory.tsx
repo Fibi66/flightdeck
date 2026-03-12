@@ -14,6 +14,7 @@ import {
   Eye,
 } from 'lucide-react';
 import { ResumeSessionDialog } from './ResumeSessionDialog';
+import { shortAgentId } from '../../utils/agentLabel';
 
 export interface SessionAgent {
   role: string;
@@ -119,7 +120,7 @@ export function SessionHistory({ projectId, hasActiveLead }: SessionHistoryProps
                   role="button"
                   onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(session.leadId); }}
                 >
-                  {session.leadId.slice(0, 8)}
+                  {shortAgentId(session.leadId)}
                 </span>
                 <span className="text-xs flex-1 truncate text-th-text">
                   {session.task || 'No task description'}

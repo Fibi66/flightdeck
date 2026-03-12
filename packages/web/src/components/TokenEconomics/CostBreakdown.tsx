@@ -168,7 +168,7 @@ function AgentCostTable({
                     {agent?.role.name ?? cost.agentRole ?? 'Unknown'}
                   </span>
                   <span className="text-th-text-muted font-mono">
-                    ({cost.agentId.slice(0, 8)})
+                    ({shortAgentId(cost.agentId)})
                   </span>
                 </div>
               </td>
@@ -254,7 +254,7 @@ function TaskCostTable({
                       <span
                         key={a.agentId}
                         className="inline-flex items-center gap-0.5 rounded bg-th-bg-alt px-1.5 py-0.5 text-th-text-muted"
-                        title={`${agent?.role.name ?? a.agentRole ?? a.agentId.slice(0, 8)}: ${formatTokens(a.inputTokens)} in / ${formatTokens(a.outputTokens)} out`}
+                        title={`${agent?.role.name ?? a.agentRole ?? shortAgentId(a.agentId)}: ${formatTokens(a.inputTokens)} in / ${formatTokens(a.outputTokens)} out`}
                       >
                         {agent?.role.icon ?? '🤖'}
                         <span className="font-mono">{shortAgentId(a.agentId)}</span>

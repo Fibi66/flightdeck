@@ -8,6 +8,7 @@ import {
   CheckCircle,
 } from 'lucide-react';
 import type { AgentHealthInfo } from '../pages/CrewPage';
+import { shortAgentId } from '../utils/agentLabel';
 
 // ── Types ───────────────────────────────────────────────────────────
 
@@ -48,7 +49,7 @@ export function AgentLifecycle({ agentId, teamId, agent, onClose, onActionComple
           const data = await apiFetch(`/teams/${encodedTeam}/agents/${encodedAgent}/clone`, {
             method: 'POST',
           });
-          setResult({ ok: true, message: `Agent cloned: ${data.clone?.agentId?.slice(0, 8) ?? 'new agent'}` });
+          setResult({ ok: true, message: `Agent cloned: ${data.clone?.agentId ? shortAgentId(data.clone.agentId) : 'new agent'}` });
           break;
         }
         case 'retrain': {
@@ -72,13 +73,13 @@ export function AgentLifecycle({ agentId, teamId, agent, onClose, onActionComple
       clone: {
         action: 'clone',
         title: 'Clone Agent',
-        message: `This will create a new agent with the same role, model, and knowledge as ${agentId.slice(0, 8)}.`,
+        message: `This will create a new agent with the same role, model, and knowledge as ${shortAgentId(agentId)}.`,
         destructive: false,
       },
       retrain: {
         action: 'retrain',
         title: 'Retrain Agent',
-        message: `This will reset the procedural knowledge for agent ${agentId.slice(0, 8)}. Core and semantic knowledge will be preserved.`,
+        message: `This will reset the procedural knowledge for agent ${shortAgentId(agentId)}. Core and semantic knowledge will be preserved.`,
         destructive: true,
       },
     };
@@ -97,7 +98,7 @@ export function AgentLifecycle({ agentId, teamId, agent, onClose, onActionComple
         <div className="flex items-center justify-between px-5 py-4 border-b border-th-border">
           <div>
             <h2 className="text-base font-semibold text-th-text">Agent Lifecycle</h2>
-            <span className="text-xs text-th-text-muted font-mono">{agentId.slice(0, 8)}</span>
+            <span className="text-xs text-th-text-muted font-mono">{shortAgentId(agentId)}</span>
             {agent && (
               <span className="ml-2 text-xs text-th-text-muted">
                 {agent.role} • {agent.status}

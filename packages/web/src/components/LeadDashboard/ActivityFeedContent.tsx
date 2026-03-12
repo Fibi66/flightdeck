@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { GitBranch, CheckCircle, MessageSquare, BarChart3, Loader2, Wrench } from 'lucide-react';
 import { EmptyState } from '../Shared';
 import type { ActivityEvent } from '../../stores/leadStore';
+import { shortAgentId } from '../../utils/agentLabel';
 
 export function ActivityFeedContent({ activity, agents }: { activity: ActivityEvent[]; agents: any[] }) {
   const feedRef = useRef<HTMLDivElement>(null);
@@ -38,7 +39,7 @@ export function ActivityFeedContent({ activity, agents }: { activity: ActivityEv
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1">
                   <span className="text-xs font-mono text-th-text-muted">{label}</span>
-                  <span className="text-[10px] font-mono text-th-text-muted">{evt.agentId?.slice(0, 8)}</span>
+                  <span className="text-[10px] font-mono text-th-text-muted">{shortAgentId(evt.agentId)}</span>
                   <span className="text-xs font-mono text-th-text-muted ml-auto shrink-0">{time}</span>
                 </div>
                 <span className="text-xs font-mono text-th-text-alt break-words">{typeof evt.summary === 'string' ? evt.summary : JSON.stringify(evt.summary)}</span>

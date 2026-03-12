@@ -339,7 +339,7 @@ export function GroupChat(_props: { api: any; ws: any }) {
     (id: string): string => {
       if (id === 'human') return 'You';
       const agent = agents.find((a) => a.id === id);
-      return agent?.role.name ?? id.slice(0, 8);
+      return agent?.role.name ?? shortAgentId(id);
     },
     [agents],
   );
@@ -527,7 +527,7 @@ export function GroupChat(_props: { api: any; ws: any }) {
 
             return Array.from(tabsByProject.entries()).map(([leadId, tabs]) => {
               const lead = leads.find((l) => l.id === leadId);
-              const projectLabel = lead?.projectName || leadId.slice(0, 8);
+              const projectLabel = lead?.projectName || shortAgentId(leadId);
               return (
                 <div key={leadId} className="flex items-center shrink-0">
                   {showProjectHeaders && (
@@ -609,7 +609,7 @@ export function GroupChat(_props: { api: any; ws: any }) {
                 }
                 return Array.from(byProject.entries()).map(([leadId, grps]) => {
                   const lead = leads.find((l) => l.id === leadId);
-                  const projectLabel = lead?.projectName || leadId.slice(0, 8);
+                  const projectLabel = lead?.projectName || shortAgentId(leadId);
                   return byProject.size > 1 ? (
                     <optgroup key={leadId} label={projectLabel}>
                       {grps.map((g) => (

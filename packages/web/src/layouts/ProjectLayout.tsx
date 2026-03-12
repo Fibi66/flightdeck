@@ -35,6 +35,7 @@ import { Tabs, type TabItem } from '../components/ui/Tabs';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { PageTransition } from '../components/PageTransition';
 import { apiFetch } from '../hooks/useApi';
+import { shortAgentId } from '../utils/agentLabel';
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -133,7 +134,7 @@ export function ProjectLayout() {
 
     if (details?.name) return details.name;
 
-    return id?.slice(0, 8) ?? 'Project';
+    return (id ? shortAgentId(id) : '') ?? 'Project';
   }, [id, agents, projects, details]);
 
   // Live status indicator

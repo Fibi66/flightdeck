@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useLeadStore } from '../../stores/leadStore';
 import type { AgentInfo, DagStatus } from '../../types';
+import { shortAgentId } from '../../utils/agentLabel';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type WsMsg = Record<string, any>;
@@ -99,7 +100,7 @@ function handleCompletionReported(msg: WsMsg, store: StoreApi, agents: AgentInfo
     agentId: msg.childId,
     agentRole: 'Agent',
     type: 'completion',
-    summary: `Agent ${msg.childId?.slice(0, 8)} ${msg.status}`,
+    summary: `Agent ${shortAgentId(msg.childId)} ${msg.status}`,
     timestamp: Date.now(),
   });
   const childAgent = agents.find((a) => a.id === msg.childId);
@@ -176,7 +177,7 @@ function handleMessageSent(msg: WsMsg, store: StoreApi, agents: AgentInfo[], lea
   // Surface DMs in the lead chat panel
   const preview = (msg.content ?? '').slice(0, 2000);
   const senderRole = msg.fromRole || fromAgent?.role?.name || 'Agent';
-  const senderId = (msg.from ?? '').slice(0, 8);
+  const senderId = shortAgentId(msg.from ?? '');
   if (msg.from === 'system') {
     store.addMessage(leadId, { type: 'text', text: `⚙️ [System] ${preview}`, sender: 'system', timestamp: Date.now() });
   } else if (isBroadcast) {
@@ -185,7 +186,7 @@ function handleMessageSent(msg: WsMsg, store: StoreApi, agents: AgentInfo[], lea
     store.addMessage(leadId, { type: 'text', text: `📨 [From ${senderRole} ${senderId}] ${preview}`, sender: 'system', timestamp: Date.now() });
   } else if (msg.from === leadId) {
     const recipientRole = msg.toRole || toAgent?.role?.name || 'Agent';
-    const recipientId = (msg.to ?? '').slice(0, 8);
+    const recipientId = shortAgentId(msg.to ?? '');
     store.addMessage(leadId, { type: 'text', text: `📤 [To ${recipientRole} ${recipientId}] ${preview}`, sender: 'system', timestamp: Date.now() });
   }
   // Inter-agent DMs tracked in comms panel — don't duplicate in chat
@@ -241,7 +242,7 @@ function handleContextCompacted(msg: WsMsg, store: StoreApi, agents: AgentInfo[]
     const pct = msg.percentDrop != null ? `${msg.percentDrop}%` : '?%';
     store.addMessage(targetLeadId, {
       type: 'text',
-      text: `🔄 Context compacted for agent ${compactedId.slice(0, 8)}: ${pct} reduction`,
+      text: `🔄 Context compacted for agent ${shortAgentId(compactedId)}: ${pct} reduction`,
       sender: 'system',
       timestamp: Date.now(),
     });

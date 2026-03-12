@@ -7,6 +7,7 @@ import { hasUnclosedCommandBlock } from '../utils/commandParser';
 import type { WsMessage } from '../types';
 import { getAuthToken, apiFetch } from './useApi';
 import { useSettingsStore } from '../stores/settingsStore';
+import { shortAgentId } from '../utils/agentLabel';
 
 // Module-level WS ref for global access (e.g., timer pause from ApprovalSlideOver)
 let globalWs: WebSocket | null = null;
@@ -135,7 +136,7 @@ export function useWebSocket() {
           break;
         case 'agent:spawn_error': {
           const parentAgent = useAppStore.getState().agents.find((a) => a.id === msg.agentId);
-          const label = parentAgent?.role?.name ?? msg.agentId?.slice(0, 8) ?? 'Agent';
+          const label = parentAgent?.role?.name ?? shortAgentId(msg.agentId) ?? 'Agent';
           useToastStore.getState().add('error', `Spawn failed (${label}): ${msg.message}`);
           break;
         }
@@ -259,8 +260,8 @@ export function useWebSocket() {
           const fromId = msg.from;
           const isFromSystem = fromId === 'system';
           const senderLabel = msg.fromRole
-            ? `${msg.fromRole} (${(fromId ?? '').slice(0, 8)})`
-            : fromId?.slice(0, 8) || 'System';
+            ? `${msg.fromRole} (${shortAgentId(fromId ?? '')})`
+            : (fromId ? shortAgentId(fromId) : '') || 'System';
           const preview = (msg.content ?? '').slice(0, 2000);
 
           // Show in recipient's panel
@@ -290,8 +291,8 @@ export function useWebSocket() {
                 : (() => {
                     const toAgent = state.agents.find((a) => a.id === toId);
                     return toAgent?.role?.name
-                      ? `${toAgent.role.name} (${(toId ?? '').slice(0, 8)})`
-                      : (toId ?? '').slice(0, 8);
+                      ? `${toAgent.role.name} (${shortAgentId(toId ?? '')})`
+                      : shortAgentId(toId ?? '');
                   })();
               const msgs = [...(sender.messages ?? [])];
               msgs.push({
@@ -421,7 +422,7 @@ export function useWebSocket() {
           break;
         }
         case 'agent:session_resume_failed': {
-          const agentId = (msg.agentId ?? '').slice(0, 8);
+          const agentId = shortAgentId(msg.agentId ?? '');
           const error = msg.error ?? 'Unknown error';
           useToastStore.getState().add('error', `Session resume failed (agent ${agentId}): ${error}`);
           break;

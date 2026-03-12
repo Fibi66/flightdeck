@@ -13,6 +13,7 @@ import {
   Wifi,
   WifiOff,
 } from 'lucide-react';
+import { shortAgentId } from '../utils/agentLabel';
 
 // ── Types ───────────────────────────────────────────────────────────
 
@@ -242,7 +243,7 @@ export function CrewHealth({ teamId = 'default' }: Props) {
                   <button
                     onClick={() => setSelectedAgent(agent.agentId)}
                     className="text-xs text-accent hover:underline"
-                    data-testid={`manage-${agent.agentId.slice(0, 8)}`}
+                    data-testid={`manage-${shortAgentId(agent.agentId)}`}
                   >
                     Manage
                   </button>

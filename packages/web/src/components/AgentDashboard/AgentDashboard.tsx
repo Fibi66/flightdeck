@@ -177,7 +177,7 @@ export function AgentDashboard({ api, ws }: Props) {
       {groupByProject && projectGroups ? (
         Array.from(projectGroups.entries()).map(([leadId, groupAgents]) => {
           const lead = agents.find((a) => a.id === leadId);
-          const label = lead?.projectName || lead?.task?.slice(0, 40) || (leadId === '_unassigned' ? 'Unassigned' : leadId.slice(0, 8));
+          const label = lead?.projectName || lead?.task?.slice(0, 40) || (leadId === '_unassigned' ? 'Unassigned' : shortAgentId(leadId));
           const isCollapsed = collapsedGroups.has(leadId);
           return (
             <div key={leadId} className="border border-th-border rounded-lg bg-surface-raised">

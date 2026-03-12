@@ -20,6 +20,7 @@ import '@xyflow/react/dist/style.css';
 import type { DagStatus, DagTask } from '../../types';
 import { computeCriticalPath, formatElapsed, type CriticalPathTask } from './dagCriticalPath';
 import { AgentDetailPanel } from '../AgentDetailPanel';
+import { shortAgentId } from '../../utils/agentLabel';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -199,7 +200,7 @@ function DagTaskNode({ data }: NodeProps<Node<DagTaskNodeData>>) {
             maxWidth: '100%',
           }}
         >
-          🤖 {task.assignedAgentId.slice(0, 8)}
+          🤖 {shortAgentId(task.assignedAgentId)}
         </div>
       )}
 
@@ -366,7 +367,7 @@ function DagNodeTooltip({
               onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onAgentClick?.(task.assignedAgentId!); } }}
               style={{ color: 'var(--graph-text-accent)', fontSize: 11, cursor: 'pointer', textDecoration: 'underline', textDecorationStyle: 'dotted', textUnderlineOffset: 2 }}
               title="View agent details"
-            >🤖 {task.assignedAgentId.slice(0, 8)}</span>
+            >🤖 {shortAgentId(task.assignedAgentId)}</span>
           )}
         </div>
       </div>

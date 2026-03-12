@@ -26,6 +26,7 @@ import { formatTokens } from '../../utils/format';
 import { Tabs } from '../ui/Tabs';
 import type { TabItem } from '../ui/Tabs';
 import { useModels, deriveModelName } from '../../hooks/useModels';
+import { shortAgentId } from '../../utils/agentLabel';
 
 // ── Types ─────────────────────────────────────────────────
 
@@ -182,7 +183,7 @@ function CrewGroup({ leadId, agents, summary, defaultExpanded = true, onSelectAg
   const isActive = activeCount > 0;
   const latestActivity = summary?.lastActivity ??
     agents.reduce((latest, a) => a.updatedAt > latest ? a.updatedAt : latest, '');
-  const displayName = summary?.projectName ?? (lead?.projectId ? `Project ${lead.projectId.slice(0, 8)}` : `Crew ${leadId.slice(0, 8)}`);
+  const displayName = summary?.projectName ?? (lead?.projectId ? `Project ${shortAgentId(lead.projectId)}` : `Crew ${shortAgentId(leadId)}`);
 
   const handleDeleteCrew = async () => {
     setDeleting(true);
@@ -217,7 +218,7 @@ function CrewGroup({ leadId, agents, summary, defaultExpanded = true, onSelectAg
               )}
             </div>
             <div className="flex items-center gap-3 text-[10px] text-th-text-muted mt-0.5">
-              {lead && <span>🎖️ Lead: {lead.agentId.slice(0, 8)}{lead.provider ? ` · ${lead.provider}` : ''} · {lead.model}</span>}
+              {lead && <span>🎖️ Lead: {shortAgentId(lead.agentId)}{lead.provider ? ` · ${lead.provider}` : ''} · {lead.model}</span>}
               {summary?.sessionCount ? <span>📋 {summary.sessionCount} session{summary.sessionCount !== 1 ? 's' : ''}</span> : null}
               {latestActivity && <span>{formatRelativeTime(latestActivity)}</span>}
             </div>
@@ -324,7 +325,7 @@ function AgentRow({ agent, isLead, isSelected, onSelect }: {
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <span className="text-xs capitalize">{agent.role}</span>
-          <code className="text-[10px] text-th-text-muted">{agent.agentId.slice(0, 8)}</code>
+          <code className="text-[10px] text-th-text-muted">{shortAgentId(agent.agentId)}</code>
           {agent.sessionId && (
             <button
               className="text-[10px] font-mono text-th-text-muted bg-th-bg-alt/60 px-1 rounded hover:bg-th-bg-alt transition-colors truncate max-w-[120px]"

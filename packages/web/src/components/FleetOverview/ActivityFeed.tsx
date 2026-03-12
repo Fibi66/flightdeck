@@ -38,7 +38,7 @@ export function ActivityFeed({ activity, agents }: Props) {
   const getAgentLabel = (agentId: string) => {
     const agent = agents.find((a) => a.id === agentId);
     if (agent) return `${agent.role.icon} ${agent.role.name} (${shortAgentId(agent.id)})`;
-    return agentId.slice(0, 8);
+    return shortAgentId(agentId);
   };
 
   const getAgent = (agentId: string) => agents.find((a) => a.id === agentId);
@@ -134,7 +134,7 @@ export function ActivityFeed({ activity, agents }: Props) {
                       </div>
                     </div>
                   ) : (
-                    <p className="text-sm font-mono text-th-text-alt mt-1">{selected.agentId.slice(0, 8)}</p>
+                    <p className="text-sm font-mono text-th-text-alt mt-1">{shortAgentId(selected.agentId)}</p>
                   );
                 })()}
               </div>

@@ -160,7 +160,7 @@ export function ProgressDetailModal({ progress, progressHistory, onClose }: Prog
                         {d.status}
                       </span>
                       <span className="text-th-text-alt">{d.toRole}</span>
-                      <span className="text-th-text-muted ml-auto">{d.toAgentId?.slice(0, 8)}</span>
+                      <span className="text-th-text-muted ml-auto">{shortAgentId(d.toAgentId)}</span>
                     </div>
                     {d.task && (
                       <p className="text-th-text-muted mt-1 break-words">{d.task.length > 120 ? d.task.slice(0, 120) + '…' : d.task}</p>

@@ -21,7 +21,7 @@ export function AgentIdBadge({ id, className = '' }: { id: string; className?: s
       style={{ color: idColor(id) }}
       title={id}
     >
-      {id.slice(0, 8)}
+      {shortAgentId(id)}
     </span>
   );
 }

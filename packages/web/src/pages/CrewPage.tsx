@@ -23,6 +23,7 @@ import { StatusBadge, agentStatusProps } from '../components/ui/StatusBadge';
 import { EmptyState } from '../components/ui/EmptyState';
 import { Tabs } from '../components/ui/Tabs';
 import type { TabItem } from '../components/ui/Tabs';
+import { shortAgentId } from '../utils/agentLabel';
 
 // ── Types ─────────────────────────────────────────────────
 
@@ -157,7 +158,7 @@ function AgentCard({ agent, selected, onSelect, onManage }: {
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <span className="font-medium text-th-text capitalize">{agent.role}</span>
-              <span className="text-xs font-mono text-th-text-alt">{agent.agentId.slice(0, 8)}</span>
+              <span className="text-xs font-mono text-th-text-alt">{shortAgentId(agent.agentId)}</span>
               {agent.clonedFromId && <span title="Cloned agent">🧬</span>}
             </div>
             <div className="flex items-center gap-2 text-xs text-th-text-alt truncate">
@@ -176,7 +177,7 @@ function AgentCard({ agent, selected, onSelect, onManage }: {
         <button
           onClick={() => onManage(agent.agentId)}
           className="text-xs text-accent hover:underline flex-shrink-0"
-          data-testid={`manage-${agent.agentId.slice(0, 8)}`}
+          data-testid={`manage-${shortAgentId(agent.agentId)}`}
         >
           Manage
         </button>

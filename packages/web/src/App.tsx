@@ -30,6 +30,7 @@ import { useLeadStore } from './stores/leadStore';
 import type { AcpTextChunk, Project } from './types';
 import { apiFetch } from './hooks/useApi';
 import { ProjectLayout } from './layouts/ProjectLayout';
+import { shortAgentId } from './utils/agentLabel';
 
 // Lazy-loaded route components (~40-50% initial bundle reduction)
 const TaskQueuePanel = lazy(() => import('./components/TaskQueue/TaskQueuePanel').then(m => ({ default: m.TaskQueuePanel })));
@@ -179,21 +180,21 @@ export function App() {
         const failed = msg.code !== 0;
         // Failures are critical — ALWAYS toast regardless of level
         if (failed) {
-          addToast('error', `Agent ${msg.agentId.slice(0, 8)} failed`);
+          addToast('error', `Agent ${shortAgentId(msg.agentId)} failed`);
         } else if (shouldNotify('info')) {
-          addToast('success', `Agent ${msg.agentId.slice(0, 8)} completed`);
+          addToast('success', `Agent ${shortAgentId(msg.agentId)} completed`);
         }
       } else if (msg.type === 'agent:sub_spawned') {
-        if (shouldNotify('info')) addToast('info', `${msg.child.role.icon} Sub-agent spawned by ${msg.parentId.slice(0, 8)}`);
+        if (shouldNotify('info')) addToast('info', `${msg.child.role.icon} Sub-agent spawned by ${shortAgentId(msg.parentId)}`);
       } else if (msg.type === 'agent:context_compacted') {
         if (shouldNotify('info')) {
           const pct = msg.percentDrop ? ` (${msg.percentDrop}% reduction)` : '';
-          addToast('info', `🔄 Context compacted for agent ${msg.agentId.slice(0, 8)}${pct}`);
+          addToast('info', `🔄 Context compacted for agent ${shortAgentId(msg.agentId)}${pct}`);
         }
       } else if (msg.type === 'activity') {
         const e = msg.entry;
         if (e?.action === 'heartbeat_halted') {
-          if (shouldNotify('exception')) addToast('info', `⏸️ Heartbeat halted by ${e.agentId?.slice(0, 8) ?? 'agent'}`);
+          if (shouldNotify('exception')) addToast('info', `⏸️ Heartbeat halted by ${e.agentId ? shortAgentId(e.agentId) : 'agent'}`);
         } else if (e?.action === 'limit_change_requested') {
           if (shouldNotify('info')) addToast('info', `⚙️ Agent limit change requested: ${e.details ?? ''}`);
         }

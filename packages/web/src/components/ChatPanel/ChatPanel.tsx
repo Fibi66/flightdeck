@@ -167,7 +167,7 @@ export function ChatPanel({ agentId, ws }: Props) {
         <div className="flex items-center gap-2">
           <span>{agent?.role.icon}</span>
           <span className="text-sm font-medium">{agent?.role.name}</span>
-          <span className="text-xs text-th-text-muted font-mono">{agentId.slice(0, 8)}</span>
+          <span className="text-xs text-th-text-muted font-mono">{shortAgentId(agentId)}</span>
         </div>
         <div className="flex items-center gap-1">
           <button

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { TimelineData } from './useTimelineData';
+import { shortAgentId } from '../../utils/agentLabel';
 
 export type ConnectionHealth = 'connected' | 'connecting' | 'reconnecting' | 'degraded' | 'offline';
 
@@ -270,7 +271,7 @@ function mergeActivityEntry(prev: TimelineData, entry: any): TimelineData {
     if (!agent) {
       agent = {
         id: entry.agentId,
-        shortId: entry.agentId.slice(0, 8),
+        shortId: shortAgentId(entry.agentId),
         role: entry.agentRole,
         createdAt: entry.timestamp,
         segments: [],
