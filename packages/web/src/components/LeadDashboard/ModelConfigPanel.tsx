@@ -94,8 +94,23 @@ interface Props {
   compact?: boolean;
 }
 
+/** Deep-compare two ModelConfigMaps (order-insensitive per-role) */
+function configsEqual(a: ModelConfigMap, b: ModelConfigMap): boolean {
+  const keysA = Object.keys(a);
+  const keysB = Object.keys(b);
+  if (keysA.length !== keysB.length) return false;
+  for (const key of keysA) {
+    const listA = [...(a[key] ?? [])].sort();
+    const listB = [...(b[key] ?? [])].sort();
+    if (listA.length !== listB.length) return false;
+    if (listA.some((v, i) => v !== listB[i])) return false;
+  }
+  return true;
+}
+
 export function ModelConfigPanel({ projectId, value, onChange, compact }: Props) {
   const [config, setConfig] = useState<ModelConfigMap>(value ?? {});
+  const [savedConfig, setSavedConfig] = useState<ModelConfigMap>(value ?? {});
   const [defaults, setDefaults] = useState<ModelConfigMap>({});
   const [allModels, setAllModels] = useState<string[]>([]);
   const [providerTab, setProviderTab] = useState<string>('copilot');
@@ -103,6 +118,8 @@ export function ModelConfigPanel({ projectId, value, onChange, compact }: Props)
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const isDirty = !configsEqual(config, savedConfig);
 
   // Fetch available models and defaults
   useEffect(() => {
@@ -113,6 +130,7 @@ export function ModelConfigPanel({ projectId, value, onChange, compact }: Props)
         setDefaults(modelsData.defaults);
         if (!value && !projectId) {
           setConfig(modelsData.defaults);
+          setSavedConfig(modelsData.defaults);
         }
       } catch {
         setError('Failed to load models');
@@ -130,6 +148,7 @@ export function ModelConfigPanel({ projectId, value, onChange, compact }: Props)
     apiFetch<ModelConfigResponse>(`/projects/${projectId}/model-config`)
       .then((data) => {
         setConfig(data.config);
+        setSavedConfig(data.config);
         setDefaults(data.defaults);
       })
       .catch(() => setError('Failed to load project model config'))
@@ -158,6 +177,7 @@ export function ModelConfigPanel({ projectId, value, onChange, compact }: Props)
 
   const resetToDefaults = useCallback(() => {
     setConfig(defaults);
+    setSavedConfig(defaults);
     onChange?.(defaults);
     setSaved(false);
   }, [defaults, onChange]);
@@ -171,6 +191,7 @@ export function ModelConfigPanel({ projectId, value, onChange, compact }: Props)
         method: 'PUT',
         body: JSON.stringify({ config }),
       });
+      setSavedConfig(config);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (err: any) {
@@ -206,24 +227,26 @@ export function ModelConfigPanel({ projectId, value, onChange, compact }: Props)
             >
               <RotateCcw className="w-3 h-3" />
             </button>
-            <button
-              onClick={saveConfig}
-              disabled={saving}
-              className={`flex items-center gap-0.5 px-2 py-0.5 rounded transition-colors ${
-                saved
-                  ? 'bg-green-600/20 text-green-400'
-                  : 'bg-yellow-600/20 hover:bg-yellow-600/30 text-yellow-600 dark:text-yellow-400'
-              }`}
-            >
-              {saving ? (
-                <Loader2 className="w-3 h-3 animate-spin" />
-              ) : saved ? (
-                <Check className="w-3 h-3" />
-              ) : (
-                <Save className="w-3 h-3" />
-              )}
-              {saved ? 'Saved' : 'Save'}
-            </button>
+            {(isDirty || saving || saved) && (
+              <button
+                onClick={saveConfig}
+                disabled={saving}
+                className={`flex items-center gap-0.5 px-2 py-0.5 rounded transition-colors ${
+                  saved
+                    ? 'bg-green-600/20 text-green-400'
+                    : 'bg-yellow-600/20 hover:bg-yellow-600/30 text-yellow-600 dark:text-yellow-400'
+                }`}
+              >
+                {saving ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : saved ? (
+                  <Check className="w-3 h-3" />
+                ) : (
+                  <Save className="w-3 h-3" />
+                )}
+                {saved ? 'Saved' : 'Save'}
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -231,7 +254,8 @@ export function ModelConfigPanel({ projectId, value, onChange, compact }: Props)
       {error && <div className="px-1 text-red-400 text-[10px]">{error}</div>}
 
       {/* Provider tabs */}
-      <div className="flex gap-1 px-1 border-b border-th-border pb-1">
+      <div className="flex gap-1 px-1 border-b border-th-border pb-1 overflow-x-auto scrollbar-thin"
+           style={{ scrollbarWidth: 'thin' }}>
         {PROVIDER_TABS.map((tab) => {
           const tabModels = allModels.filter(tab.models);
           if (tabModels.length === 0) return null;
@@ -240,7 +264,7 @@ export function ModelConfigPanel({ projectId, value, onChange, compact }: Props)
             <button
               key={tab.id}
               onClick={() => setProviderTab(tab.id)}
-              className={`px-2 py-0.5 rounded-t text-[10px] font-medium border-b-2 transition-colors ${
+              className={`px-2 py-0.5 rounded-t text-[10px] font-medium border-b-2 transition-colors whitespace-nowrap ${
                 isActive
                   ? `${tab.color} bg-th-bg-alt`
                   : 'text-th-text-muted border-transparent hover:text-th-text-alt'
