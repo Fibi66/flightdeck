@@ -163,10 +163,10 @@ function AgentDetailPanelContent({ agentId, teamId, mode, onClose }: AgentDetail
   const outputPreview = agent?.outputPreview ?? profile?.live?.outputPreview ?? null;
   const exitError = agent?.exitError ?? profile?.live?.exitError ?? null;
   const exitCode = agent?.exitCode;
-  const modelTranslated = (agent as any)?.modelTranslated ?? false;
-  const requestedModel = (agent as any)?.requestedModel ?? null;
-  const resolvedModel = (agent as any)?.resolvedModel ?? null;
-  const modelResolutionReason = (agent as any)?.modelResolutionReason ?? null;
+  const modelTranslated = agent?.modelTranslated ?? false;
+  const requestedModel = agent?.requestedModel ?? null;
+  const resolvedModel = agent?.resolvedModel ?? null;
+  const modelResolutionReason = agent?.modelResolutionReason ?? null;
   const isAgentFailed = status === 'failed' || status === 'terminated';
   const isAlive = status === 'running' || status === 'creating' || status === 'idle';
 
