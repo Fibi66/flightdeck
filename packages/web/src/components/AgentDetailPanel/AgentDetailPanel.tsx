@@ -153,6 +153,10 @@ function AgentDetailPanelContent({ agentId, teamId, mode, onClose }: AgentDetail
   const outputPreview = agent?.outputPreview ?? profile?.live?.outputPreview ?? null;
   const exitError = agent?.exitError ?? profile?.live?.exitError ?? null;
   const exitCode = agent?.exitCode;
+  const modelTranslated = (agent as any)?.modelTranslated ?? false;
+  const requestedModel = (agent as any)?.requestedModel ?? null;
+  const resolvedModel = (agent as any)?.resolvedModel ?? null;
+  const modelResolutionReason = (agent as any)?.modelResolutionReason ?? null;
   const isAgentFailed = status === 'failed' || status === 'terminated';
   const isAlive = status === 'running' || status === 'creating' || status === 'idle';
 
@@ -228,7 +232,15 @@ function AgentDetailPanelContent({ agentId, teamId, mode, onClose }: AgentDetail
               <span className="bg-blue-500/15 text-blue-400 px-1.5 rounded">{provider}</span>
             )}
             {model && (
-              <span className="bg-th-bg-muted/50 px-1.5 rounded">{model}</span>
+              modelTranslated && requestedModel ? (
+                <span className="bg-th-bg-muted/50 px-1.5 rounded" title={modelResolutionReason ?? undefined}>
+                  <span className="line-through text-th-text-muted/60">{requestedModel}</span>
+                  {' → '}
+                  <span className="text-yellow-400">{resolvedModel ?? model}</span>
+                </span>
+              ) : (
+                <span className="bg-th-bg-muted/50 px-1.5 rounded">{model}</span>
+              )
             )}
             {sessionId && (
               <button

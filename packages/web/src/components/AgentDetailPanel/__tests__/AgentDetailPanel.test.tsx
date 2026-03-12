@@ -261,6 +261,27 @@ describe('AgentDetailPanel', () => {
     expect(screen.getByText('Cancel')).toBeInTheDocument();
   });
 
+  // ── Model fallback display ─────────────────────────────────
+
+  it('shows strikethrough requested model and yellow resolved model when translated', () => {
+    mockAgents = [makeAgent({
+      model: 'gemini-2.5-pro',
+      modelTranslated: true,
+      requestedModel: 'claude-sonnet-4',
+      resolvedModel: 'gemini-2.5-pro',
+      modelResolutionReason: 'claude-sonnet-4 not available on gemini provider',
+    })];
+    render(<AgentDetailPanel agentId={mockAgents[0].id} mode="modal" onClose={onClose} />);
+    expect(screen.getByText('claude-sonnet-4')).toHaveClass('line-through');
+    expect(screen.getByText('gemini-2.5-pro')).toHaveClass('text-yellow-400');
+  });
+
+  it('shows plain model when no translation occurred', () => {
+    mockAgents = [makeAgent({ modelTranslated: false })];
+    render(<AgentDetailPanel agentId={mockAgents[0].id} mode="modal" onClose={onClose} />);
+    expect(screen.getByText('claude-sonnet-4')).not.toHaveClass('line-through');
+  });
+
   // ── Empty state ───────────────────────────────────────────
 
   it('shows empty state when agent has no activity', () => {
