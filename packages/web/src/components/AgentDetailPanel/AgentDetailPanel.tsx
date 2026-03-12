@@ -34,6 +34,7 @@ import { getRoleIcon } from '../../utils/getRoleIcon';
 import { Tabs } from '../ui/Tabs';
 import type { TabItem } from '../ui/Tabs';
 import { AgentChatPanel } from '../AgentChatPanel';
+import { getProviderColors } from '../../utils/providerColors';
 import { AVAILABLE_MODELS } from '../../constants/models';
 
 // ── Types ────────────────────────────────────────────────────
@@ -238,9 +239,10 @@ function AgentDetailPanelContent({ agentId, teamId, mode, onClose }: AgentDetail
           </div>
           <div className="flex items-center gap-3 mt-0.5 text-xs text-th-text-muted font-mono flex-wrap">
             <span title={agentId}>{agentId.slice(0, 8)}</span>
-            {provider && (
-              <span className="bg-blue-500/15 text-blue-400 px-1.5 rounded">{provider}</span>
-            )}
+            {provider && (() => {
+              const pc = getProviderColors(provider);
+              return <span className={`${pc.bg} ${pc.text} px-1.5 rounded`}>{provider}</span>;
+            })()}
             {model && (
               modelTranslated && requestedModel ? (
                 <span className="bg-th-bg-muted/50 px-1.5 rounded" title={modelResolutionReason ?? undefined}>
