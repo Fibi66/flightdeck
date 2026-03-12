@@ -5,7 +5,6 @@ import type { ThemeMode, OversightLevel } from '../../stores/settingsStore';
 import { apiFetch } from '../../hooks/useApi';
 import { Trash2, Plus, Sun, Moon, Monitor, Settings, Cpu, Users, Terminal, ChevronDown, ChevronRight, Zap, Volume2, Eye } from 'lucide-react';
 import { ProvidersSection } from './ProvidersSection';
-import { NotificationPreferencesPanel, NotificationActivityLog } from '../Notifications';
 import { DataManagement } from './DataManagement';
 import { TelegramSettings } from './TelegramSettings';
 
@@ -252,16 +251,6 @@ export function SettingsPanel({ api }: Props) {
       {/* Telegram Integration */}
       <section className="bg-surface-raised border border-th-border rounded-lg p-4 mb-6">
         <TelegramSettings />
-      </section>
-
-      {/* Notification Preferences */}
-      <section className="bg-surface-raised border border-th-border rounded-lg p-4 mb-6">
-        <NotificationPreferencesPanel />
-      </section>
-
-      {/* Notification Activity Log */}
-      <section className="bg-surface-raised border border-th-border rounded-lg p-4 mb-6">
-        <NotificationActivityLog />
       </section>
 
       {/* Data Management */}
