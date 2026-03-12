@@ -35,6 +35,8 @@ export interface ProviderPreset {
   defaultModel?: string;
   /** Agent file format (e.g., '.agent.md', 'CLAUDE.md') */
   agentFileFormat?: string;
+  /** Whether the CLI supports `--agent=<name>` flag (only Copilot CLI). Defaults to false. */
+  supportsAgentFlag?: boolean;
 }
 
 // ── Provider Preset ID Type ─────────────────────────────────
@@ -53,6 +55,7 @@ export const PROVIDER_PRESETS: Record<ProviderId, ProviderPreset> = {
     supportsResume: true,
     modelFlag: '--model',
     agentFileFormat: '.agent.md',
+    supportsAgentFlag: true,
   },
 
   gemini: {

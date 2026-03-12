@@ -118,9 +118,11 @@ export function buildStartOptions(
 
   // NOTE: Session resume is handled via the ACP protocol's session/load RPC
   // (opts.sessionId below). All providers now use AcpAdapter.
+  // The --agent flag is only supported by Copilot CLI. Other providers
+  // (gemini, claude, etc.) use agent files instead (preset.agentFileFormat).
   const cliArgs = [
     ...(config.cliArgs ?? []),
-    ...(agentOpts.agentFlag ? [`--agent=${agentOpts.agentFlag}`] : []),
+    ...(preset?.supportsAgentFlag && agentOpts.agentFlag ? [`--agent=${agentOpts.agentFlag}`] : []),
   ];
 
   // Model args: codex-acp uses `-c model=X`, others use `--model X` (or preset.modelFlag)

@@ -151,6 +151,33 @@ describe('AdapterFactory', () => {
       expect(opts.cliArgs).toContain('--agent=developer');
     });
 
+    it('skips --agent flag for gemini provider (unsupported)', () => {
+      const opts = buildStartOptions(
+        { ...baseConfig, provider: 'gemini' },
+        { cwd: '/test', agentFlag: 'flightdeck-developer' },
+      );
+      const agentArgs = opts.cliArgs!.filter((a: string) => a.startsWith('--agent='));
+      expect(agentArgs).toHaveLength(0);
+    });
+
+    it('skips --agent flag for claude provider (unsupported)', () => {
+      const opts = buildStartOptions(
+        { ...baseConfig, provider: 'claude' },
+        { cwd: '/test', agentFlag: 'flightdeck-developer' },
+      );
+      const agentArgs = opts.cliArgs!.filter((a: string) => a.startsWith('--agent='));
+      expect(agentArgs).toHaveLength(0);
+    });
+
+    it('skips --agent flag for codex provider (unsupported)', () => {
+      const opts = buildStartOptions(
+        { ...baseConfig, provider: 'codex' },
+        { cwd: '/test', agentFlag: 'flightdeck-developer' },
+      );
+      const agentArgs = opts.cliArgs!.filter((a: string) => a.startsWith('--agent='));
+      expect(agentArgs).toHaveLength(0);
+    });
+
     it('includes --model flag when model provided', () => {
       const opts = buildStartOptions(
         { ...baseConfig, model: 'claude-sonnet-4' },
