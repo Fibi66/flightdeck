@@ -48,6 +48,18 @@ vi.mock('../../../constants/models', () => ({
   AVAILABLE_MODELS: ['claude-sonnet-4', 'gpt-5.1'],
 }));
 
+vi.mock('../../../hooks/useModels', () => ({
+  useModels: () => ({
+    models: ['claude-sonnet-4', 'gpt-5.1'],
+    defaults: {},
+    modelsByProvider: {},
+    modelName: (id: string) => id,
+    loading: false,
+    error: null,
+  }),
+  deriveModelName: (id: string) => id,
+}));
+
 vi.mock('../../../utils/getRoleIcon', () => ({
   getRoleIcon: () => '🤖',
 }));
