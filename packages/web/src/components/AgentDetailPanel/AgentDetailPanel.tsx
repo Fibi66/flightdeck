@@ -324,15 +324,12 @@ function AgentDetailPanelContent({ agentId, teamId, mode, onClose }: AgentDetail
           <DetailsTab
             agent={agent ?? null}
             profile={profile}
-            roleName={roleName}
             provider={provider}
             model={model}
-            sessionId={sessionId}
             task={task}
             outputPreview={outputPreview}
             exitError={exitError}
             exitCode={exitCode}
-            status={status}
             isAgentFailed={isAgentFailed}
             totalTokens={totalTokens}
             openGitHubIssue={openGitHubIssue}
@@ -363,21 +360,18 @@ function AgentDetailPanelContent({ agentId, teamId, mode, onClose }: AgentDetail
 interface DetailsTabProps {
   agent: { inputTokens?: number; outputTokens?: number; cacheReadTokens?: number; cacheWriteTokens?: number; contextWindowSize?: number; contextWindowUsed?: number } | null;
   profile: AgentProfile | null;
-  roleName: string;
   provider: string | null;
   model: string;
-  sessionId: string | null;
   task: string | null;
   outputPreview: string | null;
   exitError: string | null;
   exitCode: number | undefined;
-  status: string;
   isAgentFailed: boolean;
   totalTokens: number;
   openGitHubIssue: () => void;
 }
 
-function DetailsTab({ agent, profile, task, outputPreview, exitError, exitCode, status, provider, model, isAgentFailed, totalTokens, openGitHubIssue }: DetailsTabProps) {
+function DetailsTab({ agent, profile, task, outputPreview, exitError, exitCode, provider, model, isAgentFailed, totalTokens, openGitHubIssue }: DetailsTabProps) {
   const hasContent = task || totalTokens > 0 || outputPreview || exitError || profile;
 
   return (
