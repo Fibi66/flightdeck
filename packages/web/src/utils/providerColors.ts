@@ -1,39 +1,23 @@
 /**
  * Per-provider color mapping for agent cards and badges.
  *
- * Each provider gets a distinct color for visual differentiation:
- * - Background tint (bg) for micro-pill badges
- * - Text color (text) for provider name
- * - Border color (border) for card left-border accent
- *
- * Colors chosen to match brand associations:
- *   Copilot → purple (GitHub), Gemini → blue (Google),
- *   Claude → amber (Anthropic), Codex → green (OpenAI),
- *   Cursor → cyan (brand), OpenCode → neutral
+ * Colors are derived from the central ProviderRegistry in @flightdeck/shared.
+ * To change a provider's color, update the registry entry.
  */
 
-export interface ProviderColorSet {
-  /** Background class for pills/badges (e.g. 'bg-purple-500/15') */
-  bg: string;
-  /** Text color class (e.g. 'text-purple-400') */
-  text: string;
-  /** Left-border color class for card accent (e.g. 'border-l-purple-500') */
-  border: string;
-}
+import { PROVIDER_REGISTRY, type ProviderColors } from '@flightdeck/shared';
 
-const PROVIDER_COLORS: Record<string, ProviderColorSet> = {
-  copilot: { bg: 'bg-purple-500/15', text: 'text-purple-400', border: 'border-l-purple-500' },
-  gemini:  { bg: 'bg-blue-500/15',   text: 'text-blue-400',   border: 'border-l-blue-500' },
-  claude:  { bg: 'bg-amber-500/15',  text: 'text-amber-400',  border: 'border-l-amber-500' },
-  codex:   { bg: 'bg-green-500/15',  text: 'text-green-400',  border: 'border-l-green-500' },
-  cursor:  { bg: 'bg-cyan-500/15',   text: 'text-cyan-400',   border: 'border-l-cyan-500' },
-  opencode: { bg: 'bg-zinc-500/15',  text: 'text-zinc-400',   border: 'border-l-zinc-500' },
-};
+export type ProviderColorSet = ProviderColors;
+
+const PROVIDER_COLORS: Record<string, ProviderColorSet> = Object.fromEntries(
+  Object.values(PROVIDER_REGISTRY).map((def) => [def.id, def.color]),
+);
 
 const DEFAULT_COLORS: ProviderColorSet = {
   bg: 'bg-zinc-500/15',
   text: 'text-zinc-400',
   border: 'border-l-zinc-500',
+  tab: 'text-zinc-400 border-zinc-400',
 };
 
 /** Get the color set for a given provider ID. Falls back to neutral gray. */

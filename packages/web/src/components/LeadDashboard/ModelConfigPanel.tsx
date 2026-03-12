@@ -3,6 +3,7 @@ import { Check, RotateCcw, Save, Loader2, X } from 'lucide-react';
 import { apiFetch } from '../../hooks/useApi';
 import { deriveModelName } from '../../hooks/useModels';
 import { getProviderColors } from '../../utils/providerColors';
+import { getProvider } from '@flightdeck/shared';
 
 /** Role ID → allowed model IDs */
 export type ModelConfigMap = Record<string, string[]>;
@@ -57,15 +58,10 @@ const CONFIG_ROLES = [
   'lead',
 ];
 
-/** Provider tab display metadata. Tabs are generated dynamically from backend modelsByProvider keys. */
-const PROVIDER_META: Record<string, { label: string }> = {
-  copilot: { label: 'Copilot' },
-  claude: { label: 'Claude' },
-  gemini: { label: 'Gemini' },
-  codex: { label: 'Codex' },
-  cursor: { label: 'Cursor' },
-  opencode: { label: 'OpenCode' },
-};
+/** Provider tab label — derived from central ProviderRegistry. */
+function getProviderLabel(id: string): string {
+  return getProvider(id)?.name.replace(/ \(ACP\)$/, '').replace(/^Google /, '').replace(/^GitHub /, '') ?? id;
+}
 
 interface Props {
   /** Project ID — if provided, loads/saves config for this project */
@@ -268,7 +264,7 @@ export function ModelConfigPanel({ projectId, value, onChange, compact }: Props)
                 const tabModels = allModels.filter((m) => providerModels.includes(m));
                 if (tabModels.length === 0) return null;
                 const isActive = providerTab === providerId;
-                const meta = PROVIDER_META[providerId];
+                const label = getProviderLabel(providerId);
                 const colors = getProviderColors(providerId);
                 return (
                   <button
@@ -280,7 +276,7 @@ export function ModelConfigPanel({ projectId, value, onChange, compact }: Props)
                         : 'text-th-text-muted border-transparent hover:text-th-text-alt'
                     }`}
                   >
-                    {meta?.label ?? providerId}
+                    {label}
                     <span className="ml-1 opacity-60">({tabModels.length})</span>
                   </button>
                 );

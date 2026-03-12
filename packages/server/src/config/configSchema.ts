@@ -2,6 +2,7 @@
 // Zod schema + TypeScript types for the hot-reloadable config file.
 
 import { z } from 'zod';
+import { PROVIDER_IDS } from '@flightdeck/shared';
 
 // ── Section schemas ────────────────────────────────────────
 
@@ -47,10 +48,9 @@ const budgetSchema = z.object({
 
 // ── Provider schema ────────────────────────────────────────
 
-// Provider IDs are the single source of truth from presets.ts.
-// We duplicate the list here as a Zod literal for schema validation
-// since Zod .enum() requires a const tuple, not a runtime import.
-const VALID_PROVIDERS = ['copilot', 'gemini', 'opencode', 'cursor', 'codex', 'claude'] as const;
+// Provider IDs derived from the central ProviderRegistry.
+// Cast to tuple for Zod .enum() which requires a const tuple.
+const VALID_PROVIDERS = PROVIDER_IDS as unknown as readonly [string, ...string[]];
 
 // ── Cloud Provider schema (Bedrock / Vertex / Anthropic) ───
 

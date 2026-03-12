@@ -13,7 +13,7 @@
  */
 import { logger } from '../utils/logger.js';
 import { KNOWN_MODEL_IDS } from '../projects/ModelConfigDefaults.js';
-import type { ProviderId } from './presets.js';
+import { PROVIDER_REGISTRY, PROVIDER_IDS, type ProviderId } from '@flightdeck/shared';
 
 // ── Types ───────────────────────────────────────────────────
 
@@ -30,30 +30,39 @@ export interface ModelResolution {
   reason?: string;
 }
 
-// ── Provider Detection ──────────────────────────────────────
+// ── Derived from ProviderRegistry ───────────────────────────
 
-/** Which underlying model providers a CLI can access */
-const CLI_NATIVE_PROVIDERS: Record<ProviderId, string[]> = {
-  copilot: ['anthropic', 'openai', 'google', 'xai'],
-  claude: ['anthropic'],
-  gemini: ['google'],
-  cursor: ['anthropic', 'openai', 'google'],
-  codex: ['openai'],
-  opencode: ['anthropic', 'openai', 'google', 'local'],
+/** Which underlying model providers a CLI can access — derived from registry */
+const CLI_NATIVE_PROVIDERS: Record<ProviderId, string[]> = Object.fromEntries(
+  PROVIDER_IDS.map((id) => [id, PROVIDER_REGISTRY[id].nativeModelProviders]),
+) as Record<ProviderId, string[]>;
+
+/** Restricted model catalogs — derived from registry */
+const CLI_RESTRICTED_MODELS: Partial<Record<ProviderId, Record<string, Set<string>>>> = Object.fromEntries(
+  PROVIDER_IDS
+    .filter((id) => PROVIDER_REGISTRY[id].restrictedModels)
+    .map((id) => [
+      id,
+      Object.fromEntries(
+        Object.entries(PROVIDER_REGISTRY[id].restrictedModels!).map(
+          ([backend, models]) => [backend, new Set(models)],
+        ),
+      ),
+    ]),
+) as Partial<Record<ProviderId, Record<string, Set<string>>>>;
+
+/** Tier alias → provider model mappings — derived from registry */
+const TIER_MAP: Record<ModelTier, Record<ProviderId, string>> = {
+  fast: Object.fromEntries(PROVIDER_IDS.map((id) => [id, PROVIDER_REGISTRY[id].tierModels.fast])) as Record<ProviderId, string>,
+  standard: Object.fromEntries(PROVIDER_IDS.map((id) => [id, PROVIDER_REGISTRY[id].tierModels.standard])) as Record<ProviderId, string>,
+  premium: Object.fromEntries(PROVIDER_IDS.map((id) => [id, PROVIDER_REGISTRY[id].tierModels.premium])) as Record<ProviderId, string>,
 };
 
-/**
- * Providers with restricted model catalogs.
- * When a provider supports a model family but only specific models,
- * list the allowed models here. Models not in the set will fall through
- * to cross-provider equivalence mapping instead of passthrough.
- */
-const CLI_RESTRICTED_MODELS: Partial<Record<ProviderId, Record<string, Set<string>>>> = {
-  copilot: {
-    // Copilot only supports gemini-3-pro-preview from Google's catalog
-    google: new Set(['gemini-3-pro-preview']),
-  },
-};
+/** Claude SDK CLI accepts short aliases instead of full model names — derived from registry */
+const CLAUDE_ALIASES: Record<string, string> = PROVIDER_REGISTRY.claude.modelAliases ?? {};
+
+/** OpenCode provider prefixes — derived from registry */
+const OPENCODE_PREFIXES: Record<string, string> = PROVIDER_REGISTRY.opencode.modelPrefixes ?? {};
 
 /** Detect which model provider a model name belongs to */
 function detectModelProvider(model: string): string {
@@ -63,35 +72,6 @@ function detectModelProvider(model: string): string {
   if (model.startsWith('grok-')) return 'xai';
   return 'unknown';
 }
-
-// ── Tier Aliases ────────────────────────────────────────────
-
-const TIER_MAP: Record<ModelTier, Record<ProviderId, string>> = {
-  fast: {
-    copilot: 'claude-haiku-4.5',
-    claude: 'haiku',
-    gemini: 'gemini-2.5-flash-lite',
-    cursor: 'claude-haiku-4.5',
-    codex: 'gpt-5.1-codex-mini',
-    opencode: 'anthropic/claude-haiku-4-5',
-  },
-  standard: {
-    copilot: 'claude-sonnet-4.6',
-    claude: 'sonnet',
-    gemini: 'gemini-2.5-flash',
-    cursor: 'claude-sonnet-4.6',
-    codex: 'gpt-5.3-codex',
-    opencode: 'anthropic/claude-sonnet-4-6',
-  },
-  premium: {
-    copilot: 'claude-opus-4.6',
-    claude: 'opus',
-    gemini: 'gemini-2.5-pro',
-    cursor: 'claude-opus-4.6',
-    codex: 'gpt-5.4',
-    opencode: 'anthropic/claude-opus-4-6',
-  },
-};
 
 // ── Cross-Provider Equivalences ─────────────────────────────
 
@@ -123,27 +103,6 @@ const EQUIVALENCES: Record<string, Record<string, string>> = {
   'gemini-2.5-pro': { anthropic: 'claude-opus-4.6', openai: 'gpt-5.2-codex' },
   'gemini-2.5-flash': { anthropic: 'claude-sonnet-4.6', openai: 'gpt-5.3-codex' },
   'gemini-2.5-flash-lite': { anthropic: 'claude-haiku-4.5', openai: 'gpt-5.1-codex-mini' },
-};
-
-// ── Claude CLI Aliases ──────────────────────────────────────
-
-/** Claude SDK CLI accepts short aliases instead of full model names */
-const CLAUDE_ALIASES: Record<string, string> = {
-  'claude-opus-4.6': 'opus',
-  'claude-opus-4.5': 'opus',
-  'claude-sonnet-4.6': 'sonnet',
-  'claude-sonnet-4.5': 'sonnet',
-  'claude-sonnet-4': 'sonnet',
-  'claude-haiku-4.5': 'haiku',
-};
-
-// ── OpenCode Provider Prefix ────────────────────────────────
-
-/** Map a model provider name to OpenCode's provider prefix */
-const OPENCODE_PREFIXES: Record<string, string> = {
-  anthropic: 'anthropic',
-  openai: 'openai',
-  google: 'google',
 };
 
 // ── Core Resolution ─────────────────────────────────────────

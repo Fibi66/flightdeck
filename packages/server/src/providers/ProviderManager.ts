@@ -12,6 +12,7 @@ import { execSync } from 'node:child_process';
 import type { Database } from '../db/database.js';
 import type { ConfigStore } from '../config/ConfigStore.js';
 import { PROVIDER_PRESETS, type ProviderId } from '../adapters/presets.js';
+import { PROVIDER_REGISTRY, PROVIDER_IDS } from '@flightdeck/shared';
 import { logger } from '../utils/logger.js';
 
 // ── Types ────────────────────────────────────────────────────────
@@ -46,10 +47,12 @@ export interface ModelPreferences {
 // we verify the binary is functional with a safe, quick command.
 // Some CLIs (e.g. claude) crash on --version, so we only check what works.
 
-const AUTH_COMMANDS: Partial<Record<ProviderId, string>> = {
-  copilot: 'gh auth status',
-  gemini:  'gemini --version',
-};
+// Auth commands derived from the central ProviderRegistry
+const AUTH_COMMANDS: Partial<Record<ProviderId, string>> = Object.fromEntries(
+  PROVIDER_IDS
+    .filter((id) => PROVIDER_REGISTRY[id].authCommand)
+    .map((id) => [id, PROVIDER_REGISTRY[id].authCommand!]),
+) as Partial<Record<ProviderId, string>>;
 
 // ── Constants ────────────────────────────────────────────────────
 
@@ -106,18 +109,8 @@ export class ProviderManager {
     const preset = PROVIDER_PRESETS[provider];
     if (!preset) return null;
 
-    // Version commands vary by provider
-    const versionCommands: Partial<Record<ProviderId, string>> = {
-      copilot: `${preset.binary} --version`,
-      claude: `${preset.binary} --version`,
-      gemini: `${preset.binary} --version`,
-      codex: `${preset.binary} --version`,
-      cursor: `${preset.binary} --version`,
-      opencode: `${preset.binary} --version`,
-    };
-
-    const cmd = versionCommands[provider];
-    if (!cmd) return null;
+    // All providers support --version for version detection
+    const cmd = `${preset.binary} --version`;
 
     try {
       const raw = this.exec(cmd);
@@ -206,7 +199,7 @@ export class ProviderManager {
 
   getActiveProviderId(): ProviderId {
     if (this.configStore) {
-      return this.configStore.current.provider.id;
+      return this.configStore.current.provider.id as ProviderId;
     }
     if (!this.db) return 'copilot';
     const raw = this.db.getSetting(`${SETTING_PREFIX}active`);

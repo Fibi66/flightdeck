@@ -15,7 +15,7 @@ import { resolveModel } from './ModelResolver.js';
 import type { ModelResolution } from './ModelResolver.js';
 import { cloudProviderToEnv } from '../config/configSchema.js';
 import type { CloudProvider } from '../config/configSchema.js';
-import type { ProviderId } from './presets.js';
+import { getProvider, type ProviderId } from '@flightdeck/shared';
 import type {
   AgentAdapter,
   AdapterStartOptions,
@@ -133,13 +133,16 @@ export function buildStartOptions(
     ...(preset?.supportsAgentFlag && agentOpts.agentFlag ? [`--agent=${agentOpts.agentFlag}`] : []),
   ];
 
-  // Model args: codex-acp uses `-c model=X`, others use `--model X` (or preset.modelFlag)
+  // Model args — strategy is defined in the ProviderRegistry
   if (resolution) {
-    if (providerId === 'codex') {
-      cliArgs.push('-c', `model=${resolution.model}`);
+    const providerDef = getProvider(providerId);
+    if (providerDef?.modelArgStrategy === 'config' && providerDef.configModelPrefix) {
+      // Config-based model arg (e.g., codex: `-c model=X`)
+      const [flag, prefix] = providerDef.configModelPrefix;
+      cliArgs.push(flag, `${prefix}${resolution.model}`);
     } else if (preset?.modelFlag) {
       cliArgs.push(preset.modelFlag, resolution.model);
-    } else {
+    } else if (providerDef?.modelArgStrategy === 'flag') {
       cliArgs.push('--model', resolution.model);
     }
   }
