@@ -320,7 +320,7 @@ function ChatBubble({ msg, agent, compact }: { msg: AcpTextChunk; agent?: AgentI
           isUser ? 'rounded-tr-sm' : 'rounded-tl-sm'
         } ${compact ? 'px-2 py-1 text-xs' : 'px-3 py-1.5 text-sm'}`}
       >
-        <Markdown text={text} />
+        <Markdown text={text} monospace />
       </div>
     </div>
   );

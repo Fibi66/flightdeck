@@ -81,7 +81,7 @@ export function ChatMessages({
                     <MessageSquare className="w-3 h-3" />
                     {msg.fromRole || 'Agent'}
                   </div>
-                  <Markdown text={msg.text} mentionAgents={agents} onMentionClick={(id) => useAppStore.getState().setSelectedAgent(id)} />
+                  <Markdown text={msg.text} monospace mentionAgents={agents} onMentionClick={(id) => useAppStore.getState().setSelectedAgent(id)} />
                 </div>
                 <span className="text-[10px] text-th-text-muted mt-1.5 shrink-0">{ts}</span>
               </div>

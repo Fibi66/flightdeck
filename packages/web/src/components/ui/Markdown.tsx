@@ -26,6 +26,8 @@ interface MarkdownProps {
   onMentionClick?: (agentId: string) => void;
   /** Additional CSS class for the wrapper */
   className?: string;
+  /** Use monospace font (JetBrains Mono) for all text — intended for chat contexts */
+  monospace?: boolean;
 }
 
 // ── Mention-aware text wrapper ───────────────────────────────
@@ -54,7 +56,7 @@ function MentionAwareChildren({
 
 // ── Component ────────────────────────────────────────────────
 
-export function Markdown({ text, mentionAgents, onMentionClick, className }: MarkdownProps) {
+export function Markdown({ text, mentionAgents, onMentionClick, className, monospace }: MarkdownProps) {
   const hasMentions = mentionAgents && mentionAgents.length > 0;
 
   const components = useMemo(() => {
@@ -158,7 +160,7 @@ export function Markdown({ text, mentionAgents, onMentionClick, className }: Mar
   }, [hasMentions, mentionAgents, onMentionClick]);
 
   return (
-    <div className={`markdown-content text-xs text-th-text-alt leading-relaxed font-mono ${className ?? ''}`}>
+    <div className={`markdown-content text-xs text-th-text-alt leading-relaxed ${monospace ? 'font-mono' : ''} ${className ?? ''}`}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeHighlight]}
