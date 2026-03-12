@@ -86,6 +86,16 @@ const TABS: TabItem[] = [
 export function AgentDetailPanel({ agentId, teamId, mode, onClose }: AgentDetailPanelProps) {
   const agentExists = useAppStore((s) => s.agents.some((a) => a.id === agentId));
 
+  // Close modal on Escape key
+  useEffect(() => {
+    if (mode !== 'modal') return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [mode, onClose]);
+
   // If no agent in store and no teamId to fetch profile from, render nothing
   if (!agentExists && !teamId) return null;
 

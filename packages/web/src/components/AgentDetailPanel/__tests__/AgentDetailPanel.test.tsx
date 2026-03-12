@@ -250,6 +250,20 @@ describe('AgentDetailPanel', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it('calls onClose when Escape key is pressed in modal mode', () => {
+    mockAgents = [makeAgent()];
+    render(<AgentDetailPanel agentId={mockAgents[0].id} mode="modal" onClose={onClose} />);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not close on Escape in inline mode', () => {
+    mockAgents = [makeAgent()];
+    render(<AgentDetailPanel agentId={mockAgents[0].id} mode="inline" onClose={onClose} />);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   // ── Stop confirmation ─────────────────────────────────────
 
   it('shows stop confirmation dialog', () => {
