@@ -12,6 +12,7 @@
  * 4. Fallback → provider's standard-tier default + warn
  */
 import { logger } from '../utils/logger.js';
+import { KNOWN_MODEL_IDS } from '../projects/ModelConfigDefaults.js';
 import type { ProviderId } from './presets.js';
 
 // ── Types ───────────────────────────────────────────────────
@@ -41,6 +42,19 @@ const CLI_NATIVE_PROVIDERS: Record<ProviderId, string[]> = {
   opencode: ['anthropic', 'openai', 'google', 'local'],
 };
 
+/**
+ * Providers with restricted model catalogs.
+ * When a provider supports a model family but only specific models,
+ * list the allowed models here. Models not in the set will fall through
+ * to cross-provider equivalence mapping instead of passthrough.
+ */
+const CLI_RESTRICTED_MODELS: Partial<Record<ProviderId, Record<string, Set<string>>>> = {
+  copilot: {
+    // Copilot only supports gemini-3-pro-preview from Google's catalog
+    google: new Set(['gemini-3-pro-preview']),
+  },
+};
+
 /** Detect which model provider a model name belongs to */
 function detectModelProvider(model: string): string {
   if (model.startsWith('claude-') || model === 'opus' || model === 'sonnet' || model === 'haiku') return 'anthropic';
@@ -66,7 +80,7 @@ const TIER_MAP: Record<ModelTier, Record<ProviderId, string>> = {
     claude: 'sonnet',
     gemini: 'gemini-2.5-flash',
     cursor: 'claude-sonnet-4.6',
-    codex: 'gpt-5.1-codex',
+    codex: 'gpt-5.3-codex',
     opencode: 'anthropic/claude-sonnet-4-6',
   },
   premium: {
@@ -74,7 +88,7 @@ const TIER_MAP: Record<ModelTier, Record<ProviderId, string>> = {
     claude: 'opus',
     gemini: 'gemini-2.5-pro',
     cursor: 'claude-opus-4.6',
-    codex: 'gpt-5.2-codex',
+    codex: 'gpt-5.4',
     opencode: 'anthropic/claude-opus-4-6',
   },
 };
@@ -85,8 +99,8 @@ const EQUIVALENCES: Record<string, Record<string, string>> = {
   // Anthropic → others
   'claude-opus-4.6': { openai: 'gpt-5.2-codex', google: 'gemini-2.5-pro' },
   'claude-opus-4.5': { openai: 'gpt-5.1-codex-max', google: 'gemini-2.5-pro' },
-  'claude-sonnet-4.6': { openai: 'gpt-5.1-codex', google: 'gemini-2.5-flash' },
-  'claude-sonnet-4.5': { openai: 'gpt-5.1-codex', google: 'gemini-2.5-flash' },
+  'claude-sonnet-4.6': { openai: 'gpt-5.3-codex', google: 'gemini-2.5-flash' },
+  'claude-sonnet-4.5': { openai: 'gpt-5.3-codex', google: 'gemini-2.5-flash' },
   'claude-sonnet-4': { openai: 'gpt-4.1', google: 'gemini-2.5-flash' },
   'claude-haiku-4.5': { openai: 'gpt-5.1-codex-mini', google: 'gemini-2.5-flash-lite' },
 
@@ -97,6 +111,7 @@ const EQUIVALENCES: Record<string, Record<string, string>> = {
   'gpt-5.2': { anthropic: 'claude-sonnet-4.6', google: 'gemini-2.5-flash' },
   'gpt-5.1-codex-max': { anthropic: 'claude-opus-4.5', google: 'gemini-2.5-pro' },
   'gpt-5.1-codex': { anthropic: 'claude-sonnet-4.6', google: 'gemini-2.5-flash' },
+
   'gpt-5.1-codex-mini': { anthropic: 'claude-haiku-4.5', google: 'gemini-2.5-flash-lite' },
   'gpt-5.1': { anthropic: 'claude-sonnet-4.6', google: 'gemini-2.5-flash' },
   'gpt-5-mini': { anthropic: 'claude-haiku-4.5', google: 'gemini-2.5-flash-lite' },
@@ -104,9 +119,9 @@ const EQUIVALENCES: Record<string, Record<string, string>> = {
 
   // Google → others
   'gemini-3-pro-preview': { anthropic: 'claude-opus-4.6', openai: 'gpt-5.2-codex' },
-  'gemini-3-flash-preview': { anthropic: 'claude-sonnet-4.6', openai: 'gpt-5.1-codex' },
+  'gemini-3-flash-preview': { anthropic: 'claude-sonnet-4.6', openai: 'gpt-5.3-codex' },
   'gemini-2.5-pro': { anthropic: 'claude-opus-4.6', openai: 'gpt-5.2-codex' },
-  'gemini-2.5-flash': { anthropic: 'claude-sonnet-4.6', openai: 'gpt-5.1-codex' },
+  'gemini-2.5-flash': { anthropic: 'claude-sonnet-4.6', openai: 'gpt-5.3-codex' },
   'gemini-2.5-flash-lite': { anthropic: 'claude-haiku-4.5', openai: 'gpt-5.1-codex-mini' },
 };
 
@@ -166,17 +181,23 @@ export function resolveModel(
   const cliProviders = CLI_NATIVE_PROVIDERS[provider] ?? [];
 
   if (cliProviders.includes(modelProvider)) {
-    // Model's provider is available on this CLI — apply CLI-specific transforms
-    if (provider === 'claude' && modelSpec in CLAUDE_ALIASES) {
-      return { model: CLAUDE_ALIASES[modelSpec], translated: true, original, reason: 'alias for Claude CLI' };
-    }
-    if (provider === 'opencode') {
-      const prefix = OPENCODE_PREFIXES[modelProvider];
-      if (prefix) {
-        return { model: `${prefix}/${modelSpec}`, translated: true, original, reason: 'OpenCode provider prefix' };
+    // Check for restricted model catalogs (e.g., Copilot only supports certain Google models)
+    const restricted = CLI_RESTRICTED_MODELS[provider]?.[modelProvider];
+    if (restricted && !restricted.has(modelSpec)) {
+      // Model family is supported but this specific model is not — fall through to equivalence mapping
+    } else {
+      // Model's provider is available on this CLI — apply CLI-specific transforms
+      if (provider === 'claude' && modelSpec in CLAUDE_ALIASES) {
+        return { model: CLAUDE_ALIASES[modelSpec], translated: true, original, reason: 'alias for Claude CLI' };
       }
+      if (provider === 'opencode') {
+        const prefix = OPENCODE_PREFIXES[modelProvider];
+        if (prefix) {
+          return { model: `${prefix}/${modelSpec}`, translated: true, original, reason: 'OpenCode provider prefix' };
+        }
+      }
+      return { model: modelSpec, translated: false, original };
     }
-    return { model: modelSpec, translated: false, original };
   }
 
   // Step 3: Cross-provider equivalence mapping
@@ -256,11 +277,45 @@ export function isValidModel(model: string, provider: ProviderId): boolean {
   const modelProvider = detectModelProvider(model);
   const cliProviders = CLI_NATIVE_PROVIDERS[provider] ?? [];
 
-  // Native support
-  if (cliProviders.includes(modelProvider)) return true;
+  // Native support (with model restrictions check)
+  if (cliProviders.includes(modelProvider)) {
+    const restricted = CLI_RESTRICTED_MODELS[provider]?.[modelProvider];
+    if (!restricted || restricted.has(model)) return true;
+    // Model family supported but specific model restricted — check equivalences
+  }
 
   // Has equivalence mapping
   if (model in EQUIVALENCES) return true;
 
   return false;
+}
+
+// ── Provider-Scoped Model Lists ─────────────────────────────
+
+/**
+ * Get the list of models natively supported by a CLI provider.
+ * Uses CLI_NATIVE_PROVIDERS + CLI_RESTRICTED_MODELS + detectModelProvider()
+ * to filter KNOWN_MODEL_IDS to only models the provider can actually use.
+ */
+export function getModelsForProvider(provider: ProviderId): string[] {
+  const cliProviders = CLI_NATIVE_PROVIDERS[provider] ?? [];
+  return [...KNOWN_MODEL_IDS].filter((model) => {
+    const modelProvider = detectModelProvider(model);
+    if (!cliProviders.includes(modelProvider)) return false;
+    const restricted = CLI_RESTRICTED_MODELS[provider]?.[modelProvider];
+    if (restricted && !restricted.has(model)) return false;
+    return true;
+  });
+}
+
+/**
+ * Get per-provider model lists for all known providers.
+ * Used by the /models endpoint to drive provider-scoped UI tabs.
+ */
+export function getModelsByProvider(): Record<string, string[]> {
+  const result: Record<string, string[]> = {};
+  for (const provider of Object.keys(CLI_NATIVE_PROVIDERS) as ProviderId[]) {
+    result[provider] = getModelsForProvider(provider);
+  }
+  return result;
 }

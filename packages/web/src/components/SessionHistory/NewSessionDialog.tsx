@@ -25,6 +25,7 @@ const MODEL_NAMES: Record<string, string> = {
   'claude-sonnet-4': 'Claude Sonnet 4',
   'claude-haiku-4.5': 'Claude Haiku 4.5',
   'gemini-3-pro-preview': 'Gemini 3 Pro',
+  'gpt-5.4': 'GPT-5.4',
   'gpt-5.3-codex': 'GPT-5.3 Codex',
   'gpt-5.2-codex': 'GPT-5.2 Codex',
   'gpt-5.2': 'GPT-5.2',

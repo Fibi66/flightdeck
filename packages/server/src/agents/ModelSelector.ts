@@ -51,8 +51,8 @@ export const AVAILABLE_MODELS: ModelConfig[] = [
     bestFor: ['large-context', 'fast-iteration', 'multi-file'],
   },
   {
-    id: 'gpt-5.1-codex',
-    name: 'GPT-5.1 Codex',
+    id: 'gpt-5.3-codex',
+    name: 'GPT-5.3 Codex',
     tier: 'standard',
     contextWindow: 200000,
     costPer1kTokens: 2.5,

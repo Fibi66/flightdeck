@@ -99,7 +99,7 @@ export const PROVIDER_PRESETS: Record<ProviderId, ProviderPreset> = {
     requiredEnvVars: ['OPENAI_API_KEY'],
     transport: 'stdio',
     supportsResume: false,
-    defaultModel: 'gpt-5',
+    defaultModel: 'gpt-5.3-codex',
   },
 
   claude: {

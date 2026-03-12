@@ -13,6 +13,7 @@ interface ModelConfigResponse {
 interface ModelsListResponse {
   models: string[];
   defaults: ModelConfigMap;
+  modelsByProvider?: Record<string, string[]>;
 }
 
 /** Human-readable display names for model IDs */
@@ -33,6 +34,7 @@ const MODEL_NAMES: Record<string, string> = {
   'gpt-5.2-codex': 'GPT-5.2 Codex',
   'gpt-5.2': 'GPT-5.2',
   'gpt-5.1-codex-max': 'GPT-5.1 Codex Max',
+  'gpt-5.1-codex': 'GPT-5.1 Codex',
   'gpt-5.1': 'GPT-5.1',
   'gpt-5.1-codex-mini': 'GPT-5.1 Codex Mini',
   'gpt-5-mini': 'GPT-5 Mini',
@@ -75,12 +77,12 @@ const CONFIG_ROLES = [
   'lead',
 ];
 
-/** Provider tab definitions. Copilot first since it supports all models. */
-const PROVIDER_TABS: { id: string; label: string; color: string; models: (m: string) => boolean }[] = [
-  { id: 'copilot', label: 'Copilot', color: 'text-purple-400 border-purple-400', models: () => true },
-  { id: 'claude', label: 'Claude', color: 'text-orange-400 border-orange-400', models: (m) => m.startsWith('claude-') },
-  { id: 'gemini', label: 'Gemini', color: 'text-blue-400 border-blue-400', models: (m) => m.startsWith('gemini-') },
-  { id: 'codex', label: 'Codex', color: 'text-green-400 border-green-400', models: (m) => m.startsWith('gpt-') },
+/** Provider tab definitions with display metadata. Model filtering is data-driven from the backend. */
+const PROVIDER_TABS: { id: string; label: string; color: string }[] = [
+  { id: 'copilot', label: 'Copilot', color: 'text-purple-400 border-purple-400' },
+  { id: 'claude', label: 'Claude', color: 'text-orange-400 border-orange-400' },
+  { id: 'gemini', label: 'Gemini', color: 'text-blue-400 border-blue-400' },
+  { id: 'codex', label: 'Codex', color: 'text-green-400 border-green-400' },
 ];
 
 interface Props {
@@ -113,6 +115,7 @@ export function ModelConfigPanel({ projectId, value, onChange, compact }: Props)
   const [savedConfig, setSavedConfig] = useState<ModelConfigMap>(value ?? {});
   const [defaults, setDefaults] = useState<ModelConfigMap>({});
   const [allModels, setAllModels] = useState<string[]>([]);
+  const [modelsByProvider, setModelsByProvider] = useState<Record<string, string[]>>({});
   const [providerTab, setProviderTab] = useState<string>('copilot');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -128,6 +131,9 @@ export function ModelConfigPanel({ projectId, value, onChange, compact }: Props)
         const modelsData = await apiFetch<ModelsListResponse>('/models');
         setAllModels(modelsData.models);
         setDefaults(modelsData.defaults);
+        if (modelsData.modelsByProvider) {
+          setModelsByProvider(modelsData.modelsByProvider);
+        }
         if (!value && !projectId) {
           setConfig(modelsData.defaults);
           setSavedConfig(modelsData.defaults);
@@ -276,7 +282,10 @@ export function ModelConfigPanel({ projectId, value, onChange, compact }: Props)
         <div className="flex gap-1 px-1 border-b border-th-border pb-1 overflow-x-auto"
              style={{ scrollbarWidth: 'thin' }}>
           {PROVIDER_TABS.map((tab) => {
-            const tabModels = allModels.filter(tab.models);
+            const providerModelSet = modelsByProvider[tab.id];
+            const tabModels = providerModelSet
+              ? allModels.filter((m) => providerModelSet.includes(m))
+              : allModels;
             if (tabModels.length === 0) return null;
             const isActive = providerTab === tab.id;
             return (
@@ -302,7 +311,10 @@ export function ModelConfigPanel({ projectId, value, onChange, compact }: Props)
         {CONFIG_ROLES.map((roleId) => {
           const allowedModels = config[roleId] ?? defaults[roleId] ?? [];
           const activeTab = PROVIDER_TABS.find(t => t.id === providerTab) ?? PROVIDER_TABS[0];
-          const visibleModels = allModels.filter(activeTab.models);
+          const providerModelSet = modelsByProvider[activeTab.id];
+          const visibleModels = providerModelSet
+            ? allModels.filter((m) => providerModelSet.includes(m))
+            : allModels;
           if (visibleModels.length === 0) return null;
           return (
             <div key={roleId} className="px-1">

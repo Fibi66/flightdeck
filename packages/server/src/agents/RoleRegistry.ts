@@ -538,7 +538,7 @@ Defer non-blocking issues for later follow-up:
 
 == MODEL SELECTION ==
 Each role has a recommended default model, but YOU decide the best model for each task. Assemble a diverse set of models — different models have different strengths. Override the default by setting "model" in CREATE_AGENT.
-Known model families: Claude (opus, sonnet, haiku), GPT (gpt-5.3-codex, gpt-5.2-codex, gpt-5.1-codex, gpt-4.1), Gemini (gemini-3-pro-preview, gemini-2.5-pro, gemini-2.5-flash).
+Known model families: Claude (opus, sonnet, haiku), GPT (gpt-5.4, gpt-5.3-codex, gpt-5.2-codex, gpt-5.1-codex, gpt-4.1), Gemini (gemini-3-pro-preview, gemini-2.5-pro, gemini-2.5-flash).
 Tips: Use Opus/GPT-5.3 for complex reasoning, Sonnet/GPT-5.2 for fast coding, Haiku/GPT-4.1 for quick simple tasks, Gemini for a fresh perspective.
 
 == PROVIDER SELECTION ==

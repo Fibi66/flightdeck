@@ -16,6 +16,7 @@ const MODEL_SHORT: Record<string, string> = {
   'claude-haiku-4.5': 'haiku',
   'gemini-3-pro-preview': 'gemini-pro',
   'gemini-3-flash-preview': 'gemini-flash',
+  'gpt-5.4': 'gpt5.4',
   'gpt-5.3-codex': 'codex-5.3',
   'gpt-5.2-codex': 'codex',
   'gpt-5.2': 'gpt5.2',
