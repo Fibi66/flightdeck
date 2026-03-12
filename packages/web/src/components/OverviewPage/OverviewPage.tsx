@@ -43,6 +43,8 @@ import {
 } from 'lucide-react';
 import type { Decision, DagStatus } from '../../types';
 import { TokenUsageSection } from './TokenUsageSection';
+import { FileLockPanel } from '../FleetOverview/FileLockPanel';
+import type { FileLock } from '../FleetOverview/FleetOverview';
 
 
 // ── Constants ──────────────────────────────────────────────────────
@@ -194,6 +196,24 @@ export function OverviewPage(_props: Props) {
 
   // ── Progress feed (activity only — lead-emitted progress reports) ──
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
+
+  // ── File locks ──
+  const [locks, setLocks] = useState<FileLock[]>([]);
+
+  useEffect(() => {
+    if (!effectiveId) return;
+    const poll = async () => {
+      try {
+        const data = await apiFetch<{ locks: FileLock[] }>(
+          `/coordination/status?projectId=${effectiveId}`,
+        );
+        if (mountedRef.current) setLocks(Array.isArray(data.locks) ? data.locks : []);
+      } catch { /* ignore */ }
+    };
+    poll();
+    const interval = setInterval(poll, POLL_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [effectiveId]);
 
   useEffect(() => {
     if (!effectiveId) return;
@@ -398,6 +418,13 @@ export function OverviewPage(_props: Props) {
             </div>
           ))}
         </section>
+      )}
+
+      {/* ── File Locks ──────────────────────────────────────────── */}
+      {locks.length > 0 && (
+        <SectionErrorBoundary name="File locks">
+          <FileLockPanel locks={locks} agents={projectAgents} />
+        </SectionErrorBoundary>
       )}
 
       {/* ── Two-Column Feed ────────────────────────────────────── */}
