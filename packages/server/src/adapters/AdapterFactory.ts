@@ -115,9 +115,9 @@ export function buildStartOptions(
   const cloudEnv = cloudProviderToEnv(config.cloudProvider);
   const rawEnv = { ...cloudEnv, ...preset?.env, ...config.envOverride };
 
-  // Gemini: deliver system prompt via GEMINI_WRITE_SYSTEM_MD env var
+  // Gemini: deliver system prompt via GEMINI_SYSTEM_MD env var
   if (providerId === 'gemini' && agentOpts.systemPrompt) {
-    rawEnv['GEMINI_WRITE_SYSTEM_MD'] = agentOpts.systemPrompt;
+    rawEnv['GEMINI_SYSTEM_MD'] = agentOpts.systemPrompt;
   }
 
   const env = Object.fromEntries(
