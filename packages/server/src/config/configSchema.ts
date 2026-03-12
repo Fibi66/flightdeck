@@ -147,15 +147,6 @@ const oversightSchema = z.preprocess(
   }),
 );
 
-// ── Conflicts section ──────────────────────────────────────
-const conflictsSchema = z.object({
-  enabled: z.boolean().default(true),
-  checkIntervalMs: z.number().int().min(5_000).max(600_000).default(60_000),
-  directoryOverlapEnabled: z.boolean().default(true),
-  importAnalysisEnabled: z.boolean().default(true),
-  branchDivergenceEnabled: z.boolean().default(true),
-});
-
 // ── Notifications section ──────────────────────────────────
 const notificationChannelSchema = z.object({
   id: z.string(),
@@ -222,7 +213,6 @@ export const flightdeckConfigSchema = z.preprocess(
     provider: sectionDefault(providerSchema),
     oversight: sectionDefault(oversightSchema),
     telegram: sectionDefault(telegramSchema),
-    conflicts: sectionDefault(conflictsSchema),
     notifications: sectionDefault(notificationsSchema),
     predictions: sectionDefault(predictionsSchema),
     providerSettings: z.preprocess((val) => val ?? {}, z.record(z.string(), providerSettingsSchema)),

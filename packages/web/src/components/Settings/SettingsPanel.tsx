@@ -6,7 +6,6 @@ import { apiFetch } from '../../hooks/useApi';
 import { Trash2, Plus, Sun, Moon, Monitor, Settings, Cpu, Users, Terminal, ChevronDown, ChevronRight, Zap, Volume2, Eye } from 'lucide-react';
 import { ProvidersSection } from './ProvidersSection';
 import { NotificationPreferencesPanel, NotificationActivityLog } from '../Notifications';
-import { ConflictSettingsPanel } from '../Conflicts';
 import { DataManagement } from './DataManagement';
 import { TelegramSettings } from './TelegramSettings';
 
@@ -253,11 +252,6 @@ export function SettingsPanel({ api }: Props) {
       {/* Telegram Integration */}
       <section className="bg-surface-raised border border-th-border rounded-lg p-4 mb-6">
         <TelegramSettings />
-      </section>
-
-      {/* Conflict Detection */}
-      <section className="bg-surface-raised border border-th-border rounded-lg p-4 mb-6">
-        <ConflictSettingsPanel />
       </section>
 
       {/* Notification Preferences */}

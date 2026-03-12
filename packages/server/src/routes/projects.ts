@@ -416,7 +416,6 @@ export function projectsRoutes(ctx: AppContext): Router {
         ok: true,
         taskId,
         tasks: result.tasks,
-        conflicts: result.conflicts,
       });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
