@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useAppStore } from '../../stores/appStore';
 import { formatTokens } from '../../utils/format';
+import { shortAgentId } from '../../utils/agentLabel';
 import type { AgentCostSummary, TaskCostSummary, AgentInfo } from '../../types';
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -256,7 +257,7 @@ function TaskCostTable({
                         title={`${agent?.role.name ?? a.agentRole ?? a.agentId.slice(0, 8)}: ${formatTokens(a.inputTokens)} in / ${formatTokens(a.outputTokens)} out`}
                       >
                         {agent?.role.icon ?? '🤖'}
-                        <span className="font-mono">{a.agentId.slice(0, 6)}</span>
+                        <span className="font-mono">{shortAgentId(a.agentId)}</span>
                       </span>
                     );
                   })}

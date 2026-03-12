@@ -2,6 +2,7 @@ import { BarChart3, X, CheckCircle, Loader2, AlertCircle, MessageSquare } from '
 import type { AgentReport } from '../../stores/leadStore';
 import type { LeadProgress, Delegation } from '../../types';
 import { agentStatusDot } from '../../utils/statusColors';
+import { shortAgentId } from '../../utils/agentLabel';
 import { AgentReportBlock } from './AgentReportBlock';
 
 interface ProgressHistoryEntry {
@@ -64,7 +65,7 @@ export function ProgressDetailModal({ progress, progressHistory, onClose }: Prog
                   <div key={ta.id} className="flex items-center gap-2 px-2 py-1 rounded bg-th-bg-muted/50 text-xs font-mono">
                     <span className={`w-2 h-2 rounded-full shrink-0 ${agentStatusDot(ta.status)}`} />
                     <span className="text-th-text-alt">{ta.role?.name || 'Agent'}</span>
-                    <span className="text-th-text-muted">{ta.id.slice(0, 8)}</span>
+                    <span className="text-th-text-muted">{shortAgentId(ta.id)}</span>
                     <span className="ml-auto text-th-text-muted">{ta.status}</span>
                   </div>
                 ))}

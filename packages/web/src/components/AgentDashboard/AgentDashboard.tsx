@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAppStore } from '../../stores/appStore';
 import { useHistoricalAgents } from '../../hooks/useHistoricalAgents';
+import { shortAgentId } from '../../utils/agentLabel';
 import { SpawnDialog } from './SpawnDialog';
 import { FleetStats } from '../FleetOverview/FleetStats';
 import { AgentActivityTable } from '../FleetOverview/AgentActivityTable';
@@ -156,7 +157,7 @@ export function AgentDashboard({ api, ws }: Props) {
               <option value="">All agents</option>
               {agents.map((a) => (
                 <option key={a.id} value={a.id}>
-                  {a.role.icon} {a.role.name} ({a.id.slice(0, 8)})
+                  {a.role.icon} {a.role.name} ({shortAgentId(a.id)})
                 </option>
               ))}
             </select>

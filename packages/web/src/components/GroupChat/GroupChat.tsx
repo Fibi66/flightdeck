@@ -7,6 +7,7 @@ import { MentionText, AgentIdBadge, idColor } from '../../utils/markdown';
 import { Markdown } from '../ui/Markdown';
 import { FilterTabs } from '../FilterTabs';
 import { useOptionalProjectId } from '../../contexts/ProjectContext';
+import { shortAgentId } from '../../utils/agentLabel';
 
 const EMPTY_GROUP_MSGS: GroupMessage[] = [];
 
@@ -173,7 +174,7 @@ export function GroupChat(_props: { api: any; ws: any }) {
     if (mentionQuery === null) return [];
     const q = mentionQuery.toLowerCase();
     return mentionCandidates.filter(
-      (a) => a.id.slice(0, 8).toLowerCase().startsWith(q) || a.role.name.toLowerCase().includes(q),
+      (a) => shortAgentId(a.id).toLowerCase().startsWith(q) || a.role.name.toLowerCase().includes(q),
     ).slice(0, 8);
   }, [mentionQuery, mentionCandidates]);
 
@@ -184,7 +185,7 @@ export function GroupChat(_props: { api: any; ws: any }) {
   };
 
   const insertMention = (agent: typeof agents[0]) => {
-    const shortId = agent.id.slice(0, 8);
+    const shortId = shortAgentId(agent.id);
     const cursorPos = textareaRef.current?.selectionStart ?? inputText.length;
     const before = inputText.slice(0, cursorPos);
     const after = inputText.slice(cursorPos);
@@ -498,7 +499,7 @@ export function GroupChat(_props: { api: any; ws: any }) {
           className="px-3 py-1.5 border-b border-th-border/50 shrink-0 bg-th-bg/50"
           items={leads.map((lead) => ({
             value: lead.id,
-            label: lead.projectName || lead.id.slice(0, 8),
+            label: lead.projectName || shortAgentId(lead.id),
             count: groups.filter((g) => (g.projectId ?? g.leadId) === lead.id).length || undefined,
             icon: <Crown className="w-3 h-3" />,
           }))}
@@ -794,7 +795,7 @@ export function GroupChat(_props: { api: any; ws: any }) {
                 >
                   {leads.map((l) => (
                     <option key={l.id} value={l.id}>
-                      {l.projectName ?? l.id.slice(0, 8)}
+                      {l.projectName ?? shortAgentId(l.id)}
                     </option>
                   ))}
                 </select>

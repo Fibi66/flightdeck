@@ -10,6 +10,7 @@ import { useFileDrop } from '../../hooks/useFileDrop';
 import { useAttachments } from '../../hooks/useAttachments';
 import { AttachmentBar } from '../AttachmentBar';
 import { DropOverlay } from '../DropOverlay';
+import { shortAgentId } from '../../utils/agentLabel';
 
 interface Props {
   agentId: string;
@@ -48,7 +49,7 @@ export function ChatPanel({ agentId, ws }: Props) {
     const q = mentionQuery.toLowerCase();
     return activeAgents.filter(
       (a) =>
-        a.id.slice(0, 8).toLowerCase().startsWith(q) ||
+        shortAgentId(a.id).toLowerCase().startsWith(q) ||
         a.role.name.toLowerCase().includes(q),
     );
   }, [mentionQuery, activeAgents]);
@@ -79,7 +80,7 @@ export function ChatPanel({ agentId, ws }: Props) {
   };
 
   const insertMention = (mentionAgent: typeof agents[0]) => {
-    const shortId = mentionAgent.id.slice(0, 8);
+    const shortId = shortAgentId(mentionAgent.id);
     const cursorPos = inputRef.current?.selectionStart ?? inputText.length;
     const before = inputText.slice(0, cursorPos);
     const after = inputText.slice(cursorPos);

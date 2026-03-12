@@ -2,6 +2,7 @@ import { memo } from 'react';
 import { Handle, Position } from '@xyflow/react';
 import type { NodeProps } from '@xyflow/react';
 import type { CanvasNodeData } from '../../hooks/useCanvasGraph';
+import { shortAgentId } from '../../utils/agentLabel';
 
 // ── Status visuals ─────────────────────────────────────────────────
 
@@ -31,7 +32,7 @@ function pressureColor(pct: number): string {
 function AgentNodeInner({ data }: NodeProps & { data: CanvasNodeData }) {
   const { agent, commVolume } = data;
   const role = agent.role?.name ?? 'Agent';
-  const shortId = agent.id.slice(0, 8);
+  const shortId = shortAgentId(agent.id);
   const status = agent.status ?? 'idle';
   const contextPct = agent.contextBurnRate != null
     ? Math.min(100, Math.round(agent.contextBurnRate * 10))

@@ -5,6 +5,7 @@ import type { AgentInfo, Delegation } from '../../types';
 import { useAppStore } from '../../stores/appStore';
 import { MentionText } from '../../utils/markdown';
 import { agentStatusText } from '../../utils/statusColors';
+import { shortAgentId } from '../../utils/agentLabel';
 import { apiFetch } from '../../hooks/useApi';
 import { useToastStore } from '../Toast';
 import { AgentReportBlock } from './AgentReportBlock';
@@ -102,7 +103,7 @@ export function CrewStatusContent({ agents, delegations, comms, activity, allAge
                       <MessageSquare size={10} /> Chat
                     </button>
                   )}
-                  <span className="text-[10px] font-mono text-th-text-muted shrink-0">{agent.id.slice(0, 8)}</span>
+                  <span className="text-[10px] font-mono text-th-text-muted shrink-0">{shortAgentId(agent.id)}</span>
                 </div>
                 {delegation && (
                   <div className="flex items-center gap-1.5 mt-0.5">
@@ -158,7 +159,7 @@ export function CrewStatusContent({ agents, delegations, comms, activity, allAge
                   </span>
                 </div>
                 <div className="flex items-center gap-3 mt-0.5 text-xs text-th-text-muted font-mono">
-                  <span>{selectedAgent.id.slice(0, 8)}</span>
+                  <span>{shortAgentId(selectedAgent.id)}</span>
                   <ProviderBadge provider={selectedAgent.provider} size="md" />
                   {(selectedAgent.model || selectedAgent.role.model) && (
                     <span className="bg-th-bg-muted/50 px-1.5 rounded">{selectedAgent.model || selectedAgent.role.model}</span>

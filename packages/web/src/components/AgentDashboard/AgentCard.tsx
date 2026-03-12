@@ -4,6 +4,7 @@ import type { AgentInfo } from '../../types';
 import { RefreshCw, Square, Terminal, Zap, Check, Play } from 'lucide-react';
 import { AgentIdBadge } from '../../utils/markdown';
 import { agentStatusText } from '../../utils/statusColors';
+import { shortAgentId } from '../../utils/agentLabel';
 import { formatTokens } from '../../utils/format';
 import { DiffBadge } from '../DiffPreview';
 import { useModels } from '../../hooks/useModels';
@@ -36,7 +37,7 @@ export function AgentCard({ agent, api }: Props) {
         <div className="flex items-center gap-2">
           <span className="text-lg">{agent.role.icon}</span>
           <div>
-            <h3 className="text-sm font-medium">{agent.role.name} <span className="text-th-text-muted font-mono text-xs">({agent.id.slice(0, 8)})</span></h3>
+            <h3 className="text-sm font-medium">{agent.role.name} <span className="text-th-text-muted font-mono text-xs">({shortAgentId(agent.id)})</span></h3>
             <div className="flex items-center gap-2">
               <span className={`text-xs ${agentStatusText(agent.status)}`}>
                 {agent.status}

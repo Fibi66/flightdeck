@@ -13,6 +13,7 @@ import {
   ChevronUp,
   Cpu,
 } from 'lucide-react';
+import { shortAgentId } from '../../utils/agentLabel';
 import { apiFetch } from '../../hooks/useApi';
 import { getRoleIcon } from '../../utils/getRoleIcon';
 import { useToastStore } from '../Toast';
@@ -116,7 +117,7 @@ function AgentCard({ agent }: { agent: AgentInfo }) {
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <span className="font-medium text-th-text capitalize">{agent.role.name}</span>
-              <span className="text-xs font-mono text-th-text-alt">{agent.id.slice(0, 8)}</span>
+              <span className="text-xs font-mono text-th-text-alt">{shortAgentId(agent.id)}</span>
               <span className={`px-2 py-0.5 rounded text-xs font-medium ${badge.bg}`}>{badge.label}</span>
               {agent.provider && (
                 <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-th-bg-alt text-th-text-alt border border-th-border capitalize">

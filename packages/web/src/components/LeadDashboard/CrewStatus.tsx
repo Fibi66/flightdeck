@@ -2,6 +2,7 @@ import { Bot, CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import type { AgentInfo, Delegation } from '../../types';
 import { AgentIdBadge } from '../../utils/markdown';
 import { agentStatusText } from '../../utils/statusColors';
+import { shortAgentId } from '../../utils/agentLabel';
 import { ProviderBadge } from '../ProviderBadge';
 
 interface Props {
@@ -52,7 +53,7 @@ export function CrewStatus({ agents, delegations }: Props) {
                 <div className="flex items-center gap-2">
                   <span className="text-base">{agent.role.icon}</span>
                   <span className="text-sm font-mono font-semibold text-th-text-alt truncate">
-                    {agent.role.name} <span className="text-th-text-muted text-xs">({agent.id.slice(0, 8)})</span>
+                    {agent.role.name} <span className="text-th-text-muted text-xs">({shortAgentId(agent.id)})</span>
                   </span>
                   <Icon className={`w-3.5 h-3.5 ${colorClass} ml-auto shrink-0 ${agent.status === 'running' ? 'animate-spin' : ''}`} />
                 </div>

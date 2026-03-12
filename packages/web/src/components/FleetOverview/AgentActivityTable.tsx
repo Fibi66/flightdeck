@@ -7,6 +7,7 @@ import { EmptyState } from '../Shared';
 import { formatTokens } from '../../utils/format';
 import { useModels } from '../../hooks/useModels';
 import { ProviderBadge } from '../ProviderBadge';
+import { shortAgentId } from '../../utils/agentLabel';
 
 function shortModelName(model?: string): string {
   if (!model) return '';
@@ -177,9 +178,9 @@ export function AgentActivityTable({ agents, locks, api, onSelectAgent }: Props)
                       <button
                         onClick={() => handleSelect(agent.id)}
                         className="font-medium text-th-text-alt text-xs hover:text-accent transition-colors text-left truncate block"
-                        title={`${agent.role.name} (${agent.id.slice(0, 8)}) — click to open chat`}
+                        title={`${agent.role.name} (${shortAgentId(agent.id)}) — click to open chat`}
                       >
-                        {agent.role.name} <span className="text-th-text-muted font-mono">({agent.id.slice(0, 8)})</span>
+                        {agent.role.name} <span className="text-th-text-muted font-mono">({shortAgentId(agent.id)})</span>
                       </button>
                       <div className="text-[10px] text-th-text-muted font-mono flex items-center gap-1 flex-wrap">
                         {agent.childIds.length > 0 && (

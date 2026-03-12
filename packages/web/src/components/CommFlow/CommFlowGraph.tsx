@@ -2,6 +2,7 @@ import { useMemo, useState, useCallback } from 'react';
 import { useAppStore } from '../../stores/appStore';
 import { useLeadStore, type AgentComm } from '../../stores/leadStore';
 import type { AgentInfo } from '../../types';
+import { shortAgentId } from '../../utils/agentLabel';
 
 const EMPTY_COMMS: AgentComm[] = [];
 
@@ -36,7 +37,7 @@ function layoutNodes(agents: AgentInfo[], width: number, height: number): GraphN
     const icon = typeof agent.role === 'object' ? agent.role.icon : '🤖';
     return {
       id: agent.id,
-      label: `${roleName} (${agent.id.slice(0, 8)})`,
+      label: `${roleName} (${shortAgentId(agent.id)})`,
       icon,
       status: agent.status,
       x: cx + radius * Math.cos(angle),
