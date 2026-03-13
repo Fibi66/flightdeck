@@ -48,7 +48,7 @@ export interface DagStatus {
 export interface AcpTextChunk {
   type: 'text';
   text: string;
-  sender?: 'agent' | 'user' | 'system' | 'external' | 'thinking';
+  sender?: 'agent' | 'user' | 'system' | 'external' | 'thinking' | 'tool';
   /** Role name of external sender (e.g. "Developer", "Architect") */
   fromRole?: string;
   timestamp?: number;
