@@ -635,11 +635,11 @@ describe('HeartbeatMonitor', () => {
       expect(agent.queueMessage).not.toHaveBeenCalled();
     });
 
-    it('sends reminders to ALL agents regardless of role', () => {
+    it('sends reminders to ALL running agents regardless of role', () => {
       const lead = makeAgent({
         id: 'lead-1',
         role: { id: 'lead', name: 'Team Lead' },
-        status: 'idle',
+        status: 'running',
         createdAt: new Date(Date.now() - TWO_HOURS - 1000),
       });
       const dev = makeAgent({
@@ -651,7 +651,7 @@ describe('HeartbeatMonitor', () => {
       const reviewer = makeAgent({
         id: 'rev-1',
         role: { id: 'reviewer', name: 'Reviewer' },
-        status: 'idle',
+        status: 'running',
         createdAt: new Date(Date.now() - TWO_HOURS - 1000),
       });
       ctx.getAllAgents.mockReturnValue([lead, dev, reviewer]);
@@ -661,6 +661,31 @@ describe('HeartbeatMonitor', () => {
       expect(lead.queueMessage).toHaveBeenCalledTimes(1);
       expect(dev.queueMessage).toHaveBeenCalledTimes(1);
       expect(reviewer.queueMessage).toHaveBeenCalledTimes(1);
+    });
+
+    it('skips idle agents — only sends to running agents', () => {
+      const idle = makeAgent({
+        id: 'idle-1',
+        status: 'idle',
+        createdAt: new Date(Date.now() - TWO_HOURS - 1000),
+      });
+      const running = makeAgent({
+        id: 'run-1',
+        status: 'running',
+        createdAt: new Date(Date.now() - TWO_HOURS - 1000),
+      });
+      const waiting = makeAgent({
+        id: 'wait-1',
+        status: 'waiting',
+        createdAt: new Date(Date.now() - TWO_HOURS - 1000),
+      });
+      ctx.getAllAgents.mockReturnValue([idle, running, waiting]);
+
+      triggerCheck();
+
+      expect(idle.queueMessage).not.toHaveBeenCalled();
+      expect(running.queueMessage).toHaveBeenCalledTimes(1);
+      expect(waiting.queueMessage).not.toHaveBeenCalled();
     });
 
     it('skips terminal agents (completed, failed, terminated)', () => {

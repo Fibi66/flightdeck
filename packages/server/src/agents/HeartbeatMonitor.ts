@@ -259,8 +259,9 @@ export class HeartbeatMonitor {
     const allAgents = this.ctx.getAllAgents();
 
     for (const agent of allAgents) {
-      // Skip agents in terminal states
-      if (isTerminalStatus(agent.status)) continue;
+      // Only send periodic reminders to agents actively processing (running state).
+      // Idle/waiting agents don't need nudges — they'll get one when they resume work.
+      if (agent.status !== 'running') continue;
 
       // Skip agents that have explicitly halted heartbeat
       if (this.haltedAgents.has(agent.id)) continue;
