@@ -15,7 +15,7 @@ vi.mock('../middleware/rateLimit.js', () => ({
   rateLimit: () => (_req: Request, _res: Response, next: NextFunction) => next(),
 }));
 
-import { crewRoutes } from './teams.js';
+import { crewRoutes } from './crew.js';
 import type { AppContext } from './context.js';
 
 // ── Mock Data ───────────────────────────────────────────────────────

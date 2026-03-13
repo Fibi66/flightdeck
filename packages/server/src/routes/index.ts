@@ -21,7 +21,7 @@ import { notificationRoutes } from './notifications.js';
 import { nlRoutes } from './nl.js';
 import { dataRoutes } from './data.js';
 import { knowledgeRoutes } from './knowledge.js';
-import { crewRoutes } from './teams.js';
+import { crewRoutes } from './crew.js';
 import { settingsRoutes } from './settings.js';
 import { integrationRoutes } from './integrations.js';
 import { tasksRoutes } from './tasks.js';
