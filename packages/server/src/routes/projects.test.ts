@@ -4,28 +4,13 @@ import type { Server } from 'http';
 import type { AddressInfo } from 'net';
 import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir, homedir as realHomedir } from 'node:os';
+import { tmpdir } from 'node:os';
 import { projectsRoutes } from './projects.js';
 import type { AppContext } from './context.js';
 
 vi.mock('../utils/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
-
-const { overrideHomedir } = vi.hoisted(() => {
-  const state = { value: undefined as string | undefined };
-  return {
-    overrideHomedir: state,
-  };
-});
-
-vi.mock('node:os', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('node:os')>();
-  return {
-    ...actual,
-    homedir: () => overrideHomedir.value ?? actual.homedir(),
-  };
-});
 
 function createTestServer(ctx: Partial<AppContext>) {
   const app = express();
@@ -433,33 +418,28 @@ describe('POST /projects/:id/resume — enhanced with team respawn', () => {
   });
 });
 
-// ── Symlinked artifact path validation ────────────────────────────
+// ── Symlink path validation ────────────────────────────────────────
 
-describe('GET /projects/:id/files — symlinked .flightdeck/shared paths', () => {
+describe('GET /projects/:id/files — rejects symlinks resolving outside project', () => {
   let baseUrl: string;
   let stop: () => Promise<void>;
   let tmpBase: string;
   let projectDir: string;
 
   beforeAll(async () => {
-    // Create structure: tmpBase/.flightdeck/artifacts/.../report.md
-    // with project dir containing a symlink to that location
+    // External dir (simulates ~/.flightdeck/artifacts/...)
     tmpBase = mkdtempSync(join(tmpdir(), 'fd-test-home-'));
     projectDir = mkdtempSync(join(tmpdir(), 'fd-test-project-'));
 
-    const artifactAgentDir = join(tmpBase, '.flightdeck', 'artifacts', 'sessions', 'session-1', 'developer-abc123');
-    mkdirSync(artifactAgentDir, { recursive: true });
-    writeFileSync(join(artifactAgentDir, 'report.md'), '# Test Report\nHello');
+    const externalDir = join(tmpBase, 'artifacts', 'developer-abc123');
+    mkdirSync(externalDir, { recursive: true });
+    writeFileSync(join(externalDir, 'report.md'), '# Test Report\nHello');
 
-    // Sensitive file outside artifacts/ — must NOT be accessible
-    writeFileSync(join(tmpBase, '.flightdeck', 'config.yaml'), 'secret: do-not-expose');
-
-    // Legacy shared dir with symlink pointing to organized storage
+    // Project shared dir: one symlink pointing outside, one real dir
     const sharedDir = join(projectDir, '.flightdeck', 'shared');
     mkdirSync(sharedDir, { recursive: true });
-    symlinkSync(artifactAgentDir, join(sharedDir, 'developer-abc123'));
+    symlinkSync(externalDir, join(sharedDir, 'developer-abc123'));
 
-    // Real (non-symlinked) agent dir
     const realAgentDir = join(sharedDir, 'architect-def456');
     mkdirSync(realAgentDir, { recursive: true });
     writeFileSync(join(realAgentDir, 'design.md'), '# Design Doc');
@@ -473,9 +453,6 @@ describe('GET /projects/:id/files — symlinked .flightdeck/shared paths', () =>
       }),
     } as any;
 
-    // Mock homedir so flightdeckHome resolves to our temp structure
-    overrideHomedir.value = tmpBase;
-
     const srv = createTestServer({ projectRegistry: mockRegistry });
     baseUrl = await srv.start();
     stop = srv.stop;
@@ -483,36 +460,27 @@ describe('GET /projects/:id/files — symlinked .flightdeck/shared paths', () =>
 
   afterAll(async () => {
     await stop?.();
-    overrideHomedir.value = undefined;
     rmSync(tmpBase, { recursive: true, force: true });
     rmSync(projectDir, { recursive: true, force: true });
   });
 
-  it('lists symlinked .flightdeck/shared directory without error', async () => {
-    const res = await fetch(`${baseUrl}/projects/test-proj/files?path=.flightdeck/shared`);
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.items.map((i: any) => i.name)).toContain('developer-abc123');
-    expect(body.items.map((i: any) => i.name)).toContain('architect-def456');
-  });
-
-  it('lists contents inside a symlinked agent directory', async () => {
+  it('rejects listing a symlinked directory that resolves outside the project', async () => {
     const res = await fetch(`${baseUrl}/projects/test-proj/files?path=.flightdeck/shared/developer-abc123`);
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(403);
     const body = await res.json();
-    expect(body.items.map((i: any) => i.name)).toContain('report.md');
+    expect(body.error).toBe('Path outside project directory');
   });
 
-  it('reads file content through a symlinked path', async () => {
+  it('rejects reading a file through a symlink that resolves outside the project', async () => {
     const res = await fetch(
       `${baseUrl}/projects/test-proj/file-contents?path=.flightdeck/shared/developer-abc123/report.md`,
     );
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(403);
     const body = await res.json();
-    expect(body.content).toContain('# Test Report');
+    expect(body.error).toBe('Path outside project directory');
   });
 
-  it('reads file content from a real (non-symlinked) path', async () => {
+  it('serves files from real (non-symlinked) directories within the project', async () => {
     const res = await fetch(
       `${baseUrl}/projects/test-proj/file-contents?path=.flightdeck/shared/architect-def456/design.md`,
     );
@@ -521,18 +489,9 @@ describe('GET /projects/:id/files — symlinked .flightdeck/shared paths', () =>
     expect(body.content).toContain('# Design Doc');
   });
 
-  it('still rejects paths that escape the project entirely', async () => {
+  it('rejects paths that escape the project via traversal', async () => {
     const res = await fetch(
       `${baseUrl}/projects/test-proj/file-contents?path=../../etc/passwd`,
-    );
-    expect(res.status).toBe(403);
-    const body = await res.json();
-    expect(body.error).toBe('Path outside project directory');
-  });
-
-  it('rejects traversal to ~/.flightdeck/config.yaml (outside artifacts/)', async () => {
-    const res = await fetch(
-      `${baseUrl}/projects/test-proj/file-contents?path=../../../.flightdeck/config.yaml`,
     );
     expect(res.status).toBe(403);
     const body = await res.json();
