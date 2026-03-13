@@ -50,6 +50,8 @@ export class HeartbeatMonitor {
   private leadNudgeCount: Map<string, number> = new Map();
   private humanInterrupted: Set<string> = new Set();
   private lastCommandReminder: Map<string, number> = new Map();
+  /** Agents that explicitly halted heartbeat — stays halted until resumeHeartbeat() */
+  private haltedAgents: Set<string> = new Set();
   private timer: ReturnType<typeof setInterval> | null = null;
   private ctx: HeartbeatContext;
 
@@ -78,7 +80,8 @@ export class HeartbeatMonitor {
   trackActive(agentId: string): void {
     this.leadIdleSince.delete(agentId);
     this.leadNudgeCount.set(agentId, 0);
-    this.humanInterrupted.delete(agentId);
+    // NOTE: humanInterrupted is NOT cleared here — HALT_HEARTBEAT stays
+    // active until explicitly resumed via resumeHeartbeat().
   }
 
   /** Called when a lead agent exits or is terminated — clean up all tracking */
@@ -87,11 +90,48 @@ export class HeartbeatMonitor {
     this.leadNudgeCount.delete(agentId);
     this.humanInterrupted.delete(agentId);
     this.lastCommandReminder.delete(agentId);
+    this.haltedAgents.delete(agentId);
   }
 
-  /** Called when a human interrupts a lead — suppress nudges until it resumes */
+  /** Called when HALT_HEARTBEAT is issued — suppress ALL heartbeat activity until resumeHeartbeat() */
   trackHumanInterrupt(agentId: string): void {
     this.humanInterrupted.add(agentId);
+    this.haltedAgents.add(agentId);
+  }
+
+  /** Explicitly resume heartbeat for an agent that previously issued HALT_HEARTBEAT */
+  resumeHeartbeat(agentId: string): void {
+    this.humanInterrupted.delete(agentId);
+    this.haltedAgents.delete(agentId);
+  }
+
+  /** Check if an agent has halted heartbeat */
+  isHalted(agentId: string): boolean {
+    return this.haltedAgents.has(agentId);
+  }
+
+  /**
+   * Send a command reference reminder to a specific agent on-demand
+   * (e.g., when they issue an unknown/invalid command).
+   * Bypasses the 2-hour interval but respects HALT_HEARTBEAT.
+   */
+  sendCommandReminderTo(agent: Agent): void {
+    if (this.haltedAgents.has(agent.id)) return;
+    if (isTerminalStatus(agent.status)) return;
+
+    const message = buildCommandReminderMessage();
+    agent.queueMessage(message);
+    this.lastCommandReminder.set(agent.id, Date.now());
+
+    logger.info('heartbeat', `Command reminder (on-demand) → ${agent.role.name} (${agent.id.slice(0, 8)})`);
+
+    this.ctx.emit('agent:message_sent', {
+      from: 'system',
+      fromRole: 'System',
+      to: agent.id,
+      toRole: agent.role.name,
+      content: message,
+    });
   }
 
   /**
@@ -221,6 +261,9 @@ export class HeartbeatMonitor {
     for (const agent of allAgents) {
       // Skip agents in terminal states
       if (isTerminalStatus(agent.status)) continue;
+
+      // Skip agents that have explicitly halted heartbeat
+      if (this.haltedAgents.has(agent.id)) continue;
 
       const lastReminder = this.lastCommandReminder.get(agent.id);
       const agentCreatedAt = agent.createdAt.getTime();

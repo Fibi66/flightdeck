@@ -760,6 +760,137 @@ describe('HeartbeatMonitor', () => {
         toRole: 'Developer',
       }));
     });
+
+    it('skips halted agents in periodic reminders', () => {
+      const agent = makeAgent({
+        id: 'dev-1',
+        status: 'running',
+        createdAt: new Date(Date.now() - TWO_HOURS - 1000),
+      });
+      ctx.getAllAgents.mockReturnValue([agent]);
+
+      // Halt heartbeat for this agent
+      monitor.trackHumanInterrupt('dev-1');
+
+      triggerCheck();
+      expect(agent.queueMessage).not.toHaveBeenCalled();
+    });
+
+    it('resumes periodic reminders after resumeHeartbeat()', () => {
+      const agent = makeAgent({
+        id: 'dev-1',
+        status: 'running',
+        createdAt: new Date(Date.now() - TWO_HOURS - 1000),
+      });
+      ctx.getAllAgents.mockReturnValue([agent]);
+
+      // Halt then resume
+      monitor.trackHumanInterrupt('dev-1');
+      monitor.resumeHeartbeat('dev-1');
+
+      triggerCheck();
+      expect(agent.queueMessage).toHaveBeenCalledTimes(1);
+      expect(agent.queueMessage).toHaveBeenCalledWith(expect.stringContaining('Command Reference Reminder'));
+    });
+
+    it('HALT_HEARTBEAT persists through trackActive()', () => {
+      const agent = makeAgent({
+        id: 'dev-1',
+        status: 'running',
+        createdAt: new Date(Date.now() - TWO_HOURS - 1000),
+      });
+      ctx.getAllAgents.mockReturnValue([agent]);
+
+      // Halt heartbeat, then trackActive (agent becomes active again)
+      monitor.trackHumanInterrupt('dev-1');
+      monitor.trackActive('dev-1');
+
+      triggerCheck();
+      // Should still be halted — trackActive does NOT clear haltedAgents
+      expect(agent.queueMessage).not.toHaveBeenCalled();
+    });
+
+    it('trackRemoved clears halted state', () => {
+      monitor.trackHumanInterrupt('dev-1');
+      expect(monitor.isHalted('dev-1')).toBe(true);
+
+      monitor.trackRemoved('dev-1');
+      expect(monitor.isHalted('dev-1')).toBe(false);
+    });
+  });
+
+  // ── On-demand command reminders (sendCommandReminderTo) ────────────
+
+  describe('sendCommandReminderTo', () => {
+    it('sends a command reminder to a specific agent', () => {
+      const agent = makeAgent({
+        id: 'dev-1',
+        role: { id: 'dev', name: 'Developer' },
+        status: 'running',
+      });
+
+      monitor.sendCommandReminderTo(agent);
+
+      expect(agent.queueMessage).toHaveBeenCalledTimes(1);
+      expect(agent.queueMessage).toHaveBeenCalledWith(expect.stringContaining('Command Reference Reminder'));
+    });
+
+    it('emits agent:message_sent event', () => {
+      const agent = makeAgent({
+        id: 'dev-1',
+        role: { id: 'dev', name: 'Developer' },
+        status: 'running',
+      });
+
+      monitor.sendCommandReminderTo(agent);
+
+      expect(ctx.emit).toHaveBeenCalledWith('agent:message_sent', expect.objectContaining({
+        from: 'system',
+        to: 'dev-1',
+        toRole: 'Developer',
+      }));
+    });
+
+    it('resets the 2-hour timer for subsequent periodic reminders', () => {
+      const TWO_HOURS = 2 * 60 * 60 * 1000;
+      const agent = makeAgent({
+        id: 'dev-1',
+        status: 'running',
+        createdAt: new Date(Date.now() - TWO_HOURS - 1000),
+      });
+      ctx.getAllAgents.mockReturnValue([agent]);
+
+      // On-demand reminder resets the timer
+      monitor.sendCommandReminderTo(agent);
+      expect(agent.queueMessage).toHaveBeenCalledTimes(1);
+
+      // Periodic check right after — should NOT send (timer was reset)
+      triggerCheck();
+      expect(agent.queueMessage).toHaveBeenCalledTimes(1); // still 1
+    });
+
+    it('respects HALT_HEARTBEAT — does not send when halted', () => {
+      const agent = makeAgent({
+        id: 'dev-1',
+        status: 'running',
+      });
+
+      monitor.trackHumanInterrupt('dev-1');
+      monitor.sendCommandReminderTo(agent);
+
+      expect(agent.queueMessage).not.toHaveBeenCalled();
+    });
+
+    it('does not send to terminal agents', () => {
+      const agent = makeAgent({
+        id: 'dev-1',
+        status: 'terminated',
+      });
+
+      monitor.sendCommandReminderTo(agent);
+
+      expect(agent.queueMessage).not.toHaveBeenCalled();
+    });
   });
 
   // ── buildCommandReminderMessage ─────────────────────────────────────

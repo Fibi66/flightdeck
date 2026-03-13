@@ -218,7 +218,10 @@ export class CommandDispatcher {
     }
 
     // Detect unrecognized commands: ⟦⟦ UNKNOWN_WORD ... ⟧⟧ that didn't match any known pattern
-    buf = CommandDispatcher.detectUnknownCommands(agent, buf, this.patterns);
+    buf = CommandDispatcher.detectUnknownCommands(
+      agent, buf, this.patterns,
+      (a) => this.handlerCtx.sendCommandReminderTo?.(a),
+    );
 
     // Lead processed output — mark human message as responded
     if (agent.role.id === 'lead' && !agent.humanMessageResponded) {
@@ -329,8 +332,14 @@ export class CommandDispatcher {
   /**
    * Detect unrecognized ⟦⟦ COMMAND ⟧⟧ blocks remaining in the buffer.
    * Sends a help message to the agent and strips the unrecognized block.
+   * Optionally triggers an on-demand command reference reminder via callback.
    */
-  static detectUnknownCommands(agent: Agent, buf: string, knownPatterns: CommandEntry[]): string {
+  static detectUnknownCommands(
+    agent: Agent,
+    buf: string,
+    knownPatterns: CommandEntry[],
+    onUnknownCommand?: (agent: Agent) => void,
+  ): string {
     // Match any complete ⟦⟦ WORD ... ⟧⟧ block
     const unknownRegex = /⟦⟦\s*([A-Z][A-Z0-9_]*)\s*(?:\{[\s\S]*?\})?\s*⟧⟧/;
     let match = unknownRegex.exec(buf);
@@ -346,6 +355,10 @@ export class CommandDispatcher {
       agent.sendMessage(
         `[System] Unknown command: ${cmdName}. Did you mean one of the available commands?\n\n${buildCommandHelp()}`,
       );
+
+      // Trigger on-demand command reference reminder for unknown commands
+      onUnknownCommand?.(agent);
+
       buf = buf.slice(0, match.index) + buf.slice(match.index + match[0].length);
       match = unknownRegex.exec(buf);
     }

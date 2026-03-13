@@ -187,6 +187,8 @@ export class AgentManager extends TypedEmitter<AgentManagerEvents> {
       taskDecomposer,
       maxConcurrent: this.maxConcurrent,
       markHumanInterrupt: (id) => this.markHumanInterrupt(id),
+      resumeHeartbeat: (id) => this.heartbeat.resumeHeartbeat(id),
+      sendCommandReminderTo: (agent) => this.heartbeat.sendCommandReminderTo(agent),
       governancePipeline,
       activeDelegationRepository,
       agentRosterRepository,
