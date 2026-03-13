@@ -11,7 +11,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAppStore } from '../../stores/appStore';
 import { apiFetch } from '../../hooks/useApi';
-import { useEffectiveProjectId } from '../../hooks/useEffectiveProjectId';
+import { useProjectId } from '../../contexts/ProjectContext';
 import { deriveAgentsFromKeyframes } from '../../hooks/useHistoricalAgents';
 import { POLL_INTERVAL_MS } from '../../constants/timing';
 import { CumulativeFlow } from './TaskBurndown';
@@ -25,7 +25,7 @@ import type { AgentInfo, DagTask } from '../../types';
 
 export function AnalysisPage() {
   const agents = useAppStore((s) => s.agents);
-  const effectiveId = useEffectiveProjectId();
+  const effectiveId = useProjectId();
 
   // ── Data state ─────────────────────────────────────────────────
   const [flowData, setFlowData] = useState<FlowPoint[]>([]);
