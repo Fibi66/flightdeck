@@ -203,7 +203,7 @@ export async function startAcp(agent: Agent, config: ServerConfig, initialPrompt
     // The provider may be continuing an in-flight prompt from the crashed
     // session — cancel it so the agent starts clean and idle.
     if (conn.isPrompting) {
-      try { await conn.cancel(); } catch { /* best-effort */ }
+      try { await conn.cancel(); } catch (e) { logger.warn({ module: 'agent-bridge', msg: 'Resume cancel failed (best-effort)', err: (e as Error).message }); }
     }
     agent.status = 'idle';
     agent._notifyStatusChange(agent.status);
