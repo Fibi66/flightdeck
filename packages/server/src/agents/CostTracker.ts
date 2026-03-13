@@ -1,5 +1,5 @@
 import type { Database } from '../db/database.js';
-import { taskCostRecords, agentRoster, projectSessions, utcNow } from '../db/schema.js';
+import { taskCostRecords, agentRoster, utcNow } from '../db/schema.js';
 import { eq, sql, and } from 'drizzle-orm';
 
 export interface CostRecord {
@@ -67,43 +67,7 @@ export class CostTracker {
 
   constructor(db: Database) {
     this.db = db;
-    this.backfillProjectIds();
     this.initializeFromDb();
-  }
-
-  /**
-   * One-time backfill: derive project_id for any cost records that
-   * were inserted without it.  Two passes:
-   *   1. agent_roster  → maps agentId to projectId
-   *   2. project_sessions → maps leadId to projectId (covers agents
-   *      no longer in the roster but whose lead still has a session)
-   */
-  private backfillProjectIds(): void {
-    try {
-      // Pass 1: from agent_roster (agent → project)
-      this.db.drizzle.run(sql`
-        UPDATE ${taskCostRecords}
-        SET project_id = (
-          SELECT ${agentRoster.projectId}
-          FROM ${agentRoster}
-          WHERE ${agentRoster.agentId} = ${taskCostRecords.agentId}
-        )
-        WHERE ${taskCostRecords.projectId} IS NULL
-      `);
-      // Pass 2: from project_sessions (lead → project)
-      this.db.drizzle.run(sql`
-        UPDATE ${taskCostRecords}
-        SET project_id = (
-          SELECT ${projectSessions.projectId}
-          FROM ${projectSessions}
-          WHERE ${projectSessions.leadId} = ${taskCostRecords.leadId}
-          LIMIT 1
-        )
-        WHERE ${taskCostRecords.projectId} IS NULL
-      `);
-    } catch {
-      // Non-critical — backfill can be retried on next startup
-    }
   }
 
   /**
