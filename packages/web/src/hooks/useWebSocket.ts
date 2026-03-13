@@ -192,15 +192,19 @@ export function useWebSocket() {
           pendingNewlineRef.current.add(msg.agentId);
           const state = useAppStore.getState();
           const existing = state.agents.find((a) => a.id === msg.agentId);
+
+          // Update toolCalls[] (live state) — latest status per tool call, used
+          // by AgentCard/FleetOverview for "what is the agent doing right now?"
           const calls = existing?.toolCalls ?? [];
           const idx = calls.findIndex((tc) => tc.toolCallId === msg.toolCall.toolCallId);
           const updated = idx >= 0
             ? calls.map((tc, i) => (i === idx ? msg.toolCall : tc))
             : [...calls, msg.toolCall];
 
-          // Inject synthetic message into agent.messages so tool calls appear
-          // chronologically in AgentChatPanel. Only inject on new tool calls or
-          // status transitions (not duplicate updates for the same status).
+          // Append to messages[] (timeline) — chronological record for the chat
+          // panel. Only inject on new tool calls or status transitions (not
+          // duplicate updates for the same status). Carries toolStatus/toolKind
+          // so the renderer can show proper colors without cross-referencing.
           const tc = msg.toolCall;
           const prevTc = idx >= 0 ? calls[idx] : undefined;
           if (!prevTc || prevTc.status !== tc.status) {

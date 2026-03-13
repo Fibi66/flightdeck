@@ -72,6 +72,15 @@ export interface AcpTextChunk {
   toolKind?: string;
 }
 
+/**
+ * Live tool call state — updated in-place as status changes.
+ * Used by AgentCard and AgentActivityTable to show "what is the agent doing right now?"
+ *
+ * Separate from messages[]: toolCalls[] holds only the latest state per tool call
+ * (no history), while messages[] is the append-only chronological timeline.
+ * Tool call events are injected into messages[] as AcpTextChunk (sender='tool')
+ * with toolCallId/toolStatus/toolKind metadata for proper rendering in the chat panel.
+ */
 export interface AcpToolCall {
   toolCallId: string;
   title: string;
@@ -106,7 +115,9 @@ export interface AgentInfo {
   session?: AcpSessionInfo;
   sessionId?: string | null;
   plan?: AcpPlanEntry[];
+  /** Live tool call state — latest status per tool, for activity indicators (AgentCard, FleetOverview) */
   toolCalls?: AcpToolCall[];
+  /** Chronological message timeline — append-only, rendered by ChatPanel/AcpOutput */
   messages?: AcpTextChunk[];
   projectName?: string;
   projectId?: string;
