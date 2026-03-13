@@ -106,14 +106,20 @@ export class HeartbeatMonitor {
   /**
    * Called when HALT_HEARTBEAT command is issued — persistently suppress
    * lead idle nudges until resumeHeartbeat(). Command reminders are unaffected.
+   * Returns true if newly halted, false if already halted (idempotent).
    */
-  haltHeartbeat(agentId: string): void {
+  haltHeartbeat(agentId: string): boolean {
+    if (this.haltedAgents.has(agentId)) return false;
     this.haltedAgents.add(agentId);
+    return true;
   }
 
-  /** Explicitly resume heartbeat for an agent that previously issued HALT_HEARTBEAT */
-  resumeHeartbeat(agentId: string): void {
-    this.haltedAgents.delete(agentId);
+  /**
+   * Explicitly resume heartbeat for an agent that previously issued HALT_HEARTBEAT.
+   * Returns true if actually resumed, false if wasn't halted.
+   */
+  resumeHeartbeat(agentId: string): boolean {
+    return this.haltedAgents.delete(agentId);
   }
 
   /** Check if an agent has halted heartbeat */

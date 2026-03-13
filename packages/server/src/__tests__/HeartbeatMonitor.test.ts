@@ -872,6 +872,19 @@ describe('HeartbeatMonitor', () => {
       expect(monitor.isHalted('dev-1')).toBe(false);
     });
 
+    it('haltHeartbeat returns true on first call, false when already halted', () => {
+      expect(monitor.haltHeartbeat('dev-1')).toBe(true);
+      expect(monitor.haltHeartbeat('dev-1')).toBe(false);
+      expect(monitor.haltHeartbeat('dev-1')).toBe(false);
+    });
+
+    it('resumeHeartbeat returns true when halted, false when not halted', () => {
+      expect(monitor.resumeHeartbeat('dev-1')).toBe(false); // not halted yet
+      monitor.haltHeartbeat('dev-1');
+      expect(monitor.resumeHeartbeat('dev-1')).toBe(true);  // was halted
+      expect(monitor.resumeHeartbeat('dev-1')).toBe(false); // already resumed
+    });
+
     it('UI humanInterrupt auto-clears on trackActive (transient)', () => {
       const agent = makeAgent({
         id: 'dev-1',
