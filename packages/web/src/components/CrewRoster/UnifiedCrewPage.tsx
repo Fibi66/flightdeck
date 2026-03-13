@@ -104,10 +104,11 @@ function formatDuration(ms: number): string {
 
 // ── Crew Group (collapsible) ──────────────────────────────
 
-function CrewGroup({ leadId, agents, summary, defaultExpanded = true, onSelectAgent, selectedAgentId, onDeleteCrew, onRemoveAgent }: {
+function CrewGroup({ leadId, agents, summary, statusFilter, defaultExpanded = true, onSelectAgent, selectedAgentId, onDeleteCrew, onRemoveAgent }: {
   leadId: string;
   agents: RosterAgent[];
   summary: CrewSummary | null;
+  statusFilter?: StatusFilter;
   defaultExpanded?: boolean;
   onSelectAgent: (id: string) => void;
   selectedAgentId: string | null;
@@ -141,6 +142,13 @@ function CrewGroup({ leadId, agents, summary, defaultExpanded = true, onSelectAg
     if (aIsLead !== bIsLead) return aIsLead - bIsLead;
     return a.role.localeCompare(b.role);
   });
+
+  // Apply status filter to agent rows (crew header always shows)
+  const visibleAgents = statusFilter === 'active'
+    ? sorted.filter(a => a.status !== 'terminated' && a.status !== 'failed')
+    : statusFilter && statusFilter !== 'all'
+      ? sorted.filter(a => a.status === statusFilter)
+      : sorted;
 
   const lead = sorted.find(a => a.agentId === leadId || a.role === 'lead');
   const activeCount = summary?.activeAgentCount ?? agents.filter(a =>
@@ -226,7 +234,7 @@ function CrewGroup({ leadId, agents, summary, defaultExpanded = true, onSelectAg
 
       {expanded && (
         <div className="border-t border-th-border/50 divide-y divide-th-border/30">
-          {sorted.map(agent => (
+          {visibleAgents.length > 0 ? visibleAgents.map(agent => (
             <AgentRow
               key={agent.agentId}
               agent={agent}
@@ -236,7 +244,11 @@ function CrewGroup({ leadId, agents, summary, defaultExpanded = true, onSelectAg
               onRemove={onRemoveAgent}
               crewAgents={agents}
             />
-          ))}
+          )) : (
+            <div className="px-4 py-3 text-xs text-th-text-muted text-center">
+              {agents.length} agent{agents.length !== 1 ? 's' : ''} hidden by filter
+            </div>
+          )}
         </div>
       )}
 
@@ -527,11 +539,7 @@ export function UnifiedCrewPage({ scope = 'global' }: UnifiedCrewPageProps) {
           if (a.parentId && projectLeadIds.has(a.parentId)) return true;
           return false;
         });
-        // 'active' filter: exclude terminated/failed agents for a cleaner default view
-        const activeFiltered = statusFilter === 'active'
-          ? filtered.filter(a => a.status !== 'terminated' && a.status !== 'failed')
-          : filtered;
-        setAgents(activeFiltered);
+        setAgents(filtered);
       } else {
         // Global scope: only show active agents
         const activeStatuses = new Set(['running', 'idle', 'creating']);
@@ -709,6 +717,7 @@ export function UnifiedCrewPage({ scope = 'global' }: UnifiedCrewPageProps) {
               leadId={leadId}
               agents={groupAgents}
               summary={summaryMap.get(leadId) ?? null}
+              statusFilter={statusFilter}
               defaultExpanded
               onSelectAgent={setSelectedAgent}
               selectedAgentId={selectedAgent}
