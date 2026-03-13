@@ -219,6 +219,7 @@ export class CostTracker {
         totalOutputTokens: sql<number>`sum(${taskCostRecords.outputTokens})`,
         totalCostUsd: sql<number>`sum(${taskCostRecords.costUsd})`,
         agentCount: sql<number>`count(distinct ${taskCostRecords.agentId})`,
+        lastUpdatedAt: sql<string>`max(${taskCostRecords.updatedAt})`,
       })
       .from(taskCostRecords)
       .where(condition)
@@ -262,6 +263,7 @@ export class CostTracker {
       totalOutputTokens: t.totalOutputTokens ?? 0,
       totalCostUsd: t.totalCostUsd ?? 0,
       agentCount: t.agentCount ?? 0,
+      lastUpdatedAt: t.lastUpdatedAt ?? null,
       agents: agentsByTask.get(`${t.leadId}:${t.dagTaskId}`) ?? [],
     }));
   }
