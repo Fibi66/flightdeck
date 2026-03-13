@@ -658,6 +658,23 @@ export class AgentManager extends TypedEmitter<AgentManagerEvents> {
     agent.onSessionReady((sessionId) => {
       this.emit('agent:session_ready', { agentId: agent.id, sessionId });
 
+      // Update roster with provider/backend now that startAcp() has resolved them.
+      // The initial upsert at spawn time has null provider because startAcp runs async.
+      if (this.agentRosterRepository && (agent.provider || agent.backend)) {
+        try {
+          const teamId = this.getRootLeadId(agent.id);
+          this.agentRosterRepository.upsertAgent(
+            agent.id, agent.role.id, agent.model || 'default',
+            'running', sessionId, agent.projectId,
+            { parentId: agent.parentId, task: agent.task, cwd: agent.cwd, backend: agent.backend },
+            teamId,
+            agent.provider,
+          );
+        } catch (err: any) {
+          logger.warn({ module: 'agent', msg: 'Failed to update roster with provider', agentId: agent.id, error: err.message });
+        }
+      }
+
       // Track session ID for project persistence
       if (agent.role.id === 'lead' && !agent.parentId && agent.projectId && this.projectRegistry) {
         this.projectRegistry.setSessionId(agent.id, sessionId);
