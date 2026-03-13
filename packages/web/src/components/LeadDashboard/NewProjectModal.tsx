@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Crown, Loader2, ChevronDown, ChevronRight, Wrench, Check, FolderOpen } from 'lucide-react';
 import { useLeadStore } from '../../stores/leadStore';
 import { apiFetch } from '../../hooks/useApi';
@@ -13,6 +14,7 @@ interface NewProjectModalProps {
 }
 
 export function NewProjectModal({ onClose }: NewProjectModalProps) {
+  const navigate = useNavigate();
   const [starting, setStarting] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectNameTouched, setNewProjectNameTouched] = useState(false);
@@ -62,13 +64,16 @@ export function NewProjectModal({ onClose }: NewProjectModalProps) {
           }).catch(() => { /* best-effort — project still created */ });
         }
         onClose();
+        if (data.projectId) {
+          navigate(`/projects/${data.projectId}/session`);
+        }
       }
     } catch (err: any) {
       setError(err?.message || 'Failed to start project');
     } finally {
       setStarting(false);
     }
-  }, [newProjectName, newProjectTask, newProjectModel, newProjectCwd, selectedRoles, newProjectModelConfig, onClose]);
+  }, [newProjectName, newProjectTask, newProjectModel, newProjectCwd, selectedRoles, newProjectModelConfig, onClose, navigate]);
 
   return (
     <>
