@@ -729,6 +729,9 @@ export function projectsRoutes(ctx: AppContext): Router {
         } else {
           lastSession = lastSessions.length > 0 ? lastSessions[0] : null;
         }
+        if (!lastSession) {
+          return res.status(404).json({ error: 'No session found to resume. Use freshStart to create a new session.' });
+        }
       }
 
       let agent: ReturnType<typeof agentManager.spawn>;
@@ -744,7 +747,7 @@ export function projectsRoutes(ctx: AppContext): Router {
         agent = result.agent;
         task = result.task;
       } else {
-        // Fresh start — create new lead + new session
+        // Fresh start (explicitly requested) — create new lead + new session
         const role = roleRegistry.get('lead');
         if (!role) return res.status(500).json({ error: 'Project Lead role not found' });
         task = requestTask;
