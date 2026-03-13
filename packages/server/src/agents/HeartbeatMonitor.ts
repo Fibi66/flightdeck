@@ -104,8 +104,8 @@ export class HeartbeatMonitor {
   }
 
   /**
-   * Called when HALT_HEARTBEAT command is issued — persistently suppress ALL
-   * heartbeat activity (nudges + command reminders) until resumeHeartbeat().
+   * Called when HALT_HEARTBEAT command is issued — persistently suppress
+   * lead idle nudges until resumeHeartbeat(). Command reminders are unaffected.
    */
   haltHeartbeat(agentId: string): void {
     this.haltedAgents.add(agentId);
