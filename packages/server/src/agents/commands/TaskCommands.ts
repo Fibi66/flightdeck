@@ -20,6 +20,7 @@ import {
   assignTaskSchema,
 } from './commandSchemas.js';
 import { deriveArgs } from './CommandHelp.js';
+import { notifySecretary } from './secretaryNotifier.js';
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
@@ -426,6 +427,7 @@ function handleCompleteTask(ctx: CommandHandlerContext, agent: Agent, data: stri
         ctx.reportedCompletions.add(`${agent.id}:idle`);
         markAgentDelegations(ctx, agent.id, 'to', 'completed', summary);
         ctx.emit('dag:updated', { leadId: agent.parentId });
+        notifySecretary(ctx, agent.parentId!, `[System] Task "${taskId}" completed by ${agent.role.name} (${agent.id.slice(0, 8)}): ${summary}`);
         agent.sendMessage(`[System] Task "${taskId}" marked as done in DAG.${newlyReady && newlyReady.length > 0 ? ` ${newlyReady.length} task(s) now ready.` : ''}`);
       } else {
         // No DAG task ID — fallback to message-only notification
@@ -681,6 +683,7 @@ function handleAssignTask(ctx: CommandHandlerContext, agent: Agent, data: string
 
       agent.sendMessage(`[System] Task "${req.taskId}" assigned to @${targetAgent.id.slice(0, 8)} and moved to running.`);
       ctx.emit('dag:updated', { leadId: agent.id });
+      notifySecretary(ctx, agent.id, `[System] Task "${req.taskId}" assigned to ${targetAgent.role.name} (${targetAgent.id.slice(0, 8)})`);
     } else {
       agent.sendMessage(`[System] Cannot assign task "${req.taskId}": current status is "${existing.dagStatus}". Task may already be completed or skipped.`);
     }
