@@ -618,6 +618,7 @@ function handleReassignTask(ctx: CommandHandlerContext, agent: Agent, data: stri
 
     const oldLabel = oldAgent ? `@${result.oldAgentId.slice(0, 8)}` : result.oldAgentId.slice(0, 8);
     agent.sendMessage(`[System] Task "${req.taskId}" reassigned from ${oldLabel} to @${newAgent.id.slice(0, 8)}. Old agent notified to stop; new agent has the task.`);
+    notifySecretary(ctx, agent.id, `[System] Task "${req.taskId}" reassigned from ${oldLabel} to ${newAgent.role.name} (${newAgent.id.slice(0, 8)})`);
   } catch { agent.sendMessage('[System] REASSIGN_TASK error: invalid payload.'); }
 }
 
