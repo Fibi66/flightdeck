@@ -579,7 +579,7 @@ function ToolCallBadge({ msg }: { msg: AcpTextChunk }) {
   return (
     <div className="flex items-center gap-1.5 py-0.5 px-1">
       <Wrench size={11} className={`shrink-0 ${color}`} />
-      <span className={`text-[11px] font-mono ${color}`}>{title}</span>
+      <span className={`text-[10px] font-mono ${color}`}>{title}</span>
       {kind && <span className="text-[9px] text-th-text-muted bg-th-bg-alt px-1 rounded">{kind}</span>}
       {ts && <span className="text-[10px] text-th-text-muted ml-auto shrink-0">{ts}</span>}
     </div>

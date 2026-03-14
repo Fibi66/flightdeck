@@ -211,15 +211,29 @@ export function useWebSocket() {
             const msgs = [...(existing?.messages ?? [])];
             const statusIcon = tc.status === 'completed' ? '✓' : tc.status === 'cancelled' ? '✗' : '⟳';
             const title = typeof tc.title === 'string' ? tc.title : String(tc.title);
-            msgs.push({
-              type: 'text',
-              text: `${statusIcon} ${title}`,
-              sender: 'tool',
-              timestamp: Date.now(),
-              toolCallId: tc.toolCallId,
-              toolStatus: tc.status,
-              toolKind: tc.kind,
-            });
+
+            // Find existing message with same toolCallId and update in-place
+            const existingMsgIdx = msgs.findIndex(
+              (m) => m.sender === 'tool' && m.toolCallId === tc.toolCallId,
+            );
+
+            if (existingMsgIdx >= 0) {
+              msgs[existingMsgIdx] = {
+                ...msgs[existingMsgIdx],
+                text: `${statusIcon} ${title}`,
+                toolStatus: tc.status,
+              };
+            } else {
+              msgs.push({
+                type: 'text',
+                text: `${statusIcon} ${title}`,
+                sender: 'tool',
+                timestamp: Date.now(),
+                toolCallId: tc.toolCallId,
+                toolStatus: tc.status,
+                toolKind: tc.kind,
+              });
+            }
             updateAgent(msg.agentId, { toolCalls: updated, messages: msgs });
           } else {
             updateAgent(msg.agentId, { toolCalls: updated });

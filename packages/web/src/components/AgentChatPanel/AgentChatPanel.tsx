@@ -306,7 +306,7 @@ function ChatBubble({ msg, agent, compact }: { msg: AcpTextChunk; agent?: AgentI
     const color = statusColors[status] || 'text-sky-400';
     return (
       <div className="flex items-center gap-1.5 py-0.5">
-        <span className={`text-[11px] ${color} truncate`}>
+        <span className={`text-[10px] ${color} truncate`}>
           🔧 {text.slice(0, 200)}
         </span>
         {msg.toolKind && (
