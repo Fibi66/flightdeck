@@ -1061,7 +1061,8 @@ export function projectsRoutes(ctx: AppContext): Router {
     if (!project) return res.status(404).json({ error: 'Project not found' });
 
     type ArtifactFile = { name: string; path: string; ext: string; title: string; modifiedAt: string };
-    type ArtifactGroup = { agentDir: string; role: string; agentId: string; sessionId?: string; files: ArtifactFile[] };
+    type ArtifactSource = 'flightdeck' | 'copilot-session';
+    type ArtifactGroup = { agentDir: string; role: string; agentId: string; sessionId?: string; source: ArtifactSource; files: ArtifactFile[] };
 
     function readAgentDir(dirPath: string, dirName: string, basePath: string, sessionId?: string): ArtifactGroup | null {
       const parts = dirName.split('-');
@@ -1085,7 +1086,7 @@ export function projectsRoutes(ctx: AppContext): Router {
         }).sort((a, b) => new Date(b.modifiedAt).getTime() - new Date(a.modifiedAt).getTime());
       } catch { /* skip unreadable */ }
       if (files.length === 0) return null;
-      return { agentDir: dirName, role, agentId, sessionId, files };
+      return { agentDir: dirName, role, agentId, sessionId, source: 'flightdeck' as ArtifactSource, files };
     }
 
     const groups: ArtifactGroup[] = [];
@@ -1104,6 +1105,74 @@ export function projectsRoutes(ctx: AppContext): Router {
           }
         }
       } catch { /* ignore read errors */ }
+    }
+
+    // Read Copilot CLI session artifacts (plan.md, checkpoints/, files/, research/)
+    const copilotStateDir = join(homedir(), '.copilot', 'session-state');
+    const projectAgents = agentRoster?.getByProject(req.params.id) ?? [];
+    const seenSessions = new Set<string>();
+
+    for (const agent of projectAgents) {
+      if (!agent.sessionId || seenSessions.has(agent.sessionId)) continue;
+      seenSessions.add(agent.sessionId);
+
+      const sessionDir = join(copilotStateDir, agent.sessionId);
+      if (!existsSync(sessionDir)) continue;
+
+      const shortId = agent.agentId.slice(0, 8);
+      const agentDir = `${agent.role}-${shortId}`;
+      const sessionFiles: ArtifactFile[] = [];
+
+      // plan.md
+      const planPath = join(sessionDir, 'plan.md');
+      try {
+        if (existsSync(planPath)) {
+          const stat = statSync(planPath);
+          const content = readFileSync(planPath, 'utf-8');
+          const headingMatch = content.match(/^#\s+(.+)$/m);
+          const title = headingMatch ? headingMatch[1] : 'Plan';
+          sessionFiles.push({
+            name: 'plan.md', path: 'plan.md', ext: 'md',
+            title, modifiedAt: stat.mtime.toISOString(),
+          });
+        }
+      } catch { /* skip */ }
+
+      // Scan allowed subdirectories: checkpoints/, files/, research/
+      for (const subDir of ['checkpoints', 'files', 'research']) {
+        const dirPath = join(sessionDir, subDir);
+        try {
+          if (!existsSync(dirPath)) continue;
+          const entries = readdirSync(dirPath, { withFileTypes: true })
+            .filter(e => e.isFile() && !e.name.startsWith('.'));
+          for (const entry of entries) {
+            const filePath = join(dirPath, entry.name);
+            const stat = statSync(filePath);
+            let title = entry.name.replace(/\.[^.]+$/, '');
+            if (entry.name.endsWith('.md') || entry.name.endsWith('.mdx')) {
+              try {
+                const content = readFileSync(filePath, 'utf-8');
+                const headingMatch = content.match(/^#\s+(.+)$/m);
+                if (headingMatch) title = headingMatch[1];
+              } catch { /* use filename */ }
+            }
+            sessionFiles.push({
+              name: entry.name, path: `${subDir}/${entry.name}`,
+              ext: extname(entry.name).slice(1), title,
+              modifiedAt: stat.mtime.toISOString(),
+            });
+          }
+        } catch { /* skip */ }
+      }
+
+      if (sessionFiles.length > 0) {
+        sessionFiles.sort((a, b) => new Date(b.modifiedAt).getTime() - new Date(a.modifiedAt).getTime());
+        groups.push({
+          agentDir, role: agent.role, agentId: shortId,
+          sessionId: agent.sessionId, source: 'copilot-session',
+          files: sessionFiles,
+        });
+      }
     }
 
     groups.sort((a, b) => a.role.localeCompare(b.role));
@@ -1130,6 +1199,61 @@ export function projectsRoutes(ctx: AppContext): Router {
     // Security: ensure resolved path stays within organizedDir
     if (!normalize(resolved).startsWith(normalize(organizedDir) + sep)) {
       return res.status(403).json({ error: 'Path outside artifact directory' });
+    }
+
+    try {
+      const stat = statSync(resolved);
+      if (!stat.isFile()) return res.status(400).json({ error: 'Not a file' });
+      if (stat.size > 512 * 1024) return res.status(413).json({ error: 'File too large' });
+      const content = readFileSync(resolved, 'utf-8');
+      res.json({ path: filePath, content, size: stat.size, ext: extname(filePath).slice(1) });
+    } catch (err: any) {
+      if (err.code === 'ENOENT') return res.status(404).json({ error: 'File not found' });
+      res.status(400).json({ error: 'Cannot read file' });
+    }
+  });
+
+  /**
+   * GET /projects/:id/session-artifact?agentId=<id>&path=plan.md
+   * Returns file content from agent's Copilot CLI session directory.
+   * Security: only serves files matching the allowlist (plan.md, checkpoints/, files/, research/).
+   */
+  router.get('/projects/:id/session-artifact', (req, res) => {
+    if (!projectRegistry) return res.status(404).json({ error: 'Projects not available' });
+    const project = projectRegistry.get(req.params.id);
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+
+    const agentId = typeof req.query.agentId === 'string' ? req.query.agentId : '';
+    const filePath = typeof req.query.path === 'string' ? req.query.path : '';
+
+    if (!agentId || !filePath) {
+      return res.status(400).json({ error: 'Missing agentId or path parameter' });
+    }
+    if (filePath.includes('\0') || filePath.includes('..')) {
+      return res.status(400).json({ error: 'Invalid path' });
+    }
+
+    // Look up agent's sessionId from roster
+    const agent = agentRoster?.getAgent(agentId);
+    if (!agent?.sessionId) return res.status(404).json({ error: 'Agent session not found' });
+
+    // Validate project scoping — agent must belong to this project
+    if (agent.projectId !== req.params.id) {
+      return res.status(403).json({ error: 'Agent not in this project' });
+    }
+
+    // Allowlist: only serve known safe paths
+    const ALLOWED_PREFIXES = ['plan.md', 'checkpoints/', 'files/', 'research/'];
+    if (!ALLOWED_PREFIXES.some(prefix => filePath === prefix || filePath.startsWith(prefix))) {
+      return res.status(403).json({ error: 'File not accessible' });
+    }
+
+    const sessionDir = join(homedir(), '.copilot', 'session-state', agent.sessionId);
+    const resolved = join(sessionDir, filePath);
+
+    // Security: ensure resolved path stays within session dir
+    if (!normalize(resolved).startsWith(normalize(sessionDir) + sep)) {
+      return res.status(403).json({ error: 'Path outside session directory' });
     }
 
     try {

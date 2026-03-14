@@ -4,7 +4,7 @@ import type { Server } from 'http';
 import type { AddressInfo } from 'net';
 import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { tmpdir, homedir } from 'node:os';
 import { projectsRoutes } from './projects.js';
 import type { AppContext } from './context.js';
 
@@ -581,5 +581,115 @@ describe('GET /projects/:id/artifact-contents', () => {
     const res = await fetch(`${url}/projects/unknown/artifact-contents?path=foo/bar.md`);
     expect(res.status).toBe(404);
     await srv.stop();
+  });
+});
+
+// ── Session artifact endpoint ──────────────────────────────────────
+
+describe('GET /projects/:id/session-artifact', () => {
+  let baseUrl: string;
+  let stop: () => Promise<void>;
+  let copilotSessionDir: string;
+
+  beforeAll(async () => {
+    // Create a fake Copilot session dir structure
+    const sessionId = 'test-session-uuid-1234';
+    copilotSessionDir = join(homedir(), '.copilot', 'session-state', sessionId);
+    mkdirSync(copilotSessionDir, { recursive: true });
+    writeFileSync(join(copilotSessionDir, 'plan.md'), '# My Plan\nStep 1: do things');
+    mkdirSync(join(copilotSessionDir, 'checkpoints'), { recursive: true });
+    writeFileSync(join(copilotSessionDir, 'checkpoints', '001-setup.md'), '# Setup Complete');
+    // Sensitive file that should NOT be served
+    writeFileSync(join(copilotSessionDir, 'events.jsonl'), '{"type":"message"}');
+    writeFileSync(join(copilotSessionDir, 'workspace.yaml'), 'id: test');
+
+    const mockRegistry = {
+      get: vi.fn().mockReturnValue({ id: 'test-proj', name: 'Test', cwd: '/tmp/fake', status: 'active' }),
+    } as any;
+
+    const mockRoster = {
+      getAgent: vi.fn().mockImplementation((id: string) => {
+        if (id === 'agent-abc12345') {
+          return { agentId: 'agent-abc12345', sessionId, projectId: 'test-proj', role: 'architect' };
+        }
+        if (id === 'agent-other-proj') {
+          return { agentId: 'agent-other-proj', sessionId, projectId: 'other-proj', role: 'developer' };
+        }
+        return undefined;
+      }),
+      getByProject: vi.fn().mockReturnValue([]),
+    } as any;
+
+    const srv = createTestServer({ projectRegistry: mockRegistry, agentRoster: mockRoster });
+    baseUrl = await srv.start();
+    stop = srv.stop;
+  });
+
+  afterAll(async () => {
+    await stop?.();
+    rmSync(copilotSessionDir, { recursive: true, force: true });
+  });
+
+  it('serves plan.md from Copilot session', async () => {
+    const res = await fetch(
+      `${baseUrl}/projects/test-proj/session-artifact?agentId=agent-abc12345&path=plan.md`,
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.content).toContain('# My Plan');
+    expect(body.ext).toBe('md');
+  });
+
+  it('serves checkpoint files', async () => {
+    const res = await fetch(
+      `${baseUrl}/projects/test-proj/session-artifact?agentId=agent-abc12345&path=checkpoints/001-setup.md`,
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.content).toContain('# Setup Complete');
+  });
+
+  it('blocks access to events.jsonl (not in allowlist)', async () => {
+    const res = await fetch(
+      `${baseUrl}/projects/test-proj/session-artifact?agentId=agent-abc12345&path=events.jsonl`,
+    );
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.error).toBe('File not accessible');
+  });
+
+  it('blocks access to workspace.yaml (not in allowlist)', async () => {
+    const res = await fetch(
+      `${baseUrl}/projects/test-proj/session-artifact?agentId=agent-abc12345&path=workspace.yaml`,
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it('blocks cross-project access', async () => {
+    const res = await fetch(
+      `${baseUrl}/projects/test-proj/session-artifact?agentId=agent-other-proj&path=plan.md`,
+    );
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.error).toBe('Agent not in this project');
+  });
+
+  it('rejects path traversal', async () => {
+    const res = await fetch(
+      `${baseUrl}/projects/test-proj/session-artifact?agentId=agent-abc12345&path=../../../etc/passwd`,
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 for missing parameters', async () => {
+    const res = await fetch(`${baseUrl}/projects/test-proj/session-artifact`);
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 404 for unknown agent', async () => {
+    const res = await fetch(
+      `${baseUrl}/projects/test-proj/session-artifact?agentId=nonexistent&path=plan.md`,
+    );
+    expect(res.status).toBe(404);
   });
 });
