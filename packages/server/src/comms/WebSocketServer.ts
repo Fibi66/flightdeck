@@ -415,7 +415,7 @@ export class WebSocketServer {
     });
   }
 
-   
+
   private handleMessage(
     client: ClientConnection,
     msg: Record<string, any>,
