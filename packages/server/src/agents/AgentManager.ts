@@ -1,10 +1,10 @@
 import { Agent, isTerminalStatus } from './Agent.js';
 import { generateProjectId } from '../utils/projectId.js';
 import { join } from 'path';
-import { homedir } from 'os';
+
 import type { AgentContextInfo } from './Agent.js';
 import type { Role, RoleRegistry } from './RoleRegistry.js';
-import type { ServerConfig } from '../config.js';
+import { FLIGHTDECK_STATE_DIR, type ServerConfig } from '../config.js';
 import type { FileLockRegistry } from '../coordination/files/FileLockRegistry.js';
 import type { ActivityLedger } from '../coordination/activity/ActivityLedger.js';
 import type { MessageBus } from '../comms/MessageBus.js';
@@ -563,7 +563,7 @@ export class AgentManager extends TypedEmitter<AgentManagerEvents> {
     const artifactProjectId = agent.projectId || '_unscoped';
     const leadId = agent.role.id === 'lead' ? agent.id : (agent.parentId || 'unknown');
     agent.artifactDir = join(
-      homedir(), '.flightdeck', 'artifacts', artifactProjectId,
+      FLIGHTDECK_STATE_DIR, 'artifacts', artifactProjectId,
       'sessions', leadId, `${agent.role.id}-${agent.id.slice(0, 8)}`,
     );
 

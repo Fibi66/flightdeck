@@ -4,6 +4,7 @@ import { readFileSync, readdirSync, realpathSync, statSync, existsSync } from 'n
 import { join, normalize, sep, extname, relative } from 'node:path';
 import { homedir } from 'node:os';
 import { logger } from '../utils/logger.js';
+import { FLIGHTDECK_STATE_DIR } from '../config.js';
 import type { AppContext } from './context.js';
 import { spawnLimiter } from './context.js';
 import { KNOWN_MODEL_IDS, DEFAULT_MODEL_CONFIG, validateModelConfig, validateModelConfigShape } from '../projects/ModelConfigDefaults.js';
@@ -1046,7 +1047,7 @@ export function projectsRoutes(ctx: AppContext): Router {
 
   /**
    * GET /projects/:id/artifacts
-   * Returns markdown files from organized storage (~/.flightdeck/artifacts/) and
+   * Returns markdown files from organized storage ($FLIGHTDECK_STATE_DIR/artifacts/) and
    * legacy .flightdeck/shared/, grouped by agent directory and session.
    */
   router.get('/projects/:id/artifacts', (req, res) => {
@@ -1084,8 +1085,8 @@ export function projectsRoutes(ctx: AppContext): Router {
 
     const groups: ArtifactGroup[] = [];
 
-    // Read from organized storage (~/.flightdeck/artifacts/{projectId}/sessions/)
-    const organizedDir = join(homedir(), '.flightdeck', 'artifacts', req.params.id, 'sessions');
+    // Read from organized storage (FLIGHTDECK_STATE_DIR/artifacts/{projectId}/sessions/)
+    const organizedDir = join(FLIGHTDECK_STATE_DIR, 'artifacts', req.params.id, 'sessions');
     if (existsSync(organizedDir)) {
       try {
         const sessionDirs = readdirSync(organizedDir, { withFileTypes: true }).filter(e => e.isDirectory());
