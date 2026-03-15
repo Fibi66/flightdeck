@@ -161,6 +161,26 @@ export function ProjectLayout() {
 
   useEffect(() => { fetchDetails(); }, [fetchDetails]);
 
+  // Auto-resume: when opening a non-live, non-archived project, resume session with full crew
+  const resumeAttemptedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!id || isLive) return;
+    if (resumeAttemptedRef.current === id) return;
+    if (details?.status === 'archived') return;
+    if (!details) return; // wait for details to load
+    resumeAttemptedRef.current = id;
+    apiFetch<{ id: string }>(`/projects/${id}/resume`, {
+      method: 'POST',
+      body: JSON.stringify({ resumeAll: true }),
+    }).then((res) => {
+      if (res?.id) {
+        navigate(`/projects/${id}/session`, { replace: true });
+      }
+    }).catch((err) => {
+      console.warn('[auto-resume] Failed to resume project:', id, err);
+    });
+  }, [id, isLive, details, navigate]);
+
   // Sync URL project ID → leadStore.selectedLeadId so child components
   // (LeadDashboard, TaskQueuePanel, etc.) pick up the correct project
   useEffect(() => {
@@ -252,8 +272,12 @@ export function ProjectLayout() {
       const lastTab = stored[id];
       if (lastTab && ALL_TAB_IDS.has(lastTab) && lastTab !== 'overview') {
         navigate(`/projects/${id}/${lastTab}`, { replace: true });
+      } else {
+        navigate(`/projects/${id}/session`, { replace: true });
       }
-    } catch { /* Gracefully ignore corrupt localStorage */ }
+    } catch {
+      navigate(`/projects/${id}/session`, { replace: true });
+    }
   }, [id, location.pathname, navigate]);
 
   // B-11: Keyboard shortcuts — Alt+1-5 for primary tabs
