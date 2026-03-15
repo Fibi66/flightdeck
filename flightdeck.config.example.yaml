@@ -127,3 +127,9 @@ provider:
 # Example: Switch to OpenCode
 # provider:
 #   id: opencode
+
+# ── Language ────────────────────────────────────────────────
+# Set the language for all agent responses.
+# Agents will respond in this language while keeping code and commands in English.
+# Examples: '中文', 'Japanese', 'Spanish', 'Korean', 'French'
+# language: 中文

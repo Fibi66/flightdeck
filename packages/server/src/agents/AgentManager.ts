@@ -514,6 +514,17 @@ export class AgentManager extends TypedEmitter<AgentManagerEvents> {
       }
     }
 
+    // Inject language instruction into agent prompt
+    if (this.configStore) {
+      const language = this.configStore.current.language;
+      if (language) {
+        effectiveRole = {
+          ...effectiveRole,
+          systemPrompt: `${effectiveRole.systemPrompt}\n\n<language_instruction>\nIMPORTANT: You MUST respond in ${language}. All your messages, explanations, thinking, and reasoning must be in ${language}. Only code, file paths, technical identifiers, and Flightdeck commands (like AGENT_MESSAGE, COMPLETE_TASK, etc.) should remain in their original form.\n</language_instruction>`,
+        };
+      }
+    }
+
     const agent = new Agent(effectiveRole, this.config, task, parentId, peers, id);
     agent.model = effectiveModel ?? '';
     if (cwd) agent.cwd = cwd;

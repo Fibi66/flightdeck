@@ -131,6 +131,10 @@ const telegramSchema = z.object({
   rateLimitPerMinute: z.number().int().min(1).max(120).default(20),
 });
 
+// ── Language section ───────────────────────────────────────
+// Optional: instruct all agents to respond in a specific language.
+const languageSchema = z.string().max(100).optional();
+
 // ── Oversight section (Trust Dial) ─────────────────────────
 // Preprocess migrates old tier names (detailed/standard/minimal) to new names
 const oversightSchema = z.preprocess(
@@ -218,6 +222,8 @@ export const flightdeckConfigSchema = z.preprocess(
     providerSettings: z.preprocess((val) => val ?? {}, z.record(z.string(), providerSettingsSchema)),
     /** Ordered provider preference list — first = most preferred */
     providerRanking: z.preprocess((val) => val ?? [], z.array(z.string())).default([]),
+    /** Language for agent responses (e.g. '中文', 'Japanese', 'Spanish') */
+    language: languageSchema,
   }),
 );
 

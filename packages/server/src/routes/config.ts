@@ -24,7 +24,7 @@ export function configRoutes(ctx: AppContext): Router {
     if (!ctx.configStore) {
       return res.status(503).json({ error: 'Config store not available' });
     }
-    res.json({ oversight: ctx.configStore.current.oversight });
+    res.json({ oversight: ctx.configStore.current.oversight, language: ctx.configStore.current.language });
   });
 
   router.patch('/config', validateBody(configPatchSchema), (req, res) => {
@@ -48,6 +48,9 @@ export function configRoutes(ctx: AppContext): Router {
       }
       if (req.body.customInstructions !== undefined) {
         yamlPatch.oversight = { ...yamlPatch.oversight as Record<string, unknown> ?? {}, customInstructions: req.body.customInstructions };
+      }
+      if (req.body.language !== undefined) {
+        yamlPatch.language = req.body.language;
       }
       if (Object.keys(yamlPatch).length > 0) {
         ctx.configStore.writePartial(yamlPatch).catch(err => {

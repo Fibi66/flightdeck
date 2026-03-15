@@ -91,15 +91,17 @@ export const configPatchSchema = z
     host: z.string().min(1).optional(),
     oversightLevel: z.enum(['supervised', 'balanced', 'autonomous']).optional(),
     customInstructions: z.string().max(500).optional(),
+    language: z.string().max(100).optional().nullable(),
   })
   .refine(
     (data) =>
       data.maxConcurrentAgents !== undefined ||
       data.host !== undefined ||
       data.oversightLevel !== undefined ||
-      data.customInstructions !== undefined,
+      data.customInstructions !== undefined ||
+      data.language !== undefined,
     {
-      message: 'No valid fields to update. Allowed: maxConcurrentAgents, host, oversightLevel, customInstructions',
+      message: 'No valid fields to update. Allowed: maxConcurrentAgents, host, oversightLevel, customInstructions, language',
     },
   );
 
