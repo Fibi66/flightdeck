@@ -712,18 +712,19 @@ export function LeadDashboard({ api: _api, ws, readOnly = false }: Props) {
                   >
                     <Download className="w-2.5 h-2.5" />
                   </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleClearHistory();
-                    }}
-                    className="text-th-text-muted hover:text-red-500 dark:hover:text-red-400 text-[10px] shrink-0 flex items-center gap-0.5"
-                    title="Clear chat history"
-                  >
-                    <Trash2 className="w-2.5 h-2.5" />
-                  </button>
                 </span>
               )}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleClearHistory();
+                }}
+                className={`${leadAgent?.sessionId ? '' : 'ml-auto '}shrink-0 flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-red-500/15 text-th-text-muted hover:text-red-500 dark:hover:text-red-400 transition-colors`}
+                title="Clear chat history"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span className="text-[10px]">Clear</span>
+              </button>
             </div>
 
             {/* Agent Reports — compact toggle */}
