@@ -81,6 +81,18 @@ export class ConversationStore {
     }));
   }
 
+  /** Delete all messages and conversations for a specific agent */
+  clearByAgent(agentId: string): number {
+    const threads = this.getThreadsByAgent(agentId);
+    let deleted = 0;
+    for (const thread of threads) {
+      const result = this.db.drizzle.delete(messages).where(eq(messages.conversationId, thread.id)).run();
+      deleted += result.changes;
+      this.db.drizzle.delete(conversations).where(eq(conversations.id, thread.id)).run();
+    }
+    return deleted;
+  }
+
   getRecentMessages(agentId: string, limit = 50): ThreadMessage[] {
     const rows = this.db.drizzle
       .select({

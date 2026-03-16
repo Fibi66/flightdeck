@@ -92,6 +92,7 @@ interface LeadState {
   setGroups: (leadId: string, groups: ChatGroup[]) => void;
   addGroupMessage: (leadId: string, groupName: string, message: GroupMessage) => void;
   setDagStatus: (leadId: string, status: DagStatus) => void;
+  clearMessages: (leadId: string) => void;
   reset: () => void;
 }
 
@@ -299,6 +300,13 @@ export const useLeadStore = create<LeadState>((set) => ({
     set((s) => {
       const proj = s.projects[leadId] || emptyProject();
       return { projects: { ...s.projects, [leadId]: { ...proj, dagStatus: status } } };
+    }),
+
+  clearMessages: (leadId) =>
+    set((s) => {
+      const proj = s.projects[leadId];
+      if (!proj) return s;
+      return { projects: { ...s.projects, [leadId]: { ...proj, messages: [] } } };
     }),
 
   reset: () => set({ projects: {}, selectedLeadId: null }),

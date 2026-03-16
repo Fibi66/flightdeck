@@ -243,6 +243,13 @@ export function leadRoutes(ctx: AppContext): Router {
     res.json(agentManager.getDelegations(req.params.id));
   });
 
+  router.post('/lead/:id/clear-history', (req, res) => {
+    const agent = agentManager.get(req.params.id);
+    if (!agent || agent.role.id !== 'lead') return res.status(404).json({ error: 'Lead not found' });
+    const result = agentManager.clearHistory(req.params.id);
+    res.json(result);
+  });
+
   router.get('/lead/:id/dag', (req, res) => {
     const agent = agentManager.get(req.params.id);
     if (!agent || agent.role.id !== 'lead') return res.status(404).json({ error: 'Lead not found' });

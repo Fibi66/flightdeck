@@ -1330,6 +1330,65 @@ export class AgentManager extends TypedEmitter<AgentManagerEvents> {
   }
 
   /**
+   * Clear chat history for a lead and its non-working crew agents.
+   * Clears both in-memory output buffers and persisted DB conversations.
+   * Skips agents that are currently running or idle (actively working).
+   */
+  clearHistory(leadId: string): { cleared: string[]; skipped: string[] } {
+    const cleared: string[] = [];
+    const skipped: string[] = [];
+
+    const agentsToClear: Agent[] = [];
+    const lead = this.agents.get(leadId);
+    if (lead) agentsToClear.push(lead);
+
+    // Find all child agents of this lead
+    for (const agent of this.agents.values()) {
+      if (agent.parentId === leadId && agent !== lead) {
+        agentsToClear.push(agent);
+      }
+    }
+
+    for (const agent of agentsToClear) {
+      const isWorking = agent.status === 'running' || agent.status === 'idle';
+      if (isWorking && agent.id !== leadId) {
+        // Skip working child agents — but always clear the lead
+        skipped.push(agent.id);
+        continue;
+      }
+
+      // Clear in-memory output buffer
+      agent.messages.length = 0;
+      agent.taskOutputStartIndex = 0;
+
+      // Flush and discard any pending message buffer
+      const timer = this.flushTimers.get(agent.id);
+      if (timer) { clearTimeout(timer); this.flushTimers.delete(agent.id); }
+      this.messageBuffers.delete(agent.id);
+
+      // Clear persisted conversation history from DB
+      if (this.conversationStore) {
+        this.conversationStore.clearByAgent(agent.id);
+        // Create a fresh conversation thread so new messages still get persisted
+        const thread = this.conversationStore.createThread(agent.id, agent.task);
+        this.agentThreads.set(agent.id, thread.id);
+      }
+
+      cleared.push(agent.id);
+    }
+
+    logger.info({
+      module: 'agent',
+      msg: 'Cleared chat history',
+      leadId,
+      cleared: cleared.length,
+      skipped: skipped.length,
+    });
+
+    return { cleared, skipped };
+  }
+
+  /**
    * Extract knowledge from a completed agent session and store it.
    * Gathers conversation history and builds SessionData for the extractor.
    */

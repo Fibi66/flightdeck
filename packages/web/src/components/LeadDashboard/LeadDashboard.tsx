@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Crown, MessageSquare, GitBranch, ChevronDown, ChevronRight, ChevronUp, AlertTriangle, Download, FolderOpen, Eye } from 'lucide-react';
+import { Crown, MessageSquare, GitBranch, ChevronDown, ChevronRight, ChevronUp, AlertTriangle, Download, FolderOpen, Eye, Trash2 } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import { useLeadStore } from '../../stores/leadStore';
 import { useTimerStore, selectActiveTimerCount } from '../../stores/timerStore';
@@ -566,6 +566,28 @@ export function LeadDashboard({ api: _api, ws, readOnly = false }: Props) {
     useAppStore.getState().setSelectedAgent(agentId);
   }, []);
 
+  const handleClearHistory = useCallback(async () => {
+    if (!selectedLeadId) return;
+    if (!confirm('Clear all chat history? (Working agents will be skipped)')) return;
+    try {
+      const resp = await fetch(`/api/lead/${selectedLeadId}/clear-history`, { method: 'POST' });
+      if (resp.ok) {
+        const { cleared } = await resp.json() as { cleared: string[]; skipped: string[] };
+        // Clear lead messages in leadStore
+        useLeadStore.getState().clearMessages(selectedLeadId);
+        // Clear agent messages in appStore for cleared agents
+        const appStore = useAppStore.getState();
+        for (const agentId of cleared) {
+          if (agentId !== selectedLeadId) {
+            appStore.updateAgent(agentId, { messages: [] });
+          }
+        }
+      }
+    } catch {
+      // Network error — ignore
+    }
+  }, [selectedLeadId]);
+
   const messages = currentProject?.messages ?? EMPTY_MESSAGES;
   const decisions = currentProject?.decisions ?? EMPTY_DECISIONS;
   const pendingConfirmations = decisions.filter((d) => d.needsConfirmation && d.status === 'recorded');
@@ -689,6 +711,16 @@ export function LeadDashboard({ api: _api, ws, readOnly = false }: Props) {
                     title="Export session to disk"
                   >
                     <Download className="w-2.5 h-2.5" />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleClearHistory();
+                    }}
+                    className="text-th-text-muted hover:text-red-500 dark:hover:text-red-400 text-[10px] shrink-0 flex items-center gap-0.5"
+                    title="Clear chat history"
+                  >
+                    <Trash2 className="w-2.5 h-2.5" />
                   </button>
                 </span>
               )}
