@@ -31,6 +31,7 @@ import type { ActivityEntry } from '../Shared';
 import { SectionErrorBoundary } from '../SectionErrorBoundary';
 import {
   Square,
+  Play,
   Plus,
   Users,
   Clock,
@@ -99,6 +100,7 @@ export function OverviewPage(_props: Props) {
 
   // ── Session controls state ────────────────────────────────────
   const [stopping, setStopping] = useState(false);
+  const [starting, setStarting] = useState(false);
   const [showNewSessionDialog, setShowNewSessionDialog] = useState(false);
 
   // ── Project directory state ──────────────────────────────────
@@ -147,6 +149,18 @@ export function OverviewPage(_props: Props) {
       await apiFetch(`/projects/${effectiveId}/stop`, { method: 'POST' });
     } catch { /* ignore */ }
     finally { setStopping(false); }
+  }, [effectiveId]);
+
+  const handleStartSession = useCallback(async () => {
+    if (!effectiveId) return;
+    setStarting(true);
+    try {
+      await apiFetch(`/projects/${effectiveId}/resume`, {
+        method: 'POST',
+        body: JSON.stringify({ resumeAll: true }),
+      });
+    } catch { /* ignore */ }
+    finally { setStarting(false); }
   }, [effectiveId]);
 
   // ── Attention alerts ──────────────────────────────────────────
@@ -312,15 +326,25 @@ export function OverviewPage(_props: Props) {
         <div className="flex items-center gap-3" data-testid="no-session-controls">
           <button
             type="button"
+            onClick={handleStartSession}
+            disabled={starting}
+            className="flex items-center gap-1.5 px-4 py-2 text-sm bg-green-600 hover:bg-green-700 text-white rounded-md transition-colors font-medium disabled:opacity-50"
+            data-testid="start-session-btn"
+          >
+            {starting ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+            {starting ? 'Starting…' : 'Start Session'}
+          </button>
+          <button
+            type="button"
             onClick={() => setShowNewSessionDialog(true)}
-            className="flex items-center gap-1.5 px-4 py-2 text-sm bg-accent hover:bg-accent/80 text-white rounded-md transition-colors font-medium"
+            className="flex items-center gap-1.5 px-4 py-2 text-sm bg-surface-raised border border-th-border hover:border-accent text-th-text rounded-md transition-colors font-medium"
             data-testid="new-session-btn"
           >
             <Plus size={14} />
             New Session
           </button>
           <span className="text-xs text-th-text-muted">
-            No active session. Start a new one or resume from history below.
+            No active session. Resume all agents or start fresh.
           </span>
         </div>
       )}

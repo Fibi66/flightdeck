@@ -265,6 +265,8 @@ export function GlobalAgentsPage() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [restarting, setRestarting] = useState(false);
+  const addToast = useToastStore(s => s.add);
 
   const fetchAgents = useCallback(async () => {
     try {
@@ -305,6 +307,23 @@ export function GlobalAgentsPage() {
     alive: agents.filter(a => isAlive(a.status)).length,
   };
 
+  const handleRestartAll = async () => {
+    if (counts.alive === 0) { addToast('info', 'No active agents to restart'); return; }
+    setRestarting(true);
+    try {
+      const res = await apiFetch<{ restarted: number; failed: number }>('/agents/restart-all', {
+        method: 'POST',
+        body: JSON.stringify({}),
+      });
+      addToast('success', `Restarted ${res.restarted} agent(s)${res.failed ? `, ${res.failed} failed` : ''}`);
+      await fetchAgents();
+    } catch (err: any) {
+      addToast('error', `Restart failed: ${err.message}`);
+    } finally {
+      setRestarting(false);
+    }
+  };
+
   if (loading && agents.length === 0) {
     return (
       <div className="flex items-center justify-center h-64 text-th-text-alt">
@@ -334,13 +353,24 @@ export function GlobalAgentsPage() {
             {counts.alive} active / {counts.total} total
           </span>
         </div>
-        <button
-          onClick={() => { setLoading(true); fetchAgents(); }}
-          className="px-3 py-1.5 text-sm rounded bg-th-bg-alt hover:bg-th-border text-th-text-alt transition-colors flex items-center gap-1"
-        >
-          <RefreshCw className="w-3.5 h-3.5" />
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleRestartAll}
+            disabled={restarting || counts.alive === 0}
+            className="px-3 py-1.5 text-sm rounded bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 border border-yellow-500/20 transition-colors flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
+            title="Terminate and re-spawn all active agents"
+          >
+            {restarting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+            Restart All
+          </button>
+          <button
+            onClick={() => { setLoading(true); fetchAgents(); }}
+            className="px-3 py-1.5 text-sm rounded bg-th-bg-alt hover:bg-th-border text-th-text-alt transition-colors flex items-center gap-1"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            Refresh
+          </button>
+        </div>
       </div>
 
       {/* Filters */}

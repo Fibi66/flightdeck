@@ -102,6 +102,13 @@ export function useApi() {
     return apiFetch(`/agents/${id}/restart`, { method: 'POST' });
   }, []);
 
+  const restartAllAgents = useCallback(async (opts?: { agentIds?: string[]; projectId?: string }) => {
+    return apiFetch<{ restarted: number; failed: number; failedIds: string[]; agents: any[] }>(
+      '/agents/restart-all',
+      { method: 'POST', body: JSON.stringify(opts ?? {}) },
+    );
+  }, []);
+
   const updateConfig = useCallback(
     async (patch: Partial<ServerConfig>) => {
       const config = await apiFetch<ServerConfig>('/config', {
@@ -165,6 +172,7 @@ export function useApi() {
     terminateAgent,
     interruptAgent,
     restartAgent,
+    restartAllAgents,
     updateAgent,
     updateConfig,
     createRole,

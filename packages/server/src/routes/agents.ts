@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { agentPlans, dagTasks } from '../db/schema.js';
 import { eq, desc } from 'drizzle-orm';
 import { logger } from '../utils/logger.js';
-import { validateBody, spawnAgentSchema, sendMessageSchema, agentInputSchema } from '../validation/schemas.js';
+import { validateBody, spawnAgentSchema, sendMessageSchema, agentInputSchema, batchRestartSchema } from '../validation/schemas.js';
 import { spawnLimiter, messageLimiter } from './context.js';
 import type { AppContext } from './context.js';
 import type { ContentBlock } from '../adapters/types.js';
@@ -68,6 +68,38 @@ export function agentsRoutes(ctx: AppContext): Router {
       const status = err.message?.includes('disabled') ? 400 : 429;
       res.status(status).json({ error: err.message });
     }
+  });
+
+  // Batch restart: all agents, by project, or by specific IDs
+  router.post('/agents/restart-all', validateBody(batchRestartSchema), async (req, res) => {
+    const { agentIds, projectId } = req.body;
+    let targets: string[];
+    if (agentIds?.length) {
+      targets = agentIds;
+    } else if (projectId) {
+      targets = agentManager.getByProject(projectId).map(a => a.id);
+    } else {
+      targets = agentManager.getAll().map(a => a.id);
+    }
+
+    if (targets.length === 0) {
+      return res.json({ restarted: 0, failed: 0, agents: [] });
+    }
+
+    const results = await Promise.allSettled(targets.map(id => agentManager.restart(id)));
+    const restarted: any[] = [];
+    const failedIds: string[] = [];
+
+    results.forEach((r, i) => {
+      if (r.status === 'fulfilled' && r.value) {
+        restarted.push(r.value.toJSON());
+      } else {
+        failedIds.push(targets[i]);
+      }
+    });
+
+    logger.info({ module: 'api', msg: `POST /agents/restart-all — ${restarted.length} restarted, ${failedIds.length} failed`, projectId });
+    res.json({ restarted: restarted.length, failed: failedIds.length, failedIds, agents: restarted });
   });
 
   router.delete('/agents/:id', async (req, res) => {

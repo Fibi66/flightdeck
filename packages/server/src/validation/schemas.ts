@@ -141,6 +141,12 @@ export const agentInputSchema = z.object({
   text: z.string(),
 });
 
+/** POST /api/agents/restart-all */
+export const batchRestartSchema = z.object({
+  agentIds: z.array(z.string()).optional(),
+  projectId: z.string().optional(),
+});
+
 /** POST /api/coordination/locks */
 export const acquireLockSchema = z.object({
   agentId: z.string().min(1, 'agentId is required'),

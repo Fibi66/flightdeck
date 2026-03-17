@@ -153,6 +153,8 @@ function handleDecision(msg: WsDecision, store: StoreApi) {
 
 function handleText(msg: WsAgentText, store: StoreApi, storeKey: string) {
   const rawText = typeof msg.text === 'string' ? msg.text : msg.text?.text ?? JSON.stringify(msg.text);
+  // Filter out CLI transient info messages (e.g., Copilot retry notices)
+  if (/^Info: .*(?:Retrying|transient)/i.test(rawText.trim())) return;
   store.appendToLastAgentMessage(storeKey, rawText);
 }
 
