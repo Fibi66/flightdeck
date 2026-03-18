@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Crown, Eye } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import { useLeadStore } from '../../stores/leadStore';
+import { useMessageStore } from '../../stores/messageStore';
 import { useTimerStore, selectActiveTimerCount } from '../../stores/timerStore';
 import type { AgentReport, ProgressSnapshot, ActivityEvent, AgentComm } from '../../stores/leadStore';
 import type { AcpTextChunk, Decision, ChatGroup, GroupMessage, Delegation, LeadProgress } from '../../types';
@@ -52,23 +53,11 @@ export function LeadDashboard({ readOnly = false }: Props) {
   );
   const agents = useAppStore((s) => s.agents);
   const connected = useAppStore((s) => s.connected);
-  // Resolve project ID for historical agent derivation:
-  // - "project:xxx" → strip prefix to get the project UUID
-  // - Live lead UUID → use the lead's projectId, or the lead UUID itself as fallback
+  // Derive project ID from the selected lead agent
   const historicalProjectId = useMemo(() => {
     if (!selectedLeadId) return null;
-    if (selectedLeadId.startsWith('project:')) return selectedLeadId.slice(8);
     const lead = agents.find((a) => a.id === selectedLeadId);
     return lead?.projectId ?? selectedLeadId;
-  }, [selectedLeadId, agents]);
-
-  // Resolve 'project:xxx' selectedLeadId to the actual active lead agent ID
-  const effectiveLeadId = useMemo(() => {
-    if (!selectedLeadId?.startsWith('project:')) return selectedLeadId;
-    const projectId = selectedLeadId.slice(8);
-    return agents.find(
-      (a) => a.projectId === projectId && a.role?.id === 'lead' && a.status !== 'terminated',
-    )?.id ?? selectedLeadId;
   }, [selectedLeadId, agents]);
 
   const { agents: derivedAgents } = useHistoricalAgents(agents.length, historicalProjectId, connected);
@@ -130,15 +119,16 @@ export function LeadDashboard({ readOnly = false }: Props) {
   const leadAgent = agents.find((a) => a.id === selectedLeadId);
   const isActive = leadAgent && (leadAgent.status === 'running' || leadAgent.status === 'idle');
 
-  const { catchUpSummary, dismissCatchUp } = useCatchUpSummary(selectedLeadId, effectiveLeadId, agents, currentProject);
+  const { catchUpSummary, dismissCatchUp } = useCatchUpSummary(selectedLeadId, agents, currentProject);
 
   const chatInitialScroll = useRef(false);
   useLeadMessages(selectedLeadId, readOnly, ws, chatInitialScroll);
 
-  const isActiveAgent = selectedLeadId != null && !selectedLeadId.startsWith('project:') && !readOnly && isActive === true;
+  const isActiveAgent = selectedLeadId != null && !readOnly && isActive === true;
   useLeadPolling(selectedLeadId, isActiveAgent, historicalProjectId);
 
   // Auto-scroll on new messages
+  const channelMessages = useMessageStore((s) => selectedLeadId ? s.channels[selectedLeadId]?.messages : undefined);
   useEffect(() => {
     const el = chatContainerRef.current;
     if (!el) return;
@@ -151,7 +141,7 @@ export function LeadDashboard({ readOnly = false }: Props) {
     if (isNearBottom) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [currentProject?.messages]);
+  }, [channelMessages]);
 
   const reportsScrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -211,7 +201,7 @@ export function LeadDashboard({ readOnly = false }: Props) {
     useAppStore.getState().setSelectedAgent(agentId);
   }, []);
 
-  const messages = currentProject?.messages ?? EMPTY_MESSAGES;
+  const messages = channelMessages ?? EMPTY_MESSAGES;
   const decisions = currentProject?.decisions ?? EMPTY_DECISIONS;
   const pendingConfirmations = decisions.filter((d) => d.needsConfirmation && d.status === 'recorded');
   const progress = currentProject?.progress ?? null;
@@ -224,7 +214,7 @@ export function LeadDashboard({ readOnly = false }: Props) {
   const groupMessages = currentProject?.groupMessages ?? EMPTY_GROUP_MESSAGES;
   const dagStatus = currentProject?.dagStatus ?? null;
   const teamAgents = (() => {
-    const live = agents.filter((a) => a.id === effectiveLeadId || a.parentId === effectiveLeadId);
+    const live = agents.filter((a) => a.id === selectedLeadId || a.parentId === selectedLeadId);
     if (live.length > 0) return live;
     // Fallback: progress endpoint, then keyframe-derived agents
     const progressTeam = progress?.crewAgents ?? EMPTY_CREW_AGENTS;

@@ -1,8 +1,10 @@
 import { apiFetch } from '../../hooks/useApi';
 import { useEffect } from 'react';
 import { useLeadStore } from '../../stores/leadStore';
+import { useMessageStore } from '../../stores/messageStore';
 import type { AgentInfo, DagStatus, DecisionStatus } from '../../types';
 import { shortAgentId } from '../../utils/agentLabel';
+import { normalizeWsText } from '../../hooks/ws-handlers/normalizeText';
 
 type StoreApi = ReturnType<typeof useLeadStore.getState>;
 
@@ -152,18 +154,16 @@ function handleDecision(msg: WsDecision, store: StoreApi) {
   });
 }
 
-function handleText(msg: WsAgentText, store: StoreApi, storeKey: string) {
-  const rawText = typeof msg.text === 'string' ? msg.text : msg.text?.text ?? JSON.stringify(msg.text);
-  store.appendToLastAgentMessage(storeKey, rawText);
+function handleText(msg: WsAgentText, _store: StoreApi, storeKey: string) {
+  useMessageStore.getState().appendToLastAgentMessage(storeKey, normalizeWsText(msg.text));
 }
 
-function handleThinking(msg: WsAgentThinking, store: StoreApi, storeKey: string) {
-  const rawText = typeof msg.text === 'string' ? msg.text : msg.text?.text ?? JSON.stringify(msg.text);
-  store.appendToThinkingMessage(storeKey, rawText);
+function handleThinking(msg: WsAgentThinking, _store: StoreApi, storeKey: string) {
+  useMessageStore.getState().appendToThinkingMessage(storeKey, normalizeWsText(msg.text));
 }
 
-function handleContent(msg: WsAgentContent, store: StoreApi, storeKey: string) {
-  store.addMessage(storeKey, {
+function handleContent(msg: WsAgentContent, _store: StoreApi, storeKey: string) {
+  useMessageStore.getState().addMessage(storeKey, {
     type: 'text',
     text: msg.content.text || '',
     sender: 'agent',
@@ -174,9 +174,9 @@ function handleContent(msg: WsAgentContent, store: StoreApi, storeKey: string) {
   });
 }
 
-function handleStatus(msg: WsAgentStatus, store: StoreApi, storeKey: string) {
+function handleStatus(msg: WsAgentStatus, _store: StoreApi, storeKey: string) {
   if (msg.status === 'running') {
-    store.promoteQueuedMessages(storeKey);
+    useMessageStore.getState().promoteQueuedMessages(storeKey);
   }
 }
 
@@ -314,7 +314,7 @@ function handleMessageSent(msg: WsMessageSent, store: StoreApi, agents: AgentInf
   // Surface DMs in the lead chat panel
   const preview = (msg.content ?? '').slice(0, 2000);
   if (msg.from === 'system' && msg.to === leadId) {
-    store.addMessage(leadId, { type: 'text', text: `⚙️ [System] ${preview}`, sender: 'system', timestamp: Date.now() });
+    useMessageStore.getState().addMessage(leadId, { type: 'text', text: `⚙️ [System] ${preview}`, sender: 'system', timestamp: Date.now() });
   } else if (isBroadcast) {
     // Broadcasts tracked in comms panel — don't duplicate in chat
   } else if (msg.to === leadId) {
@@ -322,7 +322,7 @@ function handleMessageSent(msg: WsMessageSent, store: StoreApi, agents: AgentInf
   } else if (msg.from === leadId) {
     const recipientRole = msg.toRole || toAgent?.role?.name || 'Agent';
     const recipientId = shortAgentId(msg.to ?? '');
-    store.addMessage(leadId, { type: 'text', text: `📤 [To ${recipientRole} ${recipientId}] ${preview}`, sender: 'system', timestamp: Date.now() });
+    useMessageStore.getState().addMessage(leadId, { type: 'text', text: `📤 [To ${recipientRole} ${recipientId}] ${preview}`, sender: 'system', timestamp: Date.now() });
   }
   // Inter-agent DMs tracked in comms panel — don't duplicate in chat
 }
@@ -385,7 +385,7 @@ function handleContextCompacted(msg: WsContextCompacted, store: StoreApi, agents
   }
   if (targetLeadId) {
     const pct = msg.percentDrop != null ? `${msg.percentDrop}%` : '?%';
-    store.addMessage(targetLeadId, {
+    useMessageStore.getState().addMessage(targetLeadId, {
       type: 'text',
       text: `🔄 Context compacted for agent ${shortAgentId(compactedId)}: ${pct} reduction`,
       sender: 'system',
@@ -405,37 +405,26 @@ export function useLeadWebSocket(agents: AgentInfo[], historicalProjectId: strin
     const handler = (event: Event) => {
       const msg: WsMsg = JSON.parse((event as MessageEvent).data);
       const store = useLeadStore.getState();
-      const selectedLeadId = store.selectedLeadId;
-
-      // Resolve project:xxx keys to the actual agent UUID for message matching.
-      // selectedLeadId may temporarily be "project:<id>" during session resume
-      // (before ProjectLayout resolves the real lead agent). Messages arrive with
-      // the real agent UUID, so we need to resolve to match them.
-      let effectiveLeadId = selectedLeadId;
-      if (selectedLeadId?.startsWith('project:') && agents.length > 0) {
-        const projectId = selectedLeadId.slice(8);
-        const lead = agents.find((a) => a.projectId === projectId && a.role?.id === 'lead' && a.status !== 'terminated');
-        if (lead) effectiveLeadId = lead.id;
-      }
+      const leadId = store.selectedLeadId;
 
       switch (msg.type) {
         case 'lead:decision':
           handleDecision(msg, store);
           break;
         case 'agent:text':
-          if (msg.agentId === effectiveLeadId) handleText(msg, store, selectedLeadId!);
+          if (msg.agentId === leadId) handleText(msg, store, leadId!);
           break;
         case 'agent:thinking':
-          if (msg.agentId === effectiveLeadId) handleThinking(msg, store, selectedLeadId!);
+          if (msg.agentId === leadId) handleThinking(msg, store, leadId!);
           break;
         case 'agent:content':
-          if (msg.agentId === effectiveLeadId) handleContent(msg, store, selectedLeadId!);
+          if (msg.agentId === leadId) handleContent(msg, store, leadId!);
           break;
         case 'agent:status':
-          if (msg.agentId === effectiveLeadId) handleStatus(msg, store, selectedLeadId!);
+          if (msg.agentId === leadId) handleStatus(msg, store, leadId!);
           break;
         case 'agent:tool_call':
-          if (effectiveLeadId) handleToolCall(msg, store, agents, effectiveLeadId);
+          if (leadId) handleToolCall(msg, store, agents, leadId);
           break;
         case 'agent:delegated':
           handleDelegation(msg, store, agents);
@@ -447,16 +436,16 @@ export function useLeadWebSocket(agents: AgentInfo[], historicalProjectId: strin
           handleProgress(msg, store);
           break;
         case 'agent:message_sent':
-          if (effectiveLeadId) handleMessageSent(msg, store, agents, effectiveLeadId);
+          if (leadId) handleMessageSent(msg, store, agents, leadId);
           break;
         case 'group:created':
-          if ((msg.leadId === selectedLeadId || msg.leadId === effectiveLeadId) && effectiveLeadId) handleGroupCreated(store, selectedLeadId!);
+          if (msg.leadId === leadId && leadId) handleGroupCreated(store, leadId);
           break;
         case 'group:message':
-          if ((msg.leadId === selectedLeadId || msg.leadId === effectiveLeadId) && effectiveLeadId) handleGroupMessage(msg, store, selectedLeadId!);
+          if (msg.leadId === leadId && leadId) handleGroupMessage(msg, store, leadId);
           break;
         case 'dag:updated':
-          if ((msg.leadId === selectedLeadId || msg.leadId === effectiveLeadId) && effectiveLeadId) handleDagUpdated(store, selectedLeadId!, historicalProjectId);
+          if (msg.leadId === leadId && leadId) handleDagUpdated(store, leadId, historicalProjectId);
           break;
         case 'agent:context_compacted':
           handleContextCompacted(msg, store, agents);

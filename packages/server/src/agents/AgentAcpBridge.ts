@@ -5,6 +5,7 @@
 import { mkdirSync, existsSync, writeFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { createAdapterForProvider, buildStartOptions } from '../adapters/AdapterFactory.js';
+import { asSessionId } from '../types/brandedIds.js';
 import { createRoleFileWriter, listRoleFileWriterProviders } from '../adapters/RoleFileWriter.js';
 import type { RoleDefinition } from '../adapters/RoleFileWriter.js';
 import type { AgentAdapter, ToolCallInfo, PlanEntry } from '../adapters/types.js';
@@ -119,8 +120,12 @@ export async function startAcp(agent: Agent, config: ServerConfig, initialPrompt
   agent._setAcpConnection(conn);
   agent.provider = effectiveProvider;
   agent.backend = backend;
-  agent.status = 'running';
-  agent._notifyStatusChange(agent.status);
+  // Only transition to running for fresh agents — resuming agents stay in 'resuming'
+  // phase until the resume window completes (phaseToStatus maps resuming → 'running' for API)
+  if (!agent.isResuming) {
+    agent.transitionTo('running');
+    agent._notifyStatusChange(agent.status);
+  }
   wireAcpEvents(agent, conn);
 
   const { options: startOpts, modelResolution } = buildStartOptions(adapterConfig, {
@@ -161,11 +166,11 @@ export async function startAcp(agent: Agent, config: ServerConfig, initialPrompt
   await writeRoleFilesForProvider(effectiveProvider, agent, agentCwd);
 
   conn.start(startOpts).then(async (sessionId) => {
-    agent.sessionId = sessionId;
+    agent.sessionId = asSessionId(sessionId);
     agent._notifySessionReady(sessionId);
     if (initialPrompt) {
       // Fresh agent — clear resume flag (it's false anyway) and start prompting.
-      agent._isResuming = false;
+      agent._finishResuming();
       return conn.prompt(initialPrompt);
     }
     // Resumed agents have no initial prompt — they're waiting for input.
@@ -174,11 +179,12 @@ export async function startAcp(agent: Agent, config: ServerConfig, initialPrompt
     if (conn.isPrompting) {
       try { await conn.cancel(); } catch (e) { logger.warn({ module: 'agent-bridge', msg: 'Resume cancel failed (best-effort)', err: (e as Error).message }); }
     }
-    agent.status = 'idle';
+    agent.transitionTo('idle');
     agent._notifyStatusChange(agent.status);
     // Clear AFTER session-ready and idle notifications have fired synchronously,
-    // so all resume-suppression guards see _isResuming === true.
-    agent._isResuming = false;
+    // so all resume-suppression guards see isResuming === true.
+    // Note: _finishResuming() is a no-op now since we already transitioned to 'idle'.
+    agent._finishResuming();
   }).catch((err) => {
     const errorMsg = err?.message || String(err);
     logger.error({ module: 'agent-bridge', msg: 'Adapter start failed', err: errorMsg, backend, cliCommand: config.cliCommand, cwd: agent.cwd || process.cwd(), role: agent.role?.id });
@@ -189,7 +195,10 @@ export async function startAcp(agent: Agent, config: ServerConfig, initialPrompt
     // Store error for exit event (text pipeline is buffered, races with immediate exit)
     agent.exitError = errorMsg;
 
-    agent.status = 'failed';
+    // Clear resume flag so notification guards don't stay permanently suppressed
+    agent._finishResuming();
+
+    agent.transitionTo('error');
     agent._notifyExit(1);
   });
 }
@@ -200,7 +209,7 @@ export function wireAcpEvents(agent: Agent, conn: AgentAdapter): void {
     runWithAgentContext(agent.id, agent.role.name, agent.projectId, fn);
 
   conn.on('text', (text: string) => withCtx(() => {
-    if (agent._isTerminated || agent._isResuming) return;
+    if (agent._isTerminated || agent.isResuming) return;
     agent.messages.push(text);
     if (agent.messages.length > agent._maxMessages) {
       agent.messages = agent.messages.slice(-agent._maxMessages);
@@ -211,17 +220,17 @@ export function wireAcpEvents(agent: Agent, conn: AgentAdapter): void {
   }));
 
   conn.on('content', (content: any) => withCtx(() => {
-    if (agent._isResuming) return;
+    if (agent.isResuming) return;
     agent._notifyContent(content);
   }));
 
   conn.on('thinking', (text: string) => withCtx(() => {
-    if (agent._isResuming) return;
+    if (agent.isResuming) return;
     agent._notifyThinking(text);
   }));
 
   conn.on('tool_call', (info: ToolCallInfo) => withCtx(() => {
-    if (agent._isTerminated || agent._isResuming) return;
+    if (agent._isTerminated || agent.isResuming) return;
     const idx = agent.toolCalls.findIndex((t) => t.toolCallId === info.toolCallId);
     if (idx >= 0) {
       agent.toolCalls[idx] = info;
@@ -235,7 +244,7 @@ export function wireAcpEvents(agent: Agent, conn: AgentAdapter): void {
   }));
 
   conn.on('tool_call_update', (update: Partial<ToolCallInfo> & { toolCallId: string }) => withCtx(() => {
-    if (agent._isResuming) return;
+    if (agent.isResuming) return;
     const idx = agent.toolCalls.findIndex((t) => t.toolCallId === update.toolCallId);
     if (idx >= 0) {
       agent.toolCalls[idx] = { ...agent.toolCalls[idx], ...update };
@@ -244,15 +253,18 @@ export function wireAcpEvents(agent: Agent, conn: AgentAdapter): void {
   }));
 
   conn.on('plan', (entries: PlanEntry[]) => withCtx(() => {
+    // Not suppressed during resume — plan state should always be captured
     agent.plan = entries;
     agent._notifyPlan(entries);
   }));
 
   conn.on('session_resume_failed', (info: { requestedSessionId: string; error: string }) => withCtx(() => {
+    agent._finishResuming();
     agent._notifySessionResumeFailed(info);
   }));
 
   conn.on('usage', (usage: { inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number; costUsd?: number; durationMs?: number; model?: string }) => withCtx(() => {
+    // Not suppressed during resume — usage/cost data should always be recorded
     agent.inputTokens = usage.inputTokens;
     agent.outputTokens = usage.outputTokens;
     agent.hasRealUsageData = true;
@@ -283,8 +295,13 @@ export function wireAcpEvents(agent: Agent, conn: AgentAdapter): void {
   }));
 
   conn.on('exit', (code: number) => withCtx(() => {
+    // Not suppressed during resume — exit events must always propagate for cleanup
     if (!agent._isTerminated) {
-      agent.status = code === 0 ? 'completed' : 'failed';
+      if (code === 0) {
+        agent.transitionTo('stopped', { exitCode: 0 });
+      } else {
+        agent.transitionTo('error');
+      }
     }
     agent._notifyExit(code);
   }));
@@ -298,12 +315,12 @@ export function wireAcpEvents(agent: Agent, conn: AgentAdapter): void {
       agent.queueMessage(notes);
     }
 
-    if (agent.status === 'running' && !conn.isPrompting) {
+    if ((agent.phase === 'running' || agent.phase === 'thinking') && !conn.isPrompting) {
       if (!agent.systemPaused && agent.pendingMessageCount > 0) {
         agent._drainOneMessage();
         return;
       }
-      agent.status = 'idle';
+      agent.transitionTo('idle');
       agent._notifyStatusChange(agent.status);
     }
   }));
@@ -313,12 +330,14 @@ export function wireAcpEvents(agent: Agent, conn: AgentAdapter): void {
     if (active) {
       // If the provider resumes an in-flight prompt from the previous session,
       // cancel it immediately — resumed agents must start idle.
-      if (agent._isResuming) {
+      if (agent.isResuming) {
         conn.cancel().catch(() => { /* best-effort */ });
         return;
       }
-      if (agent.status !== 'running') {
-        agent.status = 'running';
+      // Transition to 'thinking' — the LLM is actively generating
+      if (agent.phase !== 'thinking') {
+        agent.transitionTo('thinking');
+        // Notify as 'running' for backward compatibility (thinking maps to running)
         agent._notifyStatusChange(agent.status);
       }
     }

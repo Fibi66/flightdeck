@@ -73,16 +73,31 @@ import type { ServerConfig } from '../config.js';
 // ── Helpers ───────────────────────────────────────────────────────
 
 function createFakeAgent(overrides: Record<string, any> = {}) {
-  return {
+  const fake = {
     id: 'agent-12345678-abcd',
     role: { id: 'lead', name: 'Project Lead', description: 'Leads the project', model: undefined, systemPrompt: 'You are a lead.' },
     autopilot: true,
     model: undefined,
     resumeSessionId: undefined,
     cwd: '/test/project',
-    status: 'idle',
+    _phase: 'idle' as string,
+    get phase() { return this._phase; },
+    get status() {
+      switch (this._phase) {
+        case 'starting': return 'creating';
+        case 'running': case 'thinking': case 'resuming': return 'running';
+        case 'idle': return 'idle';
+        case 'stopping': case 'stopped': return 'terminated';
+        case 'error': return 'failed';
+        default: return 'idle';
+      }
+    },
+    transitionTo(phase: string) { this._phase = phase; },
     sessionId: undefined,
-    _isResuming: false,
+    get isResuming() { return this._phase === 'resuming'; },
+    _setResuming() { this._phase = 'resuming'; },
+    _finishResuming() { if (this._phase === 'resuming') this._phase = 'idle'; },
+    get _isTerminated() { return this._phase === 'stopped' || this._phase === 'error'; },
     _setAcpConnection: vi.fn(),
     _notifyExit: vi.fn(),
     _notifySessionReady: vi.fn(),
@@ -91,6 +106,7 @@ function createFakeAgent(overrides: Record<string, any> = {}) {
     buildFullPrompt: vi.fn(() => 'You are a lead.\n\n[context]\n\nYour task: do the thing'),
     ...overrides,
   } as any;
+  return fake;
 }
 
 const fakeConfig: ServerConfig = {
@@ -294,7 +310,7 @@ describe('AgentAcpBridge — startAcp', () => {
   it('sets agent idle on successful resume (no initialPrompt)', async () => {
     const agent = createFakeAgent({
       resumeSessionId: 'valid-session-id',
-      _isResuming: true,
+      _resuming: true,
     });
     mockStart.mockResolvedValue('valid-session-id');
 
@@ -309,6 +325,6 @@ describe('AgentAcpBridge — startAcp', () => {
 
     // Should be idle
     expect(agent.status).toBe('idle');
-    expect(agent._isResuming).toBe(false);
+    expect(agent.isResuming).toBe(false);
   });
 });

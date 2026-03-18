@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useLeadStore } from '../../stores/leadStore';
+import { useMessageStore } from '../../stores/messageStore';
 import { apiFetch } from '../../hooks/useApi';
 import type { AcpTextChunk } from '../../types';
 
@@ -32,7 +33,6 @@ export function useLeadMessages(
   ws: { subscribe: (id: string) => void; unsubscribe: (id: string) => void },
   chatInitialScroll: React.MutableRefObject<boolean>,
 ) {
-  const projects = useLeadStore((s) => s.projects);
 
   // On mount, load existing leads from server (skip in read-only mode — data pre-loaded)
   useQuery({
@@ -53,10 +53,7 @@ export function useLeadMessages(
                 sender: m.sender as 'agent' | 'user' | 'system' | 'thinking',
                 timestamp: new Date(m.timestamp).getTime(),
               }));
-              const current = useLeadStore.getState().projects[l.id];
-              if (!current || current.messages.length === 0) {
-                useLeadStore.getState().setMessages(l.id, msgs);
-              }
+              useMessageStore.getState().mergeHistory(l.id, msgs);
             }
           })
           .catch(() => { /* non-critical — will load via WS */ });
@@ -83,14 +80,12 @@ export function useLeadMessages(
     };
   }, [selectedLeadId, ws, readOnly, chatInitialScroll]);
 
-  // Load message history for selected lead (if store is empty)
-  const selectedProj = selectedLeadId ? projects[selectedLeadId] : null;
-  const needsHistory = !!selectedLeadId && (!selectedProj || selectedProj.messages.length === 0);
-  const isHistorical = selectedLeadId?.startsWith('project:') ?? false;
+  // Load message history for selected lead.
+  // Always fetch once (staleTime prevents re-fetches) — even if WS messages
+  // arrived first, we need the full history from the DB to show older messages.
+  const needsHistory = !!selectedLeadId;
   const msgApiPath = selectedLeadId
-    ? isHistorical
-      ? `/projects/${selectedLeadId.slice(8)}/messages?limit=200`
-      : `/agents/${selectedLeadId}/messages?limit=200&includeSystem=true`
+    ? `/agents/${selectedLeadId}/messages?limit=200&includeSystem=true`
     : '';
 
   useQuery({
@@ -105,10 +100,7 @@ export function useLeadMessages(
           ...(m.fromRole ? { fromRole: m.fromRole } : {}),
           timestamp: new Date(m.timestamp).getTime(),
         }));
-        const current = useLeadStore.getState().projects[selectedLeadId!];
-        if (!current || current.messages.length === 0) {
-          useLeadStore.getState().setMessages(selectedLeadId!, msgs);
-        }
+        useMessageStore.getState().mergeHistory(selectedLeadId!, msgs);
       }
       return data;
     },
