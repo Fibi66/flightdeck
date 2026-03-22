@@ -1,11 +1,21 @@
 // Domain types — barrel export
 export {
-  PROVIDER_REGISTRY, PROVIDER_IDS,
-  getProvider, getAllProviders, isValidProviderId,
+  type Branded,
+  AgentId, ProjectId, SessionId, TaskId, MessageId, DelegationId, DecisionId,
+  asAgentId, asProjectId, asSessionId, asTaskId, asMessageId, asDelegationId, asDecisionId,
+  isValidId,
+} from './entityIds.js';
+export {
+  PROVIDER_REGISTRY, PROVIDER_IDS, ACP_CAPABILITIES,
+  getProvider, getAllProviders, isValidProviderId, getAcpCapabilities,
   type ProviderId, type ProviderDefinition, type ProviderColors,
-  type ProviderLink, type ProviderTierModels,
+  type ProviderLink, type ProviderTierModels, type AcpProviderCapabilities,
 } from './provider.js';
-export { AgentStatusSchema, type AgentStatus } from './agent.js';
+export {
+  AgentStatusSchema, type AgentStatus,
+  AgentPhaseSchema, type AgentPhase,
+  isTerminalPhase, PHASE_TRANSITIONS, phaseToStatus,
+} from './agent.js';
 export { RoleSchema, type Role } from './role.js';
 export {
   DagTaskStatusSchema, DagTaskSchema,

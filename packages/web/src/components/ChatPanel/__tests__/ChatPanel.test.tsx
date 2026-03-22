@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { ChatPanel } from '../ChatPanel';
 import { useAppStore } from '../../../stores/appStore';
+import { useMessageStore } from '../../../stores/messageStore';
 
 // Mock apiFetch
 const mockApiFetch = vi.fn().mockResolvedValue({ ok: true });
@@ -18,16 +19,6 @@ vi.mock('../AcpOutput', () => ({
 
 const AGENT_ID = 'aaaa1111-2222-3333-4444-555566667777';
 
-function makeWs() {
-  return {
-    subscribe: vi.fn(),
-    unsubscribe: vi.fn(),
-    sendInput: vi.fn(),
-    resizeAgent: vi.fn(),
-    send: vi.fn(),
-  };
-}
-
 function seedAgent(status = 'idle') {
   useAppStore.getState().setAgents([
     {
@@ -42,18 +33,19 @@ function seedAgent(status = 'idle') {
       contextWindowUsed: 0,
     } as any,
   ]);
+  useMessageStore.getState().ensureChannel(AGENT_ID);
 }
 
 describe('ChatPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useAppStore.getState().setAgents([]);
+    useMessageStore.getState().reset();
   });
 
   it('sends message via REST API (not WebSocket)', () => {
     seedAgent();
-    const ws = makeWs();
-    render(<ChatPanel agentId={AGENT_ID} ws={ws} />);
+    render(<ChatPanel agentId={AGENT_ID} />);
 
     const textarea = screen.getByPlaceholderText(/Type a message/);
     fireEvent.change(textarea, { target: { value: 'hello agent' } });
@@ -67,15 +59,11 @@ describe('ChatPanel', () => {
         body: JSON.stringify({ text: 'hello agent', mode: 'queue' }),
       }),
     );
-
-    // Should NOT use WebSocket sendInput
-    expect(ws.sendInput).not.toHaveBeenCalled();
   });
 
   it('uses interrupt mode on Ctrl+Enter with text', () => {
     seedAgent('running');
-    const ws = makeWs();
-    render(<ChatPanel agentId={AGENT_ID} ws={ws} />);
+    render(<ChatPanel agentId={AGENT_ID} />);
 
     const textarea = screen.getByPlaceholderText(/Type a message/);
     fireEvent.change(textarea, { target: { value: 'urgent fix' } });
@@ -92,8 +80,7 @@ describe('ChatPanel', () => {
 
   it('calls interruptAgent on Ctrl+Enter with no text', () => {
     seedAgent('running');
-    const ws = makeWs();
-    render(<ChatPanel agentId={AGENT_ID} ws={ws} />);
+    render(<ChatPanel agentId={AGENT_ID} />);
 
     const textarea = screen.getByPlaceholderText(/Type a message/);
     fireEvent.keyDown(textarea, { key: 'Enter', ctrlKey: true });
@@ -107,29 +94,27 @@ describe('ChatPanel', () => {
 
   it('marks message as queued when agent is busy and mode is queue', () => {
     seedAgent('running');
-    const ws = makeWs();
-    render(<ChatPanel agentId={AGENT_ID} ws={ws} />);
+    render(<ChatPanel agentId={AGENT_ID} />);
 
     const textarea = screen.getByPlaceholderText(/Type a message/);
     fireEvent.change(textarea, { target: { value: 'test' } });
     fireEvent.keyDown(textarea, { key: 'Enter' });
 
-    const agent = useAppStore.getState().agents.find((a) => a.id === AGENT_ID);
-    const lastMsg = agent?.messages?.[agent.messages.length - 1];
+    const msgs = useMessageStore.getState().channels[AGENT_ID]?.messages ?? [];
+    const lastMsg = msgs[msgs.length - 1];
     expect(lastMsg?.queued).toBe(true);
   });
 
   it('does NOT mark message as queued when agent is busy and mode is interrupt', () => {
     seedAgent('running');
-    const ws = makeWs();
-    render(<ChatPanel agentId={AGENT_ID} ws={ws} />);
+    render(<ChatPanel agentId={AGENT_ID} />);
 
     const textarea = screen.getByPlaceholderText(/Type a message/);
     fireEvent.change(textarea, { target: { value: 'urgent' } });
     fireEvent.keyDown(textarea, { key: 'Enter', ctrlKey: true });
 
-    const agent = useAppStore.getState().agents.find((a) => a.id === AGENT_ID);
-    const lastMsg = agent?.messages?.[agent.messages.length - 1];
+    const msgs = useMessageStore.getState().channels[AGENT_ID]?.messages ?? [];
+    const lastMsg = msgs[msgs.length - 1];
     expect(lastMsg?.queued).toBeFalsy();
   });
 
@@ -148,15 +133,15 @@ describe('ChatPanel', () => {
         contextWindowUsed: 0,
       } as any,
     ]);
-    const ws = makeWs();
-    render(<ChatPanel agentId={AGENT_ID} ws={ws} />);
+    useMessageStore.getState().ensureChannel(AGENT_ID);
+    useMessageStore.getState().setMessages(AGENT_ID, [{ type: 'text', text: 'previous response', sender: 'agent', timestamp: 1000 }] as any);
+    render(<ChatPanel agentId={AGENT_ID} />);
 
     const textarea = screen.getByPlaceholderText(/Type a message/);
     fireEvent.change(textarea, { target: { value: 'urgent fix' } });
     fireEvent.keyDown(textarea, { key: 'Enter', ctrlKey: true });
 
-    const agent = useAppStore.getState().agents.find((a) => a.id === AGENT_ID);
-    const msgs = agent?.messages ?? [];
+    const msgs = useMessageStore.getState().channels[AGENT_ID]?.messages ?? [];
     // Should have: [agent msg, separator, user msg]
     expect(msgs).toHaveLength(3);
     expect(msgs[0].sender).toBe('agent');
@@ -181,15 +166,15 @@ describe('ChatPanel', () => {
         contextWindowUsed: 0,
       } as any,
     ]);
-    const ws = makeWs();
-    render(<ChatPanel agentId={AGENT_ID} ws={ws} />);
+    useMessageStore.getState().ensureChannel(AGENT_ID);
+    useMessageStore.getState().setMessages(AGENT_ID, [{ type: 'text', text: 'user question', sender: 'user', timestamp: 1000 }] as any);
+    render(<ChatPanel agentId={AGENT_ID} />);
 
     const textarea = screen.getByPlaceholderText(/Type a message/);
     fireEvent.change(textarea, { target: { value: 'interrupt' } });
     fireEvent.keyDown(textarea, { key: 'Enter', ctrlKey: true });
 
-    const agent = useAppStore.getState().agents.find((a) => a.id === AGENT_ID);
-    const msgs = agent?.messages ?? [];
+    const msgs = useMessageStore.getState().channels[AGENT_ID]?.messages ?? [];
     // Should have: [user msg, user msg] — no separator needed
     expect(msgs).toHaveLength(2);
     expect(msgs[0].sender).toBe('user');
@@ -223,8 +208,7 @@ describe('ChatPanel', () => {
       } as any,
     ]);
 
-    const ws = makeWs();
-    render(<ChatPanel agentId={AGENT_ID} ws={ws} />);
+    render(<ChatPanel agentId={AGENT_ID} />);
 
     const textarea = screen.getByPlaceholderText(/Type a message/);
     fireEvent.change(textarea, { target: { value: 'hey @bbbb2222 check this' } });
@@ -240,6 +224,5 @@ describe('ChatPanel', () => {
       `/agents/${OTHER_ID}/message`,
       expect.anything(),
     );
-    expect(ws.sendInput).not.toHaveBeenCalled();
   });
 });

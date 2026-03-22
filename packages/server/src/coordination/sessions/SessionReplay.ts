@@ -5,21 +5,21 @@ import type { FileLockRegistry, FileLock } from '../files/FileLockRegistry.js';
 
 // ── Types ─────────────────────────────────────────────────────────
 
-export interface ReplayAgent {
+interface ReplayAgent {
   id: string;
   role: string;
   status: 'running' | 'completed' | 'failed' | 'terminated' | 'unknown';
   spawnedAt: string;
 }
 
-export interface Keyframe {
+interface Keyframe {
   timestamp: string;
   label: string;
   type: 'spawn' | 'agent_exit' | 'delegation' | 'task' | 'milestone' | 'decision' | 'progress' | 'error' | 'commit';
   agentId?: string;
 }
 
-export interface WorldState {
+interface WorldState {
   timestamp: string;
   agents: ReplayAgent[];
   dagTasks: DagTask[];
@@ -59,7 +59,7 @@ const KEYFRAME_TYPES: Record<string, Keyframe['type']> = {
 // ── Minimal interface for crew resolution ─────────────────────────
 // Only the subset of AgentManager that SessionReplay needs.
 
-export interface ReplayAgentSource {
+interface ReplayAgentSource {
   getAll(): Array<{ id: string; parentId?: string; projectId?: string }>;
 }
 
@@ -111,7 +111,7 @@ export class SessionReplay {
     if (this.agentSource) {
       const crewIds = new Set<string>([leadId]);
       for (const agent of this.agentSource.getAll()) {
-        if (agent.parentId === leadId || agent.id === leadId) {
+        if (agent.parentId === leadId || agent.id === leadId || agent.projectId === leadId) {
           crewIds.add(agent.id);
         }
       }
@@ -145,7 +145,7 @@ export class SessionReplay {
         for (const ev of allActivities) {
           if (ev.actionType === 'delegated' && discoveredIds.has(ev.agentId)) {
             const childId = (ev.details as Record<string, unknown>)?.childId ??
-              (ev.details as Record<string, unknown>)?.spawnedAgentId;
+              (ev.details as Record<string, unknown>)?.toAgentId;
             if (typeof childId === 'string') discoveredIds.add(childId);
           }
         }
@@ -194,7 +194,7 @@ export class SessionReplay {
         // "Created & delegated to X" means a new agent was spawned AND given a task.
         // Emit both a spawn and a delegation keyframe so the frontend counts agents.
         if (type === 'delegation' && entry.summary.startsWith('Created &')) {
-          const spawnedId = details.spawnedAgentId ?? details.agentId ?? entry.agentId;
+          const spawnedId = details.childId ?? details.toAgentId ?? details.agentId ?? entry.agentId;
           keyframes.push({
             timestamp: entry.timestamp,
             label: entry.summary.replace('Created & delegated to', 'Spawned'),
@@ -231,8 +231,8 @@ export class SessionReplay {
       // "Created & delegated to X" means a new agent was spawned
       if (entry.actionType === 'delegated' && entry.summary.startsWith('Created &')) {
         const details = entry.details as Record<string, string>;
-        const agentId = details.spawnedAgentId ?? details.agentId ?? entry.agentId;
-        const role = details.role ?? entry.agentRole;
+        const agentId = details.childId ?? details.toAgentId ?? details.agentId ?? entry.agentId;
+        const role = details.childRole ?? details.toRole ?? details.role ?? entry.agentRole;
         agentMap.set(agentId, {
           id: agentId,
           role,
@@ -242,7 +242,7 @@ export class SessionReplay {
       }
       // Legacy: support sub_agent_spawned if it exists
       if (entry.actionType === 'sub_agent_spawned') {
-        const agentId = (entry.details as Record<string, string>).spawnedAgentId ?? entry.agentId;
+        const agentId = (entry.details as Record<string, string>).childId ?? (entry.details as Record<string, string>).toAgentId ?? entry.agentId;
         const role = (entry.details as Record<string, string>).role ?? entry.agentRole;
         agentMap.set(agentId, {
           id: agentId,

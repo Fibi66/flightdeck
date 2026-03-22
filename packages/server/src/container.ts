@@ -49,7 +49,7 @@ import { RetryManager } from './agents/RetryManager.js';
 import { CrashForensics } from './agents/CrashForensics.js';
 import { NotificationManager } from './coordination/alerts/NotificationManager.js';
 import { ModelSelector } from './agents/ModelSelector.js';
-import { TokenBudgetOptimizer } from './agents/TokenBudgetOptimizer.js';
+
 import { ReportGenerator } from './coordination/reporting/ReportGenerator.js';
 import { ProjectTemplateRegistry } from './coordination/playbooks/ProjectTemplates.js';
 import { KnowledgeTransfer } from './coordination/knowledge/KnowledgeTransfer.js';
@@ -213,7 +213,7 @@ export async function createContainer(opts: ContainerConfig): Promise<ServiceCon
   const crashForensics = new CrashForensics();
   const notificationManager = new NotificationManager();
   const modelSelector = new ModelSelector();
-  const tokenBudgetOptimizer = new TokenBudgetOptimizer();
+
   const reportGenerator = new ReportGenerator();
   const projectTemplateRegistry = new ProjectTemplateRegistry();
   const knowledgeTransfer = new KnowledgeTransfer();
@@ -229,7 +229,7 @@ export async function createContainer(opts: ContainerConfig): Promise<ServiceCon
   const fileDependencyGraph = new FileDependencyGraph(repoRoot);
   const worktreeManager = new WorktreeManager(repoRoot, lockRegistry);
   worktreeManager.cleanupOrphans().catch(err => {
-    console.warn(`[container] Orphan cleanup failed: ${err.message}`);
+    logger.warn({ module: 'container', msg: 'Orphan cleanup failed', error: err.message });
   });
 
   const escalationManager = new EscalationManager(decisionLog, taskDAG);
@@ -394,7 +394,7 @@ export async function createContainer(opts: ContainerConfig): Promise<ServiceCon
     notificationManager,
     escalationManager,
     modelSelector,
-    tokenBudgetOptimizer,
+
     reportGenerator,
     projectTemplateRegistry,
     knowledgeTransfer,
@@ -417,7 +417,7 @@ export async function createContainer(opts: ContainerConfig): Promise<ServiceCon
     async shutdown() {
       for (const { name, fn } of [...stopList].reverse()) {
         try { await Promise.resolve(fn()); } catch (err) {
-          console.warn(`[container] ${name} shutdown failed:`, err);
+          logger.warn({ module: 'container', msg: `${name} shutdown failed`, error: String(err) });
         }
       }
     },
@@ -524,7 +524,7 @@ function wireEvents(c: ServiceContainer): void {
 
   // Eager scheduler → Lead notification
   eagerScheduler!.on('task:ready', ({ taskId }: { taskId: string }) => {
-    const lead = agentManager.getAll().find(a => a.role?.id === 'lead' && a.status === 'running' && !a._isResuming);
+    const lead = agentManager.getAll().find(a => a.role?.id === 'lead' && a.status === 'running' && !a.isResuming);
     if (lead) {
       lead.sendMessage(`[System] ⚡ Eager Scheduler: task now ready: ${taskId.slice(0, 8)}`);
     }

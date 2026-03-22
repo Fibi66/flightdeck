@@ -35,7 +35,9 @@ app.use(cors({
   },
   credentials: true,
 }));
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: false,  // Vite-bundled frontend uses patterns blocked by default CSP
+}));
 app.use(originValidation);
 app.use(express.json({ limit: '10mb' }));
 app.use(requestContextMiddleware);
@@ -96,7 +98,7 @@ async function listenWithRetry(basePort: number, host: string, maxAttempts = MAX
       return port;
     } catch (err: any) {
       if (err.code !== 'EADDRINUSE') throw err;
-      console.warn(`⚠️  Port ${port} in use, trying ${port + 1}...`);
+      logger.warn({ msg: `Port ${port} in use, trying ${port + 1}` });
     }
   }
   throw new Error(`No available port found in range ${basePort}–${basePort + maxAttempts - 1}`);
@@ -120,7 +122,7 @@ listenWithRetry(config.port, config.host).then((actualPort) => {
     console.log(`⚠️  Auth disabled (AUTH=none)`);
   }
   if (config.host === '0.0.0.0') {
-    console.warn('⚠️  WARNING: Server is binding to all interfaces (0.0.0.0). Set HOST=127.0.0.1 for local-only access.');
+    logger.warn({ msg: 'Server is binding to all interfaces (0.0.0.0). Set HOST=127.0.0.1 for local-only access.' });
   }
   container.internal.contextRefresher.start();
   container.escalationManager!.start();
@@ -170,7 +172,7 @@ async function gracefulShutdown(signal: string) {
     await container.shutdown();
     console.log('[shutdown] All agents terminated, services stopped.');
   } catch (err) {
-    console.warn('[shutdown] Container shutdown error:', err);
+    logger.warn({ msg: 'Container shutdown error', error: String(err) });
   }
   httpServer.close(() => {
     console.log('[shutdown] Server closed. Exiting.');
@@ -179,7 +181,7 @@ async function gracefulShutdown(signal: string) {
   // Force exit after 15s — enough for in-flight agent messages to drain
   // but prevents zombie process if httpServer.close() callback never fires
   setTimeout(() => {
-    console.warn('[shutdown] Timed out after 15s, forcing exit.');
+    logger.warn({ msg: 'Shutdown timed out after 15s, forcing exit' });
     process.exit(1);
   }, 15000).unref();
 }

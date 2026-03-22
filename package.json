@@ -1,6 +1,6 @@
 {
   "name": "@flightdeck-ai/flightdeck",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "Flightdeck - AI crew management platform",
   "license": "MIT",
   "repository": {
@@ -43,7 +43,7 @@
     "start": "node bin/flightdeck.mjs",
     "prepublishOnly": "npm run build",
     "predev": "npm run build:shared",
-    "build:shared": "cd packages/shared && rm -f tsconfig.tsbuildinfo && npm run build",
+    "build:shared": "cd packages/shared && node -e \"try{require('fs').unlinkSync('tsconfig.tsbuildinfo')}catch{}\" && npm run build",
     "dev": "node scripts/dev.mjs",
     "predev:server": "npm run build:shared",
     "dev:server": "npm run dev --workspace=packages/server",
@@ -53,17 +53,24 @@
     "test:e2e": "npm run test:e2e --workspace=packages/web",
     "test": "npm run test --workspace=packages/server",
     "docs:dev": "npm run dev --workspace=packages/docs",
-    "docs:build": "npm run build --workspace=packages/docs"
+    "docs:build": "npm run build --workspace=packages/docs",
+    "docs:generate-api": "node scripts/generate-api-docs.mjs",
+    "docs:generate-db": "node scripts/generate-db-docs.mjs",
+    "docs:generate": "node scripts/generate-api-docs.mjs && node scripts/generate-db-docs.mjs",
+    "check:file-size": "bash scripts/check-file-size.sh",
+    "check:boundaries": "bash scripts/check-import-boundaries.sh",
+    "check:circular": "bash scripts/check-circular-deps.sh",
+    "check:guardrails": "bash scripts/check-file-size.sh && bash scripts/check-import-boundaries.sh && bash scripts/check-circular-deps.sh"
   },
   "dependencies": {
-    "@agentclientprotocol/sdk": "^0.14.1",
+    "@agentclientprotocol/sdk": "^0.16.1",
     "better-sqlite3": "^12.6.2",
     "cors": "^2.8.6",
     "drizzle-orm": "^0.45.1",
     "express": "^5.2.1",
     "grammy": "^1.41.1",
     "helmet": "^8.1.0",
-    "pino": "^9.14.0",
+    "pino": "^10.3.1",
     "uuid": "^13.0.0",
     "ws": "^8.19.0",
     "yaml": "^2.8.2",
@@ -73,6 +80,7 @@
     "@typescript-eslint/eslint-plugin": "^8.56.1",
     "@typescript-eslint/parser": "^8.56.1",
     "eslint": "^10.0.2",
+    "madge": "^8.0.0",
     "prettier": "^3.8.1",
     "typescript": "^5.9.3"
   },

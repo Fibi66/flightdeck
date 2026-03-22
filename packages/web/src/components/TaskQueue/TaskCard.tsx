@@ -116,8 +116,8 @@ export function TaskCard({ task, allTasks, isDragOverlay, projectId, onTaskUpdat
           break;
       }
       onTaskUpdated?.();
-    } catch (err: any) {
-      console.warn(`Action ${action} failed`, err);
+    } catch (err: unknown) {
+      console.error(`Action ${action} failed`, err);
     }
   }, [projectId, task.id, onTaskUpdated]);
 
@@ -134,8 +134,8 @@ export function TaskCard({ task, allTasks, isDragOverlay, projectId, onTaskUpdat
       setCommentText('');
       setShowCommentDialog(false);
       onTaskUpdated?.(); // refresh to show toast externally if needed
-    } catch (err: any) {
-      console.warn('Failed to send comment to lead', err);
+    } catch (err: unknown) {
+      console.error('Failed to send comment to lead', err);
     } finally {
       setCommentSending(false);
     }

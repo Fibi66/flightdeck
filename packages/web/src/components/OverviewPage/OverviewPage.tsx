@@ -58,16 +58,9 @@ const SEVERITY_BG: Record<AlertSeverity, string> = {
 
 const EMPTY_DECISIONS: Decision[] = [];
 
-// ── Props ──────────────────────────────────────────────────────────
-
-interface Props {
-  api?: any;
-  ws?: any;
-}
-
 // ── Component ──────────────────────────────────────────────────────
 
-export function OverviewPage(_props: Props) {
+export function OverviewPage() {
   const agents = useAppStore((s) => s.agents);
   const { projects } = useProjects();
   const effectiveId = useProjectId();
@@ -150,12 +143,15 @@ export function OverviewPage(_props: Props) {
   }, [effectiveId]);
 
   // ── Attention alerts ──────────────────────────────────────────
+  // The leadStore is keyed by leadId (agent ID), not projectId.
+  // Try activeLeadId first, fall back to effectiveId for compatibility.
+  const activeLeadId = activeLeadAgent?.id ?? null;
   const dagStatus = useLeadStore(s => {
-    const proj = s.projects[effectiveId ?? ''];
+    const proj = s.projects[activeLeadId ?? ''] ?? s.projects[effectiveId ?? ''];
     return proj?.dagStatus ?? null;
   });
   const storeDecisions = useLeadStore(s => {
-    const proj = s.projects[effectiveId ?? ''];
+    const proj = s.projects[activeLeadId ?? ''] ?? s.projects[effectiveId ?? ''];
     return proj?.decisions ?? EMPTY_DECISIONS;
   });
 

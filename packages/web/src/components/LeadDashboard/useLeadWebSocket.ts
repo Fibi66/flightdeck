@@ -1,5 +1,7 @@
+import { apiFetch } from '../../hooks/useApi';
 import { useEffect } from 'react';
 import { useLeadStore } from '../../stores/leadStore';
+import { useMessageStore } from '../../stores/messageStore';
 import type { AgentInfo, DagStatus, DecisionStatus } from '../../types';
 import { shortAgentId } from '../../utils/agentLabel';
 
@@ -17,24 +19,6 @@ interface WsDecision {
   rationale: string;
   needsConfirmation: boolean;
   status: string;
-}
-
-interface WsAgentText {
-  type: 'agent:text';
-  agentId: string;
-  text: string | { text?: string };
-}
-
-interface WsAgentThinking {
-  type: 'agent:thinking';
-  agentId: string;
-  text: string | { text?: string };
-}
-
-interface WsAgentContent {
-  type: 'agent:content';
-  agentId: string;
-  content: { text?: string; contentType?: string; mimeType?: string; data?: string; uri?: string };
 }
 
 interface WsAgentStatus {
@@ -115,9 +99,6 @@ interface WsContextCompacted {
 
 type WsMsg =
   | WsDecision
-  | WsAgentText
-  | WsAgentThinking
-  | WsAgentContent
   | WsAgentStatus
   | WsToolCall
   | WsDelegation
@@ -127,7 +108,9 @@ type WsMsg =
   | WsGroupCreated
   | WsGroupMessage
   | WsDagUpdated
-  | WsContextCompacted;
+  | WsContextCompacted
+  // agent:text, agent:thinking, agent:content are handled by the global dispatcher
+  | { type: 'agent:text' | 'agent:thinking' | 'agent:content'; [k: string]: unknown };
 
 // ── Individual message handlers ─────────────────────────────────
 
@@ -151,31 +134,13 @@ function handleDecision(msg: WsDecision, store: StoreApi) {
   });
 }
 
-function handleText(msg: WsAgentText, store: StoreApi) {
-  const rawText = typeof msg.text === 'string' ? msg.text : msg.text?.text ?? JSON.stringify(msg.text);
-  store.appendToLastAgentMessage(msg.agentId, rawText);
-}
+// NOTE: handleText, handleThinking, handleContent were removed — they are now
+// handled exclusively by the global WS dispatcher (ws-handlers/agentTextHandlers)
+// to avoid double-writes to the messageStore channel.
 
-function handleThinking(msg: WsAgentThinking, store: StoreApi) {
-  const rawText = typeof msg.text === 'string' ? msg.text : msg.text?.text ?? JSON.stringify(msg.text);
-  store.appendToThinkingMessage(msg.agentId, rawText);
-}
-
-function handleContent(msg: WsAgentContent, store: StoreApi) {
-  store.addMessage(msg.agentId, {
-    type: 'text',
-    text: msg.content.text || '',
-    sender: 'agent',
-    contentType: msg.content.contentType as 'text' | 'image' | 'audio' | 'resource' | undefined,
-    mimeType: msg.content.mimeType,
-    data: msg.content.data,
-    uri: msg.content.uri,
-  });
-}
-
-function handleStatus(msg: WsAgentStatus, store: StoreApi) {
+function handleStatus(msg: WsAgentStatus, _store: StoreApi, storeKey: string) {
   if (msg.status === 'running') {
-    store.promoteQueuedMessages(msg.agentId);
+    useMessageStore.getState().promoteQueuedMessages(storeKey);
   }
 }
 
@@ -313,7 +278,7 @@ function handleMessageSent(msg: WsMessageSent, store: StoreApi, agents: AgentInf
   // Surface DMs in the lead chat panel
   const preview = (msg.content ?? '').slice(0, 2000);
   if (msg.from === 'system' && msg.to === leadId) {
-    store.addMessage(leadId, { type: 'text', text: `⚙️ [System] ${preview}`, sender: 'system', timestamp: Date.now() });
+    useMessageStore.getState().addMessage(leadId, { type: 'text', text: `⚙️ [System] ${preview}`, sender: 'system', timestamp: Date.now() });
   } else if (isBroadcast) {
     // Broadcasts tracked in comms panel — don't duplicate in chat
   } else if (msg.to === leadId) {
@@ -321,13 +286,13 @@ function handleMessageSent(msg: WsMessageSent, store: StoreApi, agents: AgentInf
   } else if (msg.from === leadId) {
     const recipientRole = msg.toRole || toAgent?.role?.name || 'Agent';
     const recipientId = shortAgentId(msg.to ?? '');
-    store.addMessage(leadId, { type: 'text', text: `📤 [To ${recipientRole} ${recipientId}] ${preview}`, sender: 'system', timestamp: Date.now() });
+    useMessageStore.getState().addMessage(leadId, { type: 'text', text: `📤 [To ${recipientRole} ${recipientId}] ${preview}`, sender: 'external', timestamp: Date.now() });
   }
   // Inter-agent DMs tracked in comms panel — don't duplicate in chat
 }
 
 function handleGroupCreated(store: StoreApi, leadId: string) {
-  fetch(`/api/lead/${leadId}/groups`).then((r) => r.json()).then((data) => {
+  apiFetch(`/lead/${leadId}/groups`).then((data) => {
     if (Array.isArray(data)) store.setGroups(leadId, data);
   }).catch(() => { /* group fetch failure is non-critical */ });
 }
@@ -360,7 +325,7 @@ function handleGroupMessage(msg: WsGroupMessage, store: StoreApi, leadId: string
 }
 
 function handleDagUpdated(store: StoreApi, leadId: string, historicalProjectId: string | null) {
-  fetch(`/api/lead/${leadId}/dag`).then((r) => r.json()).then((data: DagStatus) => {
+  apiFetch<DagStatus>(`/lead/${leadId}/dag`).then((data) => {
     if (data && data.tasks) {
       store.setDagStatus(leadId, data);
       if (historicalProjectId && historicalProjectId !== leadId) {
@@ -384,7 +349,7 @@ function handleContextCompacted(msg: WsContextCompacted, store: StoreApi, agents
   }
   if (targetLeadId) {
     const pct = msg.percentDrop != null ? `${msg.percentDrop}%` : '?%';
-    store.addMessage(targetLeadId, {
+    useMessageStore.getState().addMessage(targetLeadId, {
       type: 'text',
       text: `🔄 Context compacted for agent ${shortAgentId(compactedId)}: ${pct} reduction`,
       sender: 'system',
@@ -404,26 +369,20 @@ export function useLeadWebSocket(agents: AgentInfo[], historicalProjectId: strin
     const handler = (event: Event) => {
       const msg: WsMsg = JSON.parse((event as MessageEvent).data);
       const store = useLeadStore.getState();
-      const selectedLeadId = store.selectedLeadId;
+      const leadId = store.selectedLeadId;
 
       switch (msg.type) {
         case 'lead:decision':
           handleDecision(msg, store);
           break;
-        case 'agent:text':
-          if (msg.agentId === selectedLeadId) handleText(msg, store);
-          break;
-        case 'agent:thinking':
-          if (msg.agentId === selectedLeadId) handleThinking(msg, store);
-          break;
-        case 'agent:content':
-          if (msg.agentId === selectedLeadId) handleContent(msg, store);
-          break;
+        // NOTE: agent:text, agent:thinking, agent:content are handled by the
+        // global WS dispatcher (ws-handlers/agentTextHandlers) which writes to
+        // messageStore for ALL agents including the lead. Do NOT duplicate here.
         case 'agent:status':
-          if (msg.agentId === selectedLeadId) handleStatus(msg, store);
+          if (msg.agentId === leadId) handleStatus(msg, store, leadId!);
           break;
         case 'agent:tool_call':
-          if (selectedLeadId) handleToolCall(msg, store, agents, selectedLeadId);
+          if (leadId) handleToolCall(msg, store, agents, leadId);
           break;
         case 'agent:delegated':
           handleDelegation(msg, store, agents);
@@ -435,16 +394,16 @@ export function useLeadWebSocket(agents: AgentInfo[], historicalProjectId: strin
           handleProgress(msg, store);
           break;
         case 'agent:message_sent':
-          if (selectedLeadId) handleMessageSent(msg, store, agents, selectedLeadId);
+          if (leadId) handleMessageSent(msg, store, agents, leadId);
           break;
         case 'group:created':
-          if (msg.leadId === selectedLeadId && selectedLeadId) handleGroupCreated(store, selectedLeadId);
+          if (msg.leadId === leadId && leadId) handleGroupCreated(store, leadId);
           break;
         case 'group:message':
-          if (msg.leadId === selectedLeadId && selectedLeadId) handleGroupMessage(msg, store, selectedLeadId);
+          if (msg.leadId === leadId && leadId) handleGroupMessage(msg, store, leadId);
           break;
         case 'dag:updated':
-          if (msg.leadId === selectedLeadId && selectedLeadId) handleDagUpdated(store, selectedLeadId, historicalProjectId);
+          if (msg.leadId === leadId && leadId) handleDagUpdated(store, leadId, historicalProjectId);
           break;
         case 'agent:context_compacted':
           handleContextCompacted(msg, store, agents);

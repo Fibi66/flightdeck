@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useAppStore } from '../stores/appStore';
 import { useLeadStore } from '../stores/leadStore';
+import type { DagTask } from '../types';
 
 export type RouteTier = 'starter' | 'active' | 'collaboration' | 'power';
 
@@ -11,6 +12,8 @@ export interface ProgressiveRoute {
   tier: RouteTier;
   badge?: number;
 }
+
+const EMPTY_TASKS: DagTask[] = [];
 
 const TIER_LEVEL: Record<RouteTier, number> = {
   starter: 0,
@@ -29,7 +32,6 @@ const ALL_ROUTES: ProgressiveRoute[] = [
   { path: '/tasks', label: 'Tasks', icon: '📋', tier: 'active' },
   { path: '/timeline', label: 'Timeline', icon: '📅', tier: 'active' },
   // Collaboration
-  { path: '/canvas', label: 'Canvas', icon: '🎨', tier: 'collaboration' },
   { path: '/mission-control', label: 'Mission Control', icon: '🚀', tier: 'collaboration' },
   // Power user
   { path: '/analytics', label: 'Analytics', icon: '📈', tier: 'power' },
@@ -52,7 +54,7 @@ export function useProgressiveRoutes() {
   const agents = useAppStore(s => s.agents);
   const selectedLeadId = useLeadStore(s => s.selectedLeadId);
   const dagStatus = useLeadStore(s => s.projects[selectedLeadId ?? '']?.dagStatus);
-  const tasks = dagStatus?.tasks ?? [];
+  const tasks = dagStatus?.tasks ?? EMPTY_TASKS;
 
   const tier = useMemo((): RouteTier => {
     if (isManuallyExpanded() || getSessionCount() >= 3) return 'power';
@@ -72,8 +74,7 @@ export function useProgressiveRoutes() {
   }, [tier]);
 
   const expandAll = () => {
-    localStorage.setItem('sidebar-routes-expanded', 'true');
-    // Force re-render — caller should re-evaluate
+    try { localStorage.setItem('sidebar-routes-expanded', 'true'); } catch {}
   };
 
   return { tier, visibleRoutes, hiddenRoutes, expandAll, allRoutes: ALL_ROUTES };

@@ -1,6 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
 import { SessionReplay } from '../coordination/sessions/SessionReplay.js';
-import type { ReplayAgentSource } from '../coordination/sessions/SessionReplay.js';
 import type { ActivityLedger, ActivityEntry } from '../coordination/activity/ActivityLedger.js';
 import type { TaskDAG, DagTask } from '../tasks/TaskDAG.js';
 import type { DecisionLog, Decision } from '../coordination/decisions/DecisionLog.js';
@@ -96,7 +95,7 @@ function makeMocks(overrides: {
     getLocksAt: vi.fn(() => overrides.locks ?? []),
   } as unknown as FileLockRegistry;
 
-  const agentSource: ReplayAgentSource = {
+  const agentSource = {
     getAll: vi.fn(() => overrides.agents ?? []),
   };
 
@@ -138,13 +137,13 @@ describe('SessionReplay', () => {
       makeActivity({
         actionType: 'sub_agent_spawned',
         summary: 'Spawned developer',
-        details: { spawnedAgentId: 'dev-1', role: 'developer' },
+        details: { childId: 'dev-1', role: 'developer' },
         timestamp: T1,
       }),
       makeActivity({
         actionType: 'sub_agent_spawned',
         summary: 'Spawned architect',
-        details: { spawnedAgentId: 'arch-1', role: 'architect' },
+        details: { childId: 'arch-1', role: 'architect' },
         timestamp: T2,
       }),
     ];
@@ -164,7 +163,7 @@ describe('SessionReplay', () => {
       makeActivity({
         actionType: 'sub_agent_spawned',
         agentId: 'dev-1',
-        details: { spawnedAgentId: 'dev-1', role: 'developer' },
+        details: { childId: 'dev-1', role: 'developer' },
         timestamp: T1,
       }),
       makeActivity({
@@ -238,6 +237,28 @@ describe('SessionReplay', () => {
       expect(keyframes[2].type).toBe('error');
     });
 
+    it('emits spawn keyframe with correct child agentId from delegation details', () => {
+      const delegation = makeActivity({
+        agentId: 'lead-1', actionType: 'delegated',
+        summary: 'Created & delegated to Developer: implement feature',
+        details: { toAgentId: 'dev-1', toRole: 'developer', childId: 'dev-1', childRole: 'developer', delegationId: 'del-1' },
+        timestamp: T1,
+      });
+      const mocks = makeMocks({ activities: [delegation] });
+      (mocks.activityLedger.getUntil as ReturnType<typeof vi.fn>).mockReturnValue([delegation]);
+      const replay = new SessionReplay(mocks.activityLedger, mocks.taskDAG, mocks.decisionLog, mocks.lockRegistry, mocks.agentSource);
+
+      const keyframes = replay.getKeyframes('lead-1');
+      // Should emit both a spawn and a delegation keyframe
+      const spawnKf = keyframes.find(k => k.type === 'spawn');
+      const delegationKf = keyframes.find(k => k.type === 'delegation');
+      expect(spawnKf).toBeDefined();
+      expect(delegationKf).toBeDefined();
+      // The spawn keyframe must use the CHILD agent ID, not the lead's ID
+      expect(spawnKf!.agentId).toBe('dev-1');
+      expect(spawnKf!.agentId).not.toBe('lead-1');
+    });
+
     it('only emits keyframes for team members when using team resolution', () => {
       const teamSpawn = makeActivity({
         agentId: 'dev-1', actionType: 'sub_agent_spawned', projectId: '',
@@ -272,6 +293,41 @@ describe('SessionReplay', () => {
       expect(keyframes).toHaveLength(2);
       expect(keyframes[0].type).toBe('spawn');
       expect(keyframes[1].type).toBe('milestone');
+    });
+
+    it('resolves crew via projectId when leadId is a project slug', () => {
+      const devSpawn = makeActivity({
+        id: 1, agentId: 'dev-1', actionType: 'sub_agent_spawned', projectId: 'proj-abc',
+        summary: 'Dev spawned', timestamp: T1,
+      });
+      const devMilestone = makeActivity({
+        id: 2, agentId: 'dev-2', actionType: 'task_completed', projectId: 'proj-abc',
+        summary: 'Dev 2 milestone', timestamp: T2,
+      });
+      const foreignEvent = makeActivity({
+        id: 3, agentId: 'foreign-1', actionType: 'error', projectId: 'other-proj',
+        summary: 'Foreign error', timestamp: T3,
+      });
+
+      const mocks = makeMocks({
+        agents: [
+          { id: 'dev-1', parentId: 'lead-uuid', projectId: 'proj-abc' },
+          { id: 'dev-2', parentId: 'lead-uuid', projectId: 'proj-abc' },
+          { id: 'foreign-1', parentId: 'other-lead', projectId: 'other-proj' },
+        ],
+      });
+
+      (mocks.activityLedger.getUntil as ReturnType<typeof vi.fn>)
+        .mockReturnValueOnce([])
+        .mockReturnValueOnce([devSpawn, devMilestone, foreignEvent]);
+
+      const replay = new SessionReplay(mocks.activityLedger, mocks.taskDAG, mocks.decisionLog, mocks.lockRegistry, mocks.agentSource);
+      // leadId is a project slug, not a UUID — should match via projectId
+      const keyframes = replay.getKeyframes('proj-abc');
+
+      expect(keyframes).toHaveLength(2);
+      expect(keyframes[0].agentId).toBe('dev-1');
+      expect(keyframes[1].agentId).toBe('dev-2');
     });
   });
 
@@ -502,12 +558,12 @@ describe('SessionReplay', () => {
     it('scopes world state to team members for untitled projects', () => {
       const teamActivity = makeActivity({
         actionType: 'sub_agent_spawned', agentId: 'lead-1', projectId: '',
-        details: { spawnedAgentId: 'dev-1', role: 'developer' },
+        details: { childId: 'dev-1', role: 'developer' },
       });
       const foreignActivity = makeActivity({
         id: 2, agentId: 'foreign-1', projectId: '',
         actionType: 'sub_agent_spawned',
-        details: { spawnedAgentId: 'foreign-2', role: 'architect' },
+        details: { childId: 'foreign-2', role: 'architect' },
       });
 
       const mocks = makeMocks({

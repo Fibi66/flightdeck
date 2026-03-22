@@ -9,6 +9,7 @@ import { descriptionSimilarity } from '../../tasks/TaskDAG.js';
 import { MAX_CONCURRENCY_LIMIT } from '../../config.js';
 import { maybeAutoCreateGroup } from './CommCommands.js';
 import { logger } from '../../utils/logger.js';
+import { asTaskId, type TaskId } from '../../types/brandedIds.js';
 import { deriveArgs } from './CommandHelp.js';
 import { notifySecretary } from './secretaryNotifier.js';
 import {
@@ -72,26 +73,16 @@ function handleCreateAgent(ctx: CommandHandlerContext, agent: Agent, data: strin
       return;
     }
 
-    // Duplicate-role guard: when creating an agent with a role that already has
-    // an active child, redirect to delegation instead. Prevents duplicate agents
-    // during session resume (lead re-creates agents that were already respawned).
-    // Only checks agents the lead actually owns (parentId match) and that are active.
-    if (agent.resumeSessionId) {
-      const existingChild = ctx.getAllAgents().find(a =>
-        a.parentId === agent.id &&
-        a.role.id === role.id &&
-        a.id !== agent.id &&
-        (a.status === 'running' || a.status === 'idle' || a.status === 'creating')
+    // Soft reminder: let the lead know if idle agents of the same role exist
+    const idleSameRole = ctx.getAllAgents().filter(
+      a => a.role.id === role.id && a.status === 'idle' && a.parentId === agent.id
+    );
+    if (idleSameRole.length > 0) {
+      const ids = idleSameRole.map(a => a.id.slice(0, 8)).join(', ');
+      agent.sendMessage(
+        `[System] Note: You have ${idleSameRole.length} idle ${role.name} agent(s) in your roster (${ids}). ` +
+        `Consider reusing them with DELEGATE before creating new ones.`
       );
-      if (existingChild) {
-        logger.info({ module: 'agent', msg: 'Duplicate role redirected to delegation (resume guard)', role: role.id, existingAgentId: existingChild.id, leadId: agent.id });
-        agent.sendMessage(
-          `[System] Agent with role "${role.name}" already exists: ${existingChild.id.slice(0, 8)} [${existingChild.status}]. ` +
-          `Delegating your task to the existing agent instead. Use TERMINATE_AGENT first if you need a fresh one.`
-        );
-        existingChild.sendMessage(`[Delegated from ${agent.role.name} ${agent.id.slice(0, 8)}]\n${req.task}${req.context ? `\n\nContext: ${req.context}` : ''}`);
-        return;
-      }
     }
 
     const subLeadName = role.id === 'lead'
@@ -237,6 +228,7 @@ function handleDelegate(ctx: CommandHandlerContext, agent: Agent, data: string):
       status: 'active',
       createdAt: new Date().toISOString(),
     };
+
     ctx.delegations.set(delegation.id, delegation);
 
     child.task = req.task;
@@ -494,7 +486,7 @@ function findSimilarActiveDelegation(ctx: CommandHandlerContext, task: string, e
 
 interface DagLinkResult {
   dagNote: string;
-  dagTaskId?: string;
+  dagTaskId?: TaskId;
 }
 
 /**
@@ -515,7 +507,7 @@ function linkDelegationToDag(
   dependsOn?: string[],
 ): DagLinkResult {
   let dagNote = '';
-  let linkedTaskId: string | undefined;
+  let linkedTaskId: TaskId | undefined;
 
   const dagTask = ctx.taskDAG.findReadyTask(leadId, {
     dagTaskId,
@@ -527,7 +519,7 @@ function linkDelegationToDag(
     const started = ctx.taskDAG.startTask(leadId, dagTask.id, childId);
     if (started) {
       dagNote = ` [DAG: "${dagTask.id}" → running]`;
-      linkedTaskId = dagTask.id;
+      linkedTaskId = asTaskId(dagTask.id);
       logger.info({ module: 'delegation', msg: 'DAG linked', taskId: dagTask.id, childAgentId: childId });
     }
   } else if (dagTaskId) {
@@ -542,12 +534,12 @@ function linkDelegationToDag(
     }
     if (autoResult.linked) {
       dagNote = ` [DAG: linked to "${autoResult.taskId}" → running]` + dagNote;
-      linkedTaskId = autoResult.taskId;
+      linkedTaskId = asTaskId(autoResult.taskId);
       logger.info({ module: 'delegation', msg: 'DAG auto-linked', taskId: autoResult.taskId, childAgentId: childId });
     } else if (autoResult.created) {
       dagNote = ` [DAG: auto-created "${autoResult.taskId}" → running]` + dagNote;
       if (autoResult.depNotes.length) dagNote += `\n  ${autoResult.depNotes.join('\n  ')}`;
-      linkedTaskId = autoResult.taskId;
+      linkedTaskId = asTaskId(autoResult.taskId);
       logger.info({ module: 'delegation', msg: 'DAG auto-created', taskId: autoResult.taskId, childAgentId: childId });
     } else if (autoResult.duplicate) {
       dagNote = `\n⚠️ Similar DAG task exists: "${autoResult.duplicate}". Use dagTaskId: "${autoResult.duplicate}" to link explicitly.` + dagNote;

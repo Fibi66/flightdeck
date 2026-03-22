@@ -7,6 +7,7 @@ import type { DecisionLog, Decision } from '../decisions/DecisionLog.js';
 import type { TaskDAG, DagTask } from '../../tasks/TaskDAG.js';
 import type { ChatGroupRegistry } from '../../comms/ChatGroupRegistry.js';
 import { logger } from '../../utils/logger.js';
+import { asAgentId } from '../../types/brandedIds.js';
 
 // Safe min/max for large arrays (avoids stack overflow from spread operator)
 function safeMin(arr: number[]): number { return arr.reduce((a, b) => Math.min(a, b), Infinity); }
@@ -14,14 +15,14 @@ function safeMax(arr: number[]): number { return arr.reduce((a, b) => Math.max(a
 
 // ── Types ─────────────────────────────────────────────────────────
 
-export interface ExportResult {
+interface ExportResult {
   outputDir: string;
   files: string[];
   agentCount: number;
   eventCount: number;
 }
 
-export interface ExportMetadata {
+interface ExportMetadata {
   leadId: string;
   startTime: string;
   exportTime: string;
@@ -67,7 +68,7 @@ export class SessionExporter {
     // Collect all events for crew
     const crewIds = new Set(crewAgents.map(a => a.id));
     const allEvents = this.activityLedger.getRecent(100_000);
-    const crewEvents = allEvents.filter(e => crewIds.has(e.agentId));
+    const crewEvents = allEvents.filter(e => crewIds.has(asAgentId(e.agentId)));
 
     // Collect decisions
     const decisions = this.decisionLog.getByLeadId(leadId);
@@ -260,7 +261,8 @@ export class SessionExporter {
     const history = this.agentManager.getMessageHistory(agent.id, 10_000);
     if (history.length > 0) {
       for (const msg of history) {
-        lines.push(`### [${msg.timestamp}] ${msg.sender}`);
+        const role = msg.fromRole ? ` (${msg.fromRole})` : '';
+        lines.push(`### [${msg.timestamp}] ${msg.sender}${role}`);
         lines.push('');
         lines.push(msg.content);
         lines.push('');

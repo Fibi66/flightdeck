@@ -8,6 +8,7 @@ import type { ActivityEntry, ActionType } from '../activity/ActivityLedger.js';
 import type { ActivityLedger } from '../activity/ActivityLedger.js';
 import type { AgentManager } from '../../agents/AgentManager.js';
 import { isTerminalStatus } from '../../agents/Agent.js';
+import { asAgentId } from '../../types/brandedIds.js';
 
 // ── Classification patterns ─────────────────────────────────────────
 
@@ -92,7 +93,7 @@ export function classifyEvent(event: ActivityEntry): EventTier {
 
 // ── Health synthesis ────────────────────────────────────────────────
 
-export interface ProjectHealthSnapshot {
+interface ProjectHealthSnapshot {
   criticalEvents: ActivityEntry[];
   recentCompletions: ActivityEntry[];
   pendingActions: { pendingDecisions: number; blockedTasks: number };
@@ -116,7 +117,7 @@ export class SynthesisEngine {
       : this.agentManager.getAll();
     const myAgents = projectAgents.filter(a => a.parentId === leadId || a.id === leadId);
     const myAgentIds = new Set(myAgents.map(a => a.id));
-    const myEvents = recentEvents.filter(e => myAgentIds.has(e.agentId));
+    const myEvents = recentEvents.filter(e => myAgentIds.has(asAgentId(e.agentId)));
 
     // Critical events (last 5)
     const criticalEvents = myEvents

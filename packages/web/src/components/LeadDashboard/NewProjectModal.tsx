@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Crown, Loader2, ChevronDown, ChevronRight, Wrench, Check, FolderOpen } from 'lucide-react';
 import { useLeadStore } from '../../stores/leadStore';
+import { useMessageStore } from '../../stores/messageStore';
 import { apiFetch } from '../../hooks/useApi';
 import { ModelConfigPanel } from './ModelConfigPanel';
 import { FolderPicker } from '../FolderPicker/FolderPicker';
@@ -31,7 +32,7 @@ export function NewProjectModal({ onClose }: NewProjectModalProps) {
 
   // Fetch available roles on mount
   useEffect(() => {
-    apiFetch('/roles').then((roles: RoleInfo[]) => {
+    apiFetch<RoleInfo[]>('/roles').then((roles) => {
       setAvailableRoles(roles.filter((r) => r.id !== 'lead'));
     }).catch(() => { /* role fetch failure is non-critical */ });
   }, []);
@@ -55,7 +56,7 @@ export function NewProjectModal({ onClose }: NewProjectModalProps) {
         useLeadStore.getState().addProject(data.id);
         useLeadStore.getState().selectLead(data.id);
         if (task) {
-          useLeadStore.getState().addMessage(data.id, { type: 'text', text: task, sender: 'user' });
+          useMessageStore.getState().addMessage(data.id, { type: 'text', text: task, sender: 'user' });
         }
         if (newProjectModelConfig && data.projectId) {
           apiFetch(`/projects/${data.projectId}/model-config`, {
@@ -68,8 +69,9 @@ export function NewProjectModal({ onClose }: NewProjectModalProps) {
           navigate(`/projects/${data.projectId}/session`);
         }
       }
-    } catch (err: any) {
-      setError(err?.message || 'Failed to start project');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      setError(message || 'Failed to start project');
     } finally {
       setStarting(false);
     }

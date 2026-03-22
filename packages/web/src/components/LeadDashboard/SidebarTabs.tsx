@@ -20,7 +20,7 @@ import { TaskDagPanelContent } from './TaskDagPanel';
 import { ModelConfigPanel } from './ModelConfigPanel';
 
 import { TimerDisplay } from '../TimerDisplay/TimerDisplay';
-import type { DagStatus, AgentInfo } from '../../types';
+import type { DagStatus, AgentInfo, Decision, ChatGroup, GroupMessage } from '../../types';
 import type { AgentComm } from '../../stores/leadStore';
 
 export interface SidebarLayoutProps {
@@ -43,8 +43,8 @@ export interface TabStateProps {
 }
 
 export interface DecisionProps {
-  decisions: any[];
-  pendingConfirmations: any[];
+  decisions: Decision[];
+  pendingConfirmations: Decision[];
   panelHeight: number;
   onResize: (e: React.MouseEvent) => void;
   onConfirm: (id: string, reason?: string) => Promise<void>;
@@ -58,8 +58,8 @@ interface SidebarTabsProps {
   decision: DecisionProps;
   crewTabContent: React.ReactNode;
   comms: AgentComm[];
-  groups: any[];
-  groupMessages: Record<string, any>;
+  groups: ChatGroup[];
+  groupMessages: Record<string, GroupMessage[]>;
   dagStatus: DagStatus | null;
   leadAgent: AgentInfo | undefined;
   selectedLeadId: string | null;
@@ -254,7 +254,7 @@ export function SidebarTabs({
             {tabs.activeTab === 'crew' && crewTabContent}
             {tabs.activeTab === 'comms' && <CommsPanelContent comms={comms} groupMessages={groupMessages} leadId={selectedLeadId ?? undefined} />}
 
-            {tabs.activeTab === 'groups' && <GroupsPanelContent groups={groups} groupMessages={groupMessages} leadId={selectedLeadId} projectId={leadAgent?.projectId ?? (selectedLeadId?.startsWith('project:') ? selectedLeadId.slice(8) : null)} />}
+            {tabs.activeTab === 'groups' && <GroupsPanelContent groups={groups} groupMessages={groupMessages} leadId={selectedLeadId} projectId={leadAgent?.projectId ?? null} />}
             {tabs.activeTab === 'dag' && <TaskDagPanelContent dagStatus={dagStatus} />}
             {tabs.activeTab === 'models' && leadAgent?.projectId && (
               <div className="h-full overflow-y-auto p-2">

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { SetupWizard, shouldShowSetupWizard } from '../SetupWizard';
 
 // ── localStorage polyfill (jsdom may not provide a working one) ─────
@@ -33,6 +33,8 @@ const MOCK_CONFIGS = [
   { id: 'opencode', name: 'OpenCode', enabled: true },
   { id: 'cursor', name: 'Cursor', enabled: true },
   { id: 'codex', name: 'Codex', enabled: true },
+  { id: 'kimi', name: 'Kimi', enabled: true },
+  { id: 'qwen-code', name: 'Qwen Code', enabled: true },
 ];
 
 /** Phase 2: status (async CLI detection) */
@@ -43,6 +45,8 @@ const MOCK_STATUSES = [
   { id: 'opencode', installed: false, authenticated: null, binaryPath: null },
   { id: 'cursor', installed: false, authenticated: null, binaryPath: null },
   { id: 'codex', installed: false, authenticated: null, binaryPath: null },
+  { id: 'kimi', installed: false, authenticated: null, binaryPath: null },
+  { id: 'qwen-code', installed: false, authenticated: null, binaryPath: null },
 ];
 
 const ALL_NOT_INSTALLED_STATUSES = MOCK_STATUSES.map((s) => ({ ...s, installed: false, binaryPath: null }));
@@ -68,7 +72,7 @@ describe('SetupWizard', () => {
 
   it('renders welcome step initially', async () => {
     mockTwoPhase();
-    render(<SetupWizard onComplete={onComplete} />);
+    await act(async () => { render(<SetupWizard onComplete={onComplete} />); });
 
     expect(screen.getByTestId('setup-wizard')).toBeInTheDocument();
     expect(screen.getByTestId('step-welcome')).toBeInTheDocument();
@@ -77,7 +81,7 @@ describe('SetupWizard', () => {
 
   it('navigates to providers step and shows installed count after detection', async () => {
     mockTwoPhase();
-    render(<SetupWizard onComplete={onComplete} />);
+    await act(async () => { render(<SetupWizard onComplete={onComplete} />); });
 
     fireEvent.click(screen.getByTestId('wizard-next'));
 
@@ -87,13 +91,13 @@ describe('SetupWizard', () => {
 
     // After status loads, should show installed count
     await waitFor(() => {
-      expect(screen.getByText(/2 of 6 providers detected/i)).toBeInTheDocument();
+      expect(screen.getByText(/2 of 8 providers detected/i)).toBeInTheDocument();
     });
   });
 
   it('shows installed status for configured providers', async () => {
     mockTwoPhase();
-    render(<SetupWizard onComplete={onComplete} />);
+    await act(async () => { render(<SetupWizard onComplete={onComplete} />); });
 
     fireEvent.click(screen.getByTestId('wizard-next'));
 
@@ -110,7 +114,7 @@ describe('SetupWizard', () => {
 
   it('shows no providers message when none detected', async () => {
     mockTwoPhase(MOCK_CONFIGS, ALL_NOT_INSTALLED_STATUSES);
-    render(<SetupWizard onComplete={onComplete} />);
+    await act(async () => { render(<SetupWizard onComplete={onComplete} />); });
 
     fireEvent.click(screen.getByTestId('wizard-next'));
 
@@ -121,7 +125,7 @@ describe('SetupWizard', () => {
 
   it('navigates through all three steps', async () => {
     mockTwoPhase();
-    render(<SetupWizard onComplete={onComplete} />);
+    await act(async () => { render(<SetupWizard onComplete={onComplete} />); });
 
     // Step 1: Welcome
     expect(screen.getByTestId('step-welcome')).toBeInTheDocument();
@@ -140,7 +144,7 @@ describe('SetupWizard', () => {
 
   it('back button navigates to previous step', async () => {
     mockTwoPhase();
-    render(<SetupWizard onComplete={onComplete} />);
+    await act(async () => { render(<SetupWizard onComplete={onComplete} />); });
 
     fireEvent.click(screen.getByTestId('wizard-next'));
     await waitFor(() => {
@@ -151,18 +155,18 @@ describe('SetupWizard', () => {
     expect(screen.getByTestId('step-welcome')).toBeInTheDocument();
   });
 
-  it('dismiss sets localStorage and calls onComplete', () => {
+  it('dismiss sets localStorage and calls onComplete', async () => {
     mockTwoPhase();
-    render(<SetupWizard onComplete={onComplete} />);
+    await act(async () => { render(<SetupWizard onComplete={onComplete} />); });
 
     fireEvent.click(screen.getByTestId('wizard-dismiss'));
     expect(localStorage.getItem('flightdeck-setup-completed')).toBe('true');
     expect(onComplete).toHaveBeenCalled();
   });
 
-  it('skip sets localStorage and calls onComplete', () => {
+  it('skip sets localStorage and calls onComplete', async () => {
     mockTwoPhase();
-    render(<SetupWizard onComplete={onComplete} />);
+    await act(async () => { render(<SetupWizard onComplete={onComplete} />); });
 
     fireEvent.click(screen.getByTestId('wizard-skip'));
     expect(localStorage.getItem('flightdeck-setup-completed')).toBe('true');
@@ -171,7 +175,7 @@ describe('SetupWizard', () => {
 
   it('finish on done step sets localStorage and calls onComplete', async () => {
     mockTwoPhase();
-    render(<SetupWizard onComplete={onComplete} />);
+    await act(async () => { render(<SetupWizard onComplete={onComplete} />); });
 
     // Navigate to done
     fireEvent.click(screen.getByTestId('wizard-next'));
@@ -185,7 +189,7 @@ describe('SetupWizard', () => {
 
   it('shows setup links for providers with multiple links', async () => {
     mockTwoPhase();
-    render(<SetupWizard onComplete={onComplete} />);
+    await act(async () => { render(<SetupWizard onComplete={onComplete} />); });
 
     fireEvent.click(screen.getByTestId('wizard-next'));
     await waitFor(() => screen.getByTestId('provider-claude'));
@@ -198,7 +202,7 @@ describe('SetupWizard', () => {
 
   it('enable/disable toggle calls API and updates UI', async () => {
     mockTwoPhase();
-    render(<SetupWizard onComplete={onComplete} />);
+    await act(async () => { render(<SetupWizard onComplete={onComplete} />); });
 
     fireEvent.click(screen.getByTestId('wizard-next'));
     await waitFor(() => screen.getByTestId('toggle-copilot'));
@@ -219,7 +223,7 @@ describe('SetupWizard', () => {
 
   it('handles API error gracefully', async () => {
     mockApiFetch.mockRejectedValue(new Error('Network error'));
-    render(<SetupWizard onComplete={onComplete} />);
+    await act(async () => { render(<SetupWizard onComplete={onComplete} />); });
 
     // Should still render welcome step
     expect(screen.getByTestId('step-welcome')).toBeInTheDocument();
@@ -235,11 +239,11 @@ describe('SetupWizard', () => {
 describe('shouldShowSetupWizard', () => {
   beforeEach(() => storage.clear());
 
-  it('returns true when setup not completed', () => {
+  it('returns true when setup not completed', async () => {
     expect(shouldShowSetupWizard()).toBe(true);
   });
 
-  it('returns false when setup completed', () => {
+  it('returns false when setup completed', async () => {
     localStorage.setItem('flightdeck-setup-completed', 'true');
     expect(shouldShowSetupWizard()).toBe(false);
   });

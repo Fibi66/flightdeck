@@ -251,8 +251,8 @@ function KanbanBoard({ dagStatus, projectId, onTaskUpdated, scope = 'project', p
         body: JSON.stringify({ priority: newPriority }),
       })
         .then(() => onTaskUpdated?.())
-        .catch((err: any) => {
-          console.warn('Priority update failed', err);
+        .catch((err: unknown) => {
+          console.error('Priority update failed', err);
         });
     }
   }, [projectId, taskLookup, tasksByStatus, onTaskUpdated]);

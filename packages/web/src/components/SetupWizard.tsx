@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { apiFetch } from '../hooks/useApi';
 import { getProvider } from '@flightdeck/shared';
+import { ProviderIcon } from './ui/ProviderIcon';
 
 // ── Types ───────────────────────────────────────────────────────────
 
@@ -85,12 +86,12 @@ export function SetupWizard({ onComplete }: { onComplete: () => void }) {
   }, [configLoading]);
 
   const handleDismiss = useCallback(() => {
-    localStorage.setItem(STORAGE_KEY, 'true');
+    try { localStorage.setItem(STORAGE_KEY, 'true'); } catch {}
     onComplete();
   }, [onComplete]);
 
   const handleFinish = useCallback(() => {
-    localStorage.setItem(STORAGE_KEY, 'true');
+    try { localStorage.setItem(STORAGE_KEY, 'true'); } catch {}
     onComplete();
   }, [onComplete]);
 
@@ -175,7 +176,7 @@ export function SetupWizard({ onComplete }: { onComplete: () => void }) {
                       >
                         <div className="flex items-center justify-between px-4 py-3">
                           <div className="flex items-center gap-3 min-w-0">
-                            <span className="text-lg flex-shrink-0">{def?.icon ?? '🔧'}</span>
+                            <span className="text-lg flex-shrink-0"><ProviderIcon provider={def} className="w-5 h-5 inline" /></span>
                             <div className="min-w-0">
                               <div className="flex items-center gap-2">
                                 <span className="text-sm font-medium text-th-text">{p.name}</span>
@@ -186,7 +187,7 @@ export function SetupWizard({ onComplete }: { onComplete: () => void }) {
                                 )}
                               </div>
                               {p.id === 'copilot' && (
-                                <div className="text-[10px] text-amber-400/80">Requires Copilot ≥ 1.0.4</div>
+                                <div className="text-[10px] text-th-text-muted">Requires Copilot ≥ 1.0.4</div>
                               )}
                             </div>
                           </div>
@@ -306,5 +307,5 @@ export function SetupWizard({ onComplete }: { onComplete: () => void }) {
 
 /** Check if the setup wizard should be shown (no providers configured + not dismissed). */
 export function shouldShowSetupWizard(): boolean {
-  return localStorage.getItem(STORAGE_KEY) !== 'true';
+  try { return localStorage.getItem(STORAGE_KEY) !== 'true'; } catch { return true; }
 }
