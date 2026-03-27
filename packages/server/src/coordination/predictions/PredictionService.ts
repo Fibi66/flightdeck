@@ -1,12 +1,12 @@
 import type { Database } from '../../db/database.js';
 import type { ConfigStore } from '../../config/ConfigStore.js';
 import { logger } from '../../utils/logger.js';
+import { shortAgentId } from '@flightdeck/shared';
 
 // ── Types ─────────────────────────────────────────────────────────
 
 type PredictionType =
   | 'context_exhaustion'
-  | 'cost_overrun'
   | 'agent_stall'
   | 'task_duration'
   | 'completion_estimate'
@@ -67,14 +67,6 @@ export interface AgentSnapshot {
   lastActivityAt: string;
 }
 
-/** Snapshot of budget state used for cost predictions */
-export interface BudgetSnapshot {
-  currentSpend: number;
-  limit: number | null;
-  utilization: number;         // 0-1
-  burnRatePerMinute: number;
-}
-
 // ── Constants ─────────────────────────────────────────────────────
 
 const SETTINGS_KEY_PREDICTIONS = 'predictions';
@@ -83,7 +75,6 @@ const MAX_PREDICTIONS = 200;
 
 const CONTEXT_EXPIRY_MINUTES = 15;
 const STALL_EXPIRY_MINUTES = 15;
-const COST_EXPIRY_MINUTES = 30;
 
 const STALL_THRESHOLD_MINUTES = 10;
 
@@ -92,7 +83,6 @@ const DEFAULT_CONFIG: PredictionConfig = {
   intervalMs: 60_000,
   types: {
     context_exhaustion: { enabled: true },
-    cost_overrun: { enabled: true },
     agent_stall: { enabled: true },
     task_duration: { enabled: true },
     completion_estimate: { enabled: true },
@@ -211,11 +201,11 @@ export class PredictionService {
   // ── Prediction Generation ─────────────────────────────────────
 
   /**
-   * Generate predictions based on current agent and budget state.
+   * Generate predictions based on current agent state.
    * Called periodically (e.g., every 60s from a check loop).
    * Returns newly created or updated predictions.
    */
-  generatePredictions(agents: AgentSnapshot[], budget?: BudgetSnapshot): Prediction[] {
+  generatePredictions(agents: AgentSnapshot[]): Prediction[] {
     if (!this.config.enabled) return [];
 
     this.expirePredictions();
@@ -224,9 +214,6 @@ export class PredictionService {
 
     if (this.config.types.context_exhaustion.enabled) {
       newPredictions.push(...this.predictContextExhaustion(agents));
-    }
-    if (this.config.types.cost_overrun.enabled && budget) {
-      newPredictions.push(...this.predictCostOverrun(budget));
     }
     if (this.config.types.agent_stall.enabled) {
       newPredictions.push(...this.predictAgentStall(agents));
@@ -303,7 +290,7 @@ export class PredictionService {
         type: 'context_exhaustion',
         severity: severityFromMinutes(minutesUntilExhaustion),
         confidence,
-        title: `Context window exhaustion for ${agent.role} (${agent.id.slice(0, 8)})`,
+        title: `Context window exhaustion for ${agent.role} (${shortAgentId(agent.id)})`,
         detail: `Agent ${agent.id} is using ${Math.round(utilization * 100)}% of context window. ` +
           `At current burn rate (${Math.round(agent.contextBurnRate)} tokens/min), ` +
           `context will be exhausted in ~${Math.round(minutesUntilExhaustion)} minutes.`,
@@ -337,62 +324,6 @@ export class PredictionService {
   }
 
   /**
-   * Cost Overrun: if budget.utilization > 0.5 and burnRatePerMinute > 0,
-   * extrapolate when budget will hit 100%. Confidence based on utilization
-   * (higher utilization = more data points = more confidence in linear trend).
-   */
-  private predictCostOverrun(budget: BudgetSnapshot): Prediction[] {
-    if (budget.limit == null || budget.limit <= 0) return [];
-    if (budget.utilization <= 0.5) return [];
-    if (budget.burnRatePerMinute <= 0) return [];
-
-    const remainingBudget = budget.limit - budget.currentSpend;
-    if (remainingBudget <= 0) return [];
-
-    const minutesUntilOverrun = remainingBudget / budget.burnRatePerMinute;
-
-    // Confidence: more utilization data means more reliable extrapolation
-    const dataPoints = Math.max(1, Math.round(budget.utilization * 15));
-    const confidence = Math.min(85, dataPoints * 6);
-
-    return [
-      {
-        id: generateId(),
-        type: 'cost_overrun',
-        severity: minutesUntilOverrun <= 10 ? 'critical' : minutesUntilOverrun <= 30 ? 'warning' : 'info',
-        confidence,
-        title: 'Budget overrun predicted',
-        detail: `Current spend: $${budget.currentSpend.toFixed(2)} of $${budget.limit.toFixed(2)} ` +
-          `(${Math.round(budget.utilization * 100)}%). ` +
-          `At $${budget.burnRatePerMinute.toFixed(4)}/min, budget will be exhausted in ~${Math.round(minutesUntilOverrun)} minutes.`,
-        timeHorizon: Math.round(minutesUntilOverrun),
-        dataPoints,
-        actions: [
-          {
-            label: 'Increase budget',
-            description: 'Raise the budget limit to avoid interruption',
-            actionType: 'api_call',
-            endpoint: '/api/budget',
-            method: 'POST',
-            body: { limit: Math.round(budget.limit * 1.5 * 100) / 100 },
-            confidence: 70,
-          },
-          {
-            label: 'Dismiss',
-            description: 'Dismiss this prediction',
-            actionType: 'dismiss',
-            endpoint: '',
-            method: 'POST',
-          },
-        ],
-        createdAt: new Date().toISOString(),
-        expiresAt: minutesFromNow(COST_EXPIRY_MINUTES),
-        outcome: null,
-      },
-    ];
-  }
-
-  /**
    * Agent Stall: if a running agent's lastActivityAt is > 10 min ago
    * and they're not in 'prompting' status, predict stall.
    * Confidence = min(80, stallMinutes * 5).
@@ -418,7 +349,7 @@ export class PredictionService {
         type: 'agent_stall',
         severity: stallMinutes >= 30 ? 'critical' : stallMinutes >= 15 ? 'warning' : 'info',
         confidence,
-        title: `Agent ${agent.role} (${agent.id.slice(0, 8)}) may be stalled`,
+        title: `Agent ${agent.role} (${shortAgentId(agent.id)}) may be stalled`,
         detail: `Agent ${agent.id} has not reported activity for ${Math.round(stallMinutes)} minutes. ` +
           `Current status: ${agent.status}. This may indicate a stuck process or lost connection.`,
         timeHorizon: 0, // already happening
